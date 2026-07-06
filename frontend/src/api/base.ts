@@ -1,27 +1,15 @@
 // ============================================================
 // API 基础工具
 // 文件：src/api/base.ts
-// 用途：统一管理 API 基础地址，支持：
-//   1. 浏览器开发：Vite 代理转发 /api/*
-//   2. 外部部署：VITE_API_BASE_URL 环境变量
-//   3. PyQt 集成：URL 参数 ?apiBase=xxx
+// 用途：统一管理 API 基础地址，让所有请求（axios / fetch）走同一来源
 // ============================================================
 
 /**
- * 从 URL 参数获取 apiBase
- * 用于 PyQt 等外部容器动态传入
- */
-function getUrlApiBase(): string {
-  const params = new URLSearchParams(window.location.search)
-  return params.get('apiBase') || ''
-}
-
-/**
  * 后端 API 基础地址
- * 优先级：URL参数 > 环境变量 > 空（相对路径）
+ *  - 浏览器开发：Vite 代理转发 /api/*，因此可留空走相对路径
+ *  - 部署/PyQt：设置 VITE_API_BASE_URL 指向真实后端
  */
-const ENV_BASE = (import.meta.env.VITE_API_BASE_URL || '').trim()
-const RAW_BASE = getUrlApiBase() || ENV_BASE
+const RAW_BASE = (import.meta.env.VITE_API_BASE_URL || '').trim()
 
 /**
  * 拼接一个完整的 API URL

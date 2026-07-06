@@ -15,20 +15,18 @@ VITE_API_TARGET=http://localhost:8000
 ### 生产环境 `.env.production`
 
 ```bash
-# 前后端分离部署，Vue 加载地址
-VITE_API_BASE_URL=https://piapi.wakabashia.tj.cn
-VITE_API_TARGET=https://piapi.wakabashia.tj.cn
+# 场景1：前后端同源（Nginx 反向代理 /api/*）
+VITE_API_BASE_URL=
+VITE_API_TARGET=
+
+# 场景2：前后端分离部署
+VITE_API_BASE_URL=https://api.example.com
+VITE_API_TARGET=https://api.example.com
+
+# 场景3：PyQt 桌面壳加载远端 Vue
+VITE_API_BASE_URL=http://192.168.1.100:8000
+VITE_API_TARGET=http://192.168.1.100:8000
 ```
-
-### PyQt 动态传入 API 地址
-
-Vue 支持通过 URL 参数 `?apiBase=` 动态指定 API 地址：
-
-```
-https://your-vue-domain.com/orders?apiBase=https://your-api-domain.com
-```
-
-**优先级**：URL 参数 `?apiBase=` > 环境变量 `VITE_API_BASE_URL` > 空（相对路径）
 
 ## 常用命令
 
