@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>订单详情编辑排版 - 方案对比</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #303133; line-height: 1.6; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    .subtitle { color: #909399; margin-bottom: 24px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid #e4e7ed; padding-bottom: 12px; }
+    .tab { padding: 8px 20px; border-radius: 4px; cursor: pointer; background: #fff; border: 1px solid #dcdfe6; font-size: 14px; }
+    .tab.active { background: #409eff; color: #fff; border-color: #409eff; }
+    .panel { display: none; background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.05); }
+    .panel.active { display: block; }
+
+    /* 方案A：当前现状 - 表格分组 */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { border: 1px solid #ebeef5; padding: 8px 12px; text-align: left; }
+    th { background: #f5f7fa; font-weight: 600; }
+    .group-header { background: #ecf5ff; color: #409eff; font-weight: 600; }
+
+    /* 方案B：Excel 式卡片 */
+    .excel-card { border: 1px solid #c0c4cc; margin-bottom: 16px; }
+    .excel-title { background: #f2f6fc; padding: 8px 12px; font-weight: 600; border-bottom: 1px solid #c0c4cc; }
+    .excel-grid { display: grid; }
+    .excel-cell { border-right: 1px solid #ebeef5; border-bottom: 1px solid #ebeef5; padding: 8px 12px; min-height: 42px; }
+    .excel-label { background: #f5f7fa; font-weight: 600; color: #606266; }
+    .excel-value { background: #fff; }
+    .merged { grid-column: span 2; }
+
+    /* 方案C：分组表单 */
+    .section { border: 1px solid #ebeef5; border-radius: 6px; margin-bottom: 16px; }
+    .section-title { background: #f5f7fa; padding: 10px 16px; font-weight: 600; border-bottom: 1px solid #ebeef5; }
+    .section-body { padding: 16px; }
+    .form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .form-item { display: flex; flex-direction: column; gap: 4px; }
+    .form-item.full { grid-column: span 2; }
+    .form-item.wide { grid-column: span 3; }
+    .form-item label { font-size: 12px; color: #606266; }
+    .form-item input, .form-item textarea { border: 1px solid #dcdfe6; border-radius: 4px; padding: 6px 10px; font-size: 13px; }
+    .form-item input:focus, .form-item textarea:focus { outline: none; border-color: #409eff; }
+
+    .note { background: #fdf6ec; border-left: 4px solid #e6a23c; padding: 12px 16px; margin-bottom: 20px; border-radius: 4px; font-size: 13px; }
+    .legend { display: flex; gap: 16px; margin-bottom: 16px; font-size: 13px; }
+    .legend span { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 12px; height: 12px; border-radius: 2px; }
+    .dot.red { background: #fde2e2; border: 1px solid #f56c6c; }
+    .dot.yellow { background: #fef0f0; border: 1px solid #e6a23c; }
+    .dot.green { background: #e1f3d8; border: 1px solid #67c23a; }
+    .dot.blue { background: #d9ecff; border: 1px solid #409eff; }
+
+    @media (max-width: 1200px) {
+      .form-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 768px) {
+      .form-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>订单详情编辑排版方案对比</h1>
+    <p class="subtitle">基于你提供的 Excel 截图与当前前端实现，三种候选布局</p>
+
+    <div class="legend">
+      <span><span class="dot red"></span> 基础信息</span>
+      <span><span class="dot yellow"></span> 销售细节</span>
+      <span><span class="dot green"></span> 采购信息</span>
+      <span><span class="dot blue"></span> 入库/资料</span>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" data-panel="current">方案 A：当前表格分组</div>
+      <div class="tab" data-panel="excel">方案 B：Excel 式卡片</div>
+      <div class="tab" data-panel="form">方案 C：分组表单（推荐）</div>
+    </div>
+
+    <!-- 方案 A：当前实现 -->
+    <div class="panel active" id="current">
+      <div class="note">当前 OrderDetailPanel.vue 的实现：把大量字段横向铺开成多列表格，按 A组/B组/C组 分组。适合浏览，但编辑时需要弹窗或双击单元格。</div>
+      <div class="table-wrap">
+        <table>
+          <tr class="group-header"><td colspan="10">A组：基础信息</td></tr>
+          <tr>
+            <th>订单日期</th><th>PI号</th><th>客户产品编号</th><th>OE号</th><th>客户需求/备注</th>
+            <th>产品名称</th><th>图片</th><th>客户型号</th><th>产品特性</th><th>...</th>
+          </tr>
+          <tr>
+            <td>2026-07-05</td><td>PISMI902607052</td><td>AAAAAAA</td><td>-</td><td>QTY:300, MODEL:None</td>
+            <td>-</td><td>暂无</td><td>AAAAAAA</td><td>-</td><td>...</td>
+          </tr>
+          <tr class="group-header"><td colspan="10">B组：价格财务</td></tr>
+          <tr>
+            <th>数量</th><th>报价</th><th>合计金额</th><th>最新客户回复</th><th>客户预付款</th>
+            <th>待收尾款</th><th>预估美金报价</th><th>预估毛利率</th><th>采购价格</th><th>运费</th>
+          </tr>
+          <tr>
+            <td>300</td><td>0.00</td><td>0.00</td><td>-</td><td>-</td>
+            <td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- 方案 B：Excel 式卡片 -->
+    <div class="panel" id="excel">
+      <div class="note">复刻你 Excel 截图的排版：按业务区块用色块/边框区分，一个产品一张大卡片，字段按重要性呈不规则网格。</div>
+      <div class="excel-card">
+        <div class="excel-title" style="background:#fde2e2;color:#c45650;">基础信息</div>
+        <div class="excel-grid" style="grid-template-columns: 120px 1fr 120px 1fr 120px 1fr 120px 1fr;">
+          <div class="excel-cell excel-label">* 客户</div>
+          <div class="excel-cell excel-value merged">DAZA</div>
+          <div class="excel-cell excel-label">* 客户型号</div>
+          <div class="excel-cell excel-value merged">DAKHXHM661</div>
+          <div class="excel-cell excel-label">* 产品名称</div>
+          <div class="excel-cell excel-value merged">航空用便携式猫咪宠物笼</div>
+          <div class="excel-cell excel-label">产品要求</div>
+          <div class="excel-cell excel-value" style="grid-column: span 7;">Black, white lid, black bottom. One per box, with packaging bag and label.</div>
+          <div class="excel-cell excel-label">产品颜色</div>
+          <div class="excel-cell excel-value merged">Black+Gery; Black+Red;</div>
+          <div class="excel-cell excel-label">OE号（索引）</div>
+          <div class="excel-cell excel-value">661</div>
+          <div class="excel-cell excel-label">编号备注</div>
+          <div class="excel-cell excel-value">661</div>
+          <div class="excel-cell excel-label">我司产编号</div>
+          <div class="excel-cell excel-value merged">DAKHXHM666</div>
+        </div>
+      </div>
+
+      <div class="excel-card">
+        <div class="excel-title" style="background:#fef0f0;color:#b88230;">销售细节</div>
+        <div class="excel-grid" style="grid-template-columns: 120px repeat(7, 1fr);">
+          <div class="excel-cell excel-label">综合毛利额</div>
+          <div class="excel-cell excel-value">#REF!</div>
+          <div class="excel-cell excel-label">预估毛利率</div>
+          <div class="excel-cell excel-value">#REF!</div>
+          <div class="excel-cell excel-label">价格变动</div>
+          <div class="excel-cell excel-value merged">无</div>
+          <div class="excel-cell excel-label">* 采购数量</div>
+          <div class="excel-cell excel-value">100</div>
+          <div class="excel-cell excel-label">* 报价</div>
+          <div class="excel-cell excel-value">$3.74</div>
+          <div class="excel-cell excel-label">金额</div>
+          <div class="excel-cell excel-value">$374.00</div>
+          <div class="excel-cell excel-label">客户需求</div>
+          <div class="excel-cell excel-value">Need cheaper</div>
+          <div class="excel-cell excel-label">答复</div>
+          <div class="excel-cell excel-value">ok</div>
+          <div class="excel-cell excel-label">确定信息</div>
+          <div class="excel-cell excel-value">$3.8-$3.53</div>
+          <div class="excel-cell excel-label">报价备注</div>
+          <div class="excel-cell excel-value">保持原包装</div>
+        </div>
+      </div>
+
+      <div class="excel-card">
+        <div class="excel-title" style="background:#e1f3d8;color:#5daf34;">采购信息</div>
+        <div class="excel-grid" style="grid-template-columns: 120px 1fr 120px 1fr 120px 1fr 120px 1fr;">
+          <div class="excel-cell excel-label">预估美金价</div>
+          <div class="excel-cell excel-value">$3.74</div>
+          <div class="excel-cell excel-label">* 人民币采购价</div>
+          <div class="excel-cell excel-value">18.3</div>
+          <div class="excel-cell excel-label">贴标费</div>
+          <div class="excel-cell excel-value">10</div>
+          <div class="excel-cell excel-label">运费</div>
+          <div class="excel-cell excel-value">30</div>
+          <div class="excel-cell excel-label">金额</div>
+          <div class="excel-cell excel-value merged">¥1,870.00</div>
+          <div class="excel-cell excel-label">开票情况</div>
+          <div class="excel-cell excel-value merged">增票 / 加收了10%</div>
+          <div class="excel-cell excel-label">* 供应商</div>
+          <div class="excel-cell excel-value merged">广东彩拓科技</div>
+          <div class="excel-cell excel-label">供应商链接</div>
+          <div class="excel-cell excel-value merged">https://detail.1688.com/...</div>
+          <div class="excel-cell excel-label">产品特性/选项</div>
+          <div class="excel-cell excel-value" style="grid-column: span 5;">彩色不带电池款，中性包装，标签贴右下角</div>
+          <div class="excel-cell excel-label">采购方式</div>
+          <div class="excel-cell excel-value">1688/微信联系/线下合同</div>
+          <div class="excel-cell excel-label">付款方式</div>
+          <div class="excel-cell excel-value">1688线上支付、人民币</div>
+          <div class="excel-cell excel-label">付款1</div>
+          <div class="excel-cell excel-value">870</div>
+          <div class="excel-cell excel-label">付款2</div>
+          <div class="excel-cell excel-value">1000</div>
+          <div class="excel-cell excel-label">未付款金额</div>
+          <div class="excel-cell excel-value">0</div>
+          <div class="excel-cell excel-label">开票工厂</div>
+          <div class="excel-cell excel-value merged">广东彩拓科技有限公司</div>
+          <div class="excel-cell excel-label">货源地</div>
+          <div class="excel-cell excel-value merged">霸州</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 方案 C：分组表单 -->
+    <div class="panel" id="form">
+      <div class="note">推荐方案：保留 Excel 截图的业务区块划分，但用 Element Plus 表单组件规范化。每行 4 列，可编辑，响应式，适合 web。</div>
+      <div class="section">
+        <div class="section-title" style="background:#fde2e2;color:#c45650;">基础信息</div>
+        <div class="section-body">
+          <div class="form-grid">
+            <div class="form-item wide"><label>* 客户</label><input value="DAZA" /></div>
+            <div class="form-item"><label>* 客户型号</label><input value="DAKHXHM661" /></div>
+            <div class="form-item full"><label>* 产品名称</label><input value="航空用便携式猫咪宠物笼" /></div>
+            <div class="form-item full"><label>产品要求 / 备注</label><textarea rows="2">Black, white lid, black bottom...</textarea></div>
+            <div class="form-item"><label>产品颜色</label><input value="Black+Gery; Black+Red;" /></div>
+            <div class="form-item"><label>OE号（索引）</label><input value="661" /></div>
+            <div class="form-item"><label>编号备注</label><input value="661" /></div>
+            <div class="form-item"><label>我司产编号</label><input value="DAKHXHM666" /></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title" style="background:#fef0f0;color:#b88230;">销售细节</div>
+        <div class="section-body">
+          <div class="form-grid">
+            <div class="form-item"><label>* 采购数量</label><input value="100" /></div>
+            <div class="form-item"><label>* 报价 (USD)</label><input value="3.74" /></div>
+            <div class="form-item"><label>金额</label><input value="374.00" readonly style="background:#f5f7fa;" /></div>
+            <div class="form-item"><label>综合毛利额</label><input value="" /></div>
+            <div class="form-item"><label>预估毛利率</label><input value="" /></div>
+            <div class="form-item"><label>价格变动</label><input value="无" /></div>
+            <div class="form-item"><label>客户需求</label><input value="Need cheaper" /></div>
+            <div class="form-item"><label>答复</label><input value="ok" /></div>
+            <div class="form-item"><label>确定信息</label><input value="$3.8-$3.53" /></div>
+            <div class="form-item"><label>报价备注</label><input value="保持原包装" /></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title" style="background:#e1f3d8;color:#5daf34;">采购信息</div>
+        <div class="section-body">
+          <div class="form-grid">
+            <div class="form-item"><label>预估美金价</label><input value="3.74" /></div>
+            <div class="form-item"><label>* 人民币采购价</label><input value="18.3" /></div>
+            <div class="form-item"><label>贴标费</label><input value="10" /></div>
+            <div class="form-item"><label>运费</label><input value="30" /></div>
+            <div class="form-item"><label>金额</label><input value="¥1,870.00" readonly style="background:#f5f7fa;" /></div>
+            <div class="form-item"><label>开票情况</label><input value="增票 / 加收了10%" /></div>
+            <div class="form-item"><label>* 供应商</label><input value="广东彩拓科技" /></div>
+            <div class="form-item wide"><label>供应商链接</label><input value="https://detail.1688.com/..." /></div>
+            <div class="form-item full"><label>产品特性/选项/采购备注</label><textarea rows="2">彩色不带电池款，中性包装，标签贴右下角</textarea></div>
+            <div class="form-item"><label>采购方式</label><input value="1688/微信联系/线下合同" /></div>
+            <div class="form-item"><label>付款方式</label><input value="1688线上支付、人民币" /></div>
+            <div class="form-item"><label>付款1</label><input value="870" /></div>
+            <div class="form-item"><label>付款2</label><input value="1000" /></div>
+            <div class="form-item"><label>未付款金额</label><input value="0" /></div>
+            <div class="form-item full"><label>开票工厂（全称）</label><input value="广东彩拓科技有限公司" /></div>
+            <div class="form-item"><label>货源地</label><input value="霸州" /></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.panel).classList.add('active');
+      });
+    });
+  </script>
+</body>
+</html>

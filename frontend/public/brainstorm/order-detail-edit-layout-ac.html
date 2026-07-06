@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>订单详情编辑 Dialog 排版对比 - 方案 A vs 方案 C</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #303133; line-height: 1.6; }
+    .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    .subtitle { color: #909399; margin-bottom: 24px; }
+    .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .side { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.05); }
+    .side-title { font-size: 18px; font-weight: 600; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 2px solid #409eff; }
+    .note { font-size: 12px; color: #606266; background: #f4f4f5; padding: 8px 12px; border-radius: 4px; margin-bottom: 16px; }
+
+    /* 模拟 Dialog 容器 */
+    .dialog-mock { border: 1px solid #dcdfe6; border-radius: 8px; height: 720px; display: flex; flex-direction: column; overflow: hidden; }
+    .dialog-header { padding: 14px 20px; border-bottom: 1px solid #ebeef5; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+    .dialog-title { font-weight: 600; font-size: 16px; }
+    .dialog-close { color: #909399; font-size: 20px; cursor: pointer; }
+    .dialog-body { flex: 1; overflow-y: auto; padding: 20px; background: #f5f7fa; }
+    .dialog-footer { padding: 12px 20px; border-top: 1px solid #ebeef5; text-align: right; background: #fff; }
+    .btn { padding: 8px 16px; border-radius: 4px; border: 1px solid #dcdfe6; background: #fff; cursor: pointer; margin-left: 8px; font-size: 13px; }
+    .btn-primary { background: #409eff; color: #fff; border-color: #409eff; }
+
+    /* 方案 A：Excel 式严格复刻 */
+    .excel-card { border: 1px solid #c0c4cc; margin-bottom: 16px; }
+    .excel-title { padding: 8px 12px; font-weight: 600; border-bottom: 1px solid #c0c4cc; }
+    .excel-grid { display: grid; }
+    .excel-cell { border-right: 1px solid #ebeef5; border-bottom: 1px solid #ebeef5; padding: 6px 10px; min-height: 38px; font-size: 13px; }
+    .excel-label { background: #f5f7fa; font-weight: 600; color: #606266; }
+    .excel-value { background: #fff; }
+    .excel-value input { width: 100%; border: 1px solid #dcdfe6; border-radius: 3px; padding: 3px 6px; font-size: 13px; }
+    .excel-value input[readonly] { background: #f5f7fa; color: #909399; }
+    .merged { grid-column: span 2; }
+    .merged-3 { grid-column: span 3; }
+    .merged-5 { grid-column: span 5; }
+    .merged-7 { grid-column: span 7; }
+
+    /* 方案 C：混合布局 */
+    .section { border: 1px solid #ebeef5; border-radius: 6px; margin-bottom: 16px; background: #fff; }
+    .section-title { padding: 10px 16px; font-weight: 600; border-bottom: 1px solid #ebeef5; font-size: 14px; }
+    .section-body { padding: 16px; }
+    .form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .form-item { display: flex; flex-direction: column; gap: 4px; }
+    .form-item.full { grid-column: span 2; }
+    .form-item.wide { grid-column: span 3; }
+    .form-item.all { grid-column: span 4; }
+    .form-item label { font-size: 12px; color: #606266; }
+    .form-item label.required::before { content: '* '; color: #f56c6c; }
+    .form-item input, .form-item textarea { border: 1px solid #dcdfe6; border-radius: 4px; padding: 6px 10px; font-size: 13px; }
+    .form-item input[readonly], .form-item textarea[readonly] { background: #f5f7fa; color: #909399; }
+    .form-item textarea { resize: vertical; }
+
+    .legend { display: flex; gap: 16px; margin-bottom: 20px; font-size: 13px; }
+    .legend span { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 12px; height: 12px; border-radius: 2px; }
+    .dot.red { background: #fde2e2; border: 1px solid #f56c6c; }
+    .dot.yellow { background: #fef0f0; border: 1px solid #e6a23c; }
+    .dot.green { background: #e1f3d8; border: 1px solid #67c23a; }
+    .dot.blue { background: #d9ecff; border: 1px solid #409eff; }
+
+    @media (max-width: 1400px) {
+      .compare { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>订单详情编辑 Dialog 排版对比</h1>
+    <p class="subtitle">方案 A：严格复刻 Excel 截图  vs  方案 C：混合布局（推荐）</p>
+
+    <div class="legend">
+      <span><span class="dot red"></span> 基础信息</span>
+      <span><span class="dot yellow"></span> 销售细节</span>
+      <span><span class="dot green"></span> 采购信息</span>
+      <span><span class="dot blue"></span> 入库/资料</span>
+    </div>
+
+    <div class="compare">
+      <!-- 方案 A -->
+      <div class="side">
+        <div class="side-title">方案 A：严格复刻 Excel</div>
+        <div class="note">优点：与你现有 Excel 1:1 对应；缺点：不规则网格实现复杂，响应式差，后期维护成本高。</div>
+        <div class="dialog-mock">
+          <div class="dialog-header">
+            <span class="dialog-title">编辑产品 - DAKHXHM661</span>
+            <span class="dialog-close">×</span>
+          </div>
+          <div class="dialog-body">
+            <div class="excel-card">
+              <div class="excel-title" style="background:#fde2e2;color:#c45650;">基础信息</div>
+              <div class="excel-grid" style="grid-template-columns: 110px 1fr 110px 1fr 110px 1fr 110px 1fr;">
+                <div class="excel-cell excel-label">* 客户</div>
+                <div class="excel-cell excel-value merged"><input value="DAZA" /></div>
+                <div class="excel-cell excel-label">* 客户型号</div>
+                <div class="excel-cell excel-value merged"><input value="DAKHXHM661" /></div>
+                <div class="excel-cell excel-label">* 产品名称</div>
+                <div class="excel-cell excel-value merged"><input value="航空用便携式猫咪宠物笼" /></div>
+                <div class="excel-cell excel-label">产品要求</div>
+                <div class="excel-cell excel-value merged-7"><input value="Black, white lid..." /></div>
+                <div class="excel-cell excel-label">产品颜色</div>
+                <div class="excel-cell excel-value merged"><input value="Black+Gery; Black+Red;" /></div>
+                <div class="excel-cell excel-label">OE号（索引）</div>
+                <div class="excel-cell excel-value"><input value="661" /></div>
+                <div class="excel-cell excel-label">编号备注</div>
+                <div class="excel-cell excel-value"><input value="661" /></div>
+                <div class="excel-cell excel-label">我司产编号</div>
+                <div class="excel-cell excel-value"><input value="DAKHXHM666" /></div>
+              </div>
+            </div>
+
+            <div class="excel-card">
+              <div class="excel-title" style="background:#fef0f0;color:#b88230;">销售细节</div>
+              <div class="excel-grid" style="grid-template-columns: 110px repeat(7, 1fr);">
+                <div class="excel-cell excel-label">综合毛利额</div>
+                <div class="excel-cell excel-value"><input readonly value="" /></div>
+                <div class="excel-cell excel-label">预估毛利率</div>
+                <div class="excel-cell excel-value"><input readonly value="" /></div>
+                <div class="excel-cell excel-label">价格变动</div>
+                <div class="excel-cell excel-value merged-3"><input value="无" /></div>
+                <div class="excel-cell excel-label">* 采购数量</div>
+                <div class="excel-cell excel-value"><input value="100" /></div>
+                <div class="excel-cell excel-label">* 报价</div>
+                <div class="excel-cell excel-value"><input value="$3.74" /></div>
+                <div class="excel-cell excel-label">金额</div>
+                <div class="excel-cell excel-value"><input readonly value="$374.00" /></div>
+                <div class="excel-cell excel-label">客户需求</div>
+                <div class="excel-cell excel-value"><input value="Need cheaper" /></div>
+                <div class="excel-cell excel-label">答复</div>
+                <div class="excel-cell excel-value"><input value="ok" /></div>
+                <div class="excel-cell excel-label">确定信息</div>
+                <div class="excel-cell excel-value"><input value="$3.8-$3.53" /></div>
+                <div class="excel-cell excel-label">报价备注</div>
+                <div class="excel-cell excel-value"><input value="保持原包装" /></div>
+              </div>
+            </div>
+
+            <div class="excel-card">
+              <div class="excel-title" style="background:#e1f3d8;color:#5daf34;">采购信息</div>
+              <div class="excel-grid" style="grid-template-columns: 110px 1fr 110px 1fr 110px 1fr 110px 1fr;">
+                <div class="excel-cell excel-label">预估美金价</div>
+                <div class="excel-cell excel-value"><input value="$3.74" /></div>
+                <div class="excel-cell excel-label">* 人民币采购价</div>
+                <div class="excel-cell excel-value"><input value="18.3" /></div>
+                <div class="excel-cell excel-label">贴标费</div>
+                <div class="excel-cell excel-value"><input value="10" /></div>
+                <div class="excel-cell excel-label">运费</div>
+                <div class="excel-cell excel-value"><input value="30" /></div>
+                <div class="excel-cell excel-label">金额</div>
+                <div class="excel-cell excel-value merged"><input readonly value="¥1,870.00" /></div>
+                <div class="excel-cell excel-label">开票情况</div>
+                <div class="excel-cell excel-value merged"><input value="增票 / 加收了10%" /></div>
+                <div class="excel-cell excel-label">* 供应商</div>
+                <div class="excel-cell excel-value merged"><input value="广东彩拓科技" /></div>
+                <div class="excel-cell excel-label">供应商链接</div>
+                <div class="excel-cell excel-value merged-3"><input value="https://detail.1688.com/..." /></div>
+                <div class="excel-cell excel-label">产品特性/选项</div>
+                <div class="excel-cell excel-value merged-5"><input value="彩色不带电池款，中性包装，标签贴右下角" /></div>
+                <div class="excel-cell excel-label">采购方式</div>
+                <div class="excel-cell excel-value"><input value="1688/微信联系/线下合同" /></div>
+                <div class="excel-cell excel-label">付款方式</div>
+                <div class="excel-cell excel-value"><input value="1688线上支付、人民币" /></div>
+                <div class="excel-cell excel-label">付款1</div>
+                <div class="excel-cell excel-value"><input value="870" /></div>
+                <div class="excel-cell excel-label">付款2</div>
+                <div class="excel-cell excel-value"><input value="1000" /></div>
+                <div class="excel-cell excel-label">未付款金额</div>
+                <div class="excel-cell excel-value"><input readonly value="0" /></div>
+                <div class="excel-cell excel-label">开票工厂</div>
+                <div class="excel-cell excel-value merged"><input value="广东彩拓科技有限公司" /></div>
+                <div class="excel-cell excel-label">货源地</div>
+                <div class="excel-cell excel-value merged"><input value="霸州" /></div>
+              </div>
+            </div>
+          </div>
+          <div class="dialog-footer">
+            <button class="btn">取消</button>
+            <button class="btn btn-primary">保存</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 方案 C -->
+      <div class="side">
+        <div class="side-title">方案 C：混合布局（推荐）</div>
+        <div class="note">优点：保留 Excel 业务分区视觉，顶部关键字段突出；其余用规整 4 列，实现简单、响应式好。</div>
+        <div class="dialog-mock">
+          <div class="dialog-header">
+            <span class="dialog-title">编辑产品 - DAKHXHM661</span>
+            <span class="dialog-close">×</span>
+          </div>
+          <div class="dialog-body">
+            <div class="section">
+              <div class="section-title" style="background:#fde2e2;color:#c45650;">基础信息</div>
+              <div class="section-body">
+                <div class="form-grid">
+                  <div class="form-item wide"><label class="required">客户</label><input value="DAZA" /></div>
+                  <div class="form-item"><label class="required">客户型号</label><input value="DAKHXHM661" /></div>
+                  <div class="form-item all"><label class="required">产品名称</label><input value="航空用便携式猫咪宠物笼" /></div>
+                  <div class="form-item all"><label>产品要求 / 备注</label><textarea rows="2">Black, white lid, black bottom. One per box, with packaging bag and label.</textarea></div>
+                  <div class="form-item"><label>产品颜色</label><input value="Black+Gery; Black+Red;" /></div>
+                  <div class="form-item"><label>OE号（索引）</label><input value="661" /></div>
+                  <div class="form-item"><label>编号备注</label><input value="661" /></div>
+                  <div class="form-item"><label>我司产编号</label><input value="DAKHXHM666" /></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-title" style="background:#fef0f0;color:#b88230;">销售细节</div>
+              <div class="section-body">
+                <div class="form-grid">
+                  <div class="form-item"><label>综合毛利额</label><input readonly value="" /></div>
+                  <div class="form-item"><label>预估毛利率</label><input readonly value="" /></div>
+                  <div class="form-item"><label>价格变动</label><input value="无" /></div>
+                  <div class="form-item"><label></label></div>
+                  <div class="form-item"><label class="required">采购数量</label><input value="100" /></div>
+                  <div class="form-item"><label class="required">报价 (USD)</label><input value="3.74" /></div>
+                  <div class="form-item"><label>金额</label><input readonly value="374.00" /></div>
+                  <div class="form-item"><label>客户需求</label><input value="Need cheaper" /></div>
+                  <div class="form-item"><label>答复</label><input value="ok" /></div>
+                  <div class="form-item"><label>确定信息</label><input value="$3.8-$3.53" /></div>
+                  <div class="form-item"><label>报价备注</label><input value="保持原包装" /></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-title" style="background:#e1f3d8;color:#5daf34;">采购信息</div>
+              <div class="section-body">
+                <div class="form-grid">
+                  <div class="form-item"><label>预估美金价</label><input value="3.74" /></div>
+                  <div class="form-item"><label class="required">人民币采购价</label><input value="18.3" /></div>
+                  <div class="form-item"><label>贴标费</label><input value="10" /></div>
+                  <div class="form-item"><label>运费</label><input value="30" /></div>
+                  <div class="form-item"><label>金额</label><input readonly value="¥1,870.00" /></div>
+                  <div class="form-item"><label>开票情况</label><input value="增票 / 加收了10%" /></div>
+                  <div class="form-item"><label class="required">供应商</label><input value="广东彩拓科技" /></div>
+                  <div class="form-item wide"><label>供应商链接</label><input value="https://detail.1688.com/..." /></div>
+                  <div class="form-item all"><label>产品特性/选项/采购备注</label><textarea rows="2">彩色不带电池款，中性包装，标签贴右下角</textarea></div>
+                  <div class="form-item"><label>采购方式</label><input value="1688/微信联系/线下合同" /></div>
+                  <div class="form-item"><label>付款方式</label><input value="1688线上支付、人民币" /></div>
+                  <div class="form-item"><label>付款1</label><input value="870" /></div>
+                  <div class="form-item"><label>付款2</label><input value="1000" /></div>
+                  <div class="form-item"><label>未付款金额</label><input readonly value="0" /></div>
+                  <div class="form-item wide"><label>开票工厂（全称）</label><input value="广东彩拓科技有限公司" /></div>
+                  <div class="form-item"><label>货源地</label><input value="霸州" /></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="dialog-footer">
+            <button class="btn">取消</button>
+            <button class="btn btn-primary">保存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
