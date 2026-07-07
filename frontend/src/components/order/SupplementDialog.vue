@@ -355,11 +355,12 @@ async function submitSingle() {
     
     submitting.value = true
     try {
-      const res = await fetch(apiUrl(`/api/pi/${order.value.id}/supplement-items`), {
+      const res = await fetch(apiUrl(`/api/orders/${order.value.id}/supplement-items`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items: [{
+            product_code: singleForm.customer_code,
             customer_code: singleForm.customer_code,
             oe_number: singleForm.oe_number || undefined,
             detail_desc: singleForm.detail_desc || undefined,
@@ -416,7 +417,7 @@ async function submitExcel() {
       return
     }
     
-    const res = await fetch(apiUrl(`/api/pi/${order.value.id}/supplement-items`), {
+    const res = await fetch(apiUrl(`/api/orders/${order.value.id}/supplement-items`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items })

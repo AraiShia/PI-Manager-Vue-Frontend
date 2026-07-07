@@ -41,6 +41,9 @@ export interface OrderDetailItem {
   image_url_2: string | null
   customer_model: string | null
   product_feature: string | null
+  category_id?: string | null
+  category_name?: string | null
+  category_parent_name?: string | null
 
   // ========== B组：价格财务 (列10-21) ==========
   quantity: number
@@ -58,7 +61,7 @@ export interface OrderDetailItem {
 
   // ========== C组：供应商采购 (列22-27) ==========
   factory_name: string | null
-  shop_url: string | null
+  shop_url?: string | null
   delivery_date: string | null
   storage_status: string
   factory_deposit: number | null
@@ -67,22 +70,36 @@ export interface OrderDetailItem {
   // ========== D组：物流入库 (列28-30) ==========
   stock_in_action: string | null
   stock_in_quantity: number
-  packaging: string | null
+  packaging: string | null               // 包装方式：1件/箱 | 多件/箱 | 1件多箱
+  units_per_carton: number | null        // 每箱件数（多件/箱模式）
+  cartons_per_unit: number | null        // 每件箱数（1件多箱模式）
+  boxes_count: number | null             // 每件箱数别名（1件多箱模式）
 
   // ========== E组：产品细节 (列31-39) ==========
   purchase_option_name: string | null
   product_detail: string | null
   factory_code: string | null
   carton_size: string | null
-  pack_spec: string | null
+  pack_spec: string | null               // 打包规格（自动计算）
   carton_count: number | null
-  estimated_volume: number | null
+  estimated_volume: number | null        // 预估体积（自动计算）
   carton_gross_weight: number | null
   total_weight: number | null
 
   // ========== F组：其他属性 (列40-41) ==========
   brand: string | null
   invoice_status: string | null
+  invoice_type: string | null
+  invoice_rate: string | null
+
+  // ========== 采购 Dialog 扩展字段（运行时添加） ==========
+  labeling_fee?: number
+  tax_fee?: number
+  freight?: number
+  link?: string
+  supplier_id?: number
+  _total?: number
+  _urlOptions?: string[]  // 1688 历史链接下拉选项
 }
 
 export interface OrderListFilter {

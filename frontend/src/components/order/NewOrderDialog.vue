@@ -12,19 +12,88 @@
         <el-select
           v-model="form.customer_id"
           filterable
-          placeholder="请选择客户"
-          style="width: 100%"
+          remote
+          :remote-method="searchCustomers"
+          :loading="customerLoading"
+          placeholder="请输入客户名称/编号/区域搜索"
+          style="width: calc(100% - 110px)"
           @change="onCustomerChange"
         >
           <el-option
             v-for="c in customers"
             :key="c.id"
-            :label="`${c.customer_code || ''} - ${c.customer_name}`"
+            :label="c.customer_name"
             :value="c.id"
-          />
+          >
+            <div class="customer-option">
+              <span class="customer-name">{{ c.customer_name }}</span>
+              <span v-if="c.customer_code" class="customer-code">[{{ c.customer_code }}]</span>
+              <span v-if="c.country" class="customer-country">{{ c.country }}</span>
+            </div>
+          </el-option>
+          <template #empty>
+            <div class="customer-empty">
+              <div v-if="customerSearchQuery">未找到客户「{{ customerSearchQuery }}」</div>
+              <div v-else>暂无客户数据</div>
+              <el-button
+                v-if="customerSearchQuery"
+                type="primary"
+                size="small"
+                link
+                @click="openNewCustomerDialog"
+              >
+                + 新建客户
+              </el-button>
+            </div>
+          </template>
         </el-select>
+        <el-button
+          type="primary"
+          size="small"
+          link
+          @click="openNewCustomerDialog"
+        >
+          + 新建客户
+        </el-button>
       </el-form-item>
     </el-form>
+
+    <!-- 新建客户子对话框 -->
+    <el-dialog
+      v-model="newCustomerDialogVisible"
+      title="新建客户"
+      width="500px"
+      :close-on-click-modal="false"
+      append-to-body
+    >
+      <el-form ref="newCustomerFormRef" :model="newCustomer" :rules="newCustomerRules" label-width="100px">
+        <el-form-item label="客户编号">
+          <el-input v-model="newCustomer.customer_code" placeholder="可选，系统可自动生成" />
+        </el-form-item>
+        <el-form-item label="客户名称 *" prop="customer_name">
+          <el-input v-model="newCustomer.customer_name" placeholder="请输入客户名称" />
+        </el-form-item>
+        <el-form-item label="国家/区域">
+          <el-input v-model="newCustomer.country" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="联系人">
+          <el-input v-model="newCustomer.contact_person" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="电话">
+          <el-input v-model="newCustomer.phone" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="邮箱">
+          <el-input v-model="newCustomer.email" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="newCustomer.remark" type="textarea" :rows="2" placeholder="可选" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="newCustomerDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="creatingCustomer" @click="submitNewCustomer">确定新建</el-button>
+      </template>
+    </el-dialog>
 
     <el-tabs v-model="activeTab" class="new-order-tabs">
       <!-- Excel 导入（默认） -->
@@ -309,6 +378,8 @@ interface Customer {
   id: number
   customer_code?: string
   customer_name: string
+  country?: string
+  contact_person?: string
 }
 
 interface Product {
@@ -483,23 +554,135 @@ function formatProductDisplay(p: Product): string {
 }
 
 // ============== 客户相关 ==============
+const customerLoading = ref(false)
+const customerSearchQuery = ref('')
+const newCustomerDialogVisible = ref(false)
+const newCustomerFormRef = ref<FormInstance>()
+const creatingCustomer = ref(false)
+
+const newCustomer = reactive({
+  customer_code: '',
+  customer_name: '',
+  country: '',
+  contact_person: '',
+  phone: '',
+  email: '',
+  remark: '',
+})
+
+const newCustomerRules: FormRules = {
+  customer_name: [{ required: true, message: '请输入客户名称', trigger: 'blur' }],
+}
+
 async function loadCustomers() {
+  customerLoading.value = true
   try {
-    const res = await fetch(apiUrl('/api/customers/'))
+    const res = await fetch(apiUrl('/api/customers/search?keyword=&limit=200'))
     if (res.ok) {
       const data = await res.json()
-      if (Array.isArray(data)) {
-        customers.value = data.map((c: any) => ({
-          id: c.id,
-          customer_code: c.customer_code || '',
-          customer_name: c.customer_name || c.name || '',
-        }))
-      }
+      const list = Array.isArray(data) ? data : (data.list || data.data || [])
+      customers.value = list.map((c: any) => ({
+        id: c.id,
+        customer_code: c.customer_code || '',
+        customer_name: c.customer_name || c.name || '',
+        country: c.country || '',
+      }))
     }
   } catch (e) {
     console.error('Failed to load customers:', e)
     ElMessage.error('加载客户列表失败')
+  } finally {
+    customerLoading.value = false
   }
+}
+
+let customerSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+async function searchCustomers(query: string) {
+  customerSearchQuery.value = query || ''
+  if (customerSearchTimer) clearTimeout(customerSearchTimer)
+  customerSearchTimer = setTimeout(async () => {
+    customerLoading.value = true
+    try {
+      const url = apiUrl(`/api/customers/search?keyword=${encodeURIComponent(query || '')}&limit=200`)
+      const res = await fetch(url)
+      if (res.ok) {
+        const data = await res.json()
+        const list = Array.isArray(data) ? data : (data.list || data.data || [])
+        customers.value = list.map((c: any) => ({
+          id: c.id,
+          customer_code: c.customer_code || '',
+          customer_name: c.customer_name || c.name || '',
+          country: c.country || '',
+        }))
+      }
+    } catch (e) {
+      console.error('搜索客户失败:', e)
+    } finally {
+      customerLoading.value = false
+    }
+  }, 200)
+}
+
+function openNewCustomerDialog() {
+  // 预填名称（如果有搜索词）
+  if (customerSearchQuery.value && !newCustomer.customer_name) {
+    newCustomer.customer_name = customerSearchQuery.value
+  }
+  newCustomerDialogVisible.value = true
+}
+
+async function submitNewCustomer() {
+  if (!newCustomerFormRef.value) return
+  await newCustomerFormRef.value.validate(async (valid) => {
+    if (!valid) return
+    creatingCustomer.value = true
+    try {
+      const payload = {
+        dept_id: 'S',
+        customer_name: newCustomer.customer_name,
+        customer_code: newCustomer.customer_code || undefined,
+        country: newCustomer.country || undefined,
+        contact_person: newCustomer.contact_person || undefined,
+        phone: newCustomer.phone || undefined,
+        email: newCustomer.email || undefined,
+        remark: newCustomer.remark || undefined,
+      }
+      const res = await fetch(apiUrl('/api/customers/'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        ElMessage.success('客户创建成功')
+        // 添加到下拉列表并选中
+        const newCust: Customer = {
+          id: data.id,
+          customer_code: data.customer_code || newCustomer.customer_code || '',
+          customer_name: data.customer_name || newCustomer.customer_name,
+        }
+        customers.value.unshift(newCust)
+        form.customer_id = newCust.id
+        newCustomerDialogVisible.value = false
+        // 重置新建客户表单
+        newCustomer.customer_code = ''
+        newCustomer.customer_name = ''
+        newCustomer.country = ''
+        newCustomer.contact_person = ''
+        newCustomer.phone = ''
+        newCustomer.email = ''
+        newCustomer.remark = ''
+      } else {
+        const err = await res.json().catch(() => ({}))
+        ElMessage.error(err.detail || err.message || '创建客户失败')
+      }
+    } catch (e: any) {
+      ElMessage.error(e.message || '创建客户失败')
+    } finally {
+      creatingCustomer.value = false
+    }
+  })
 }
 
 function onCustomerChange() {
@@ -944,5 +1127,36 @@ defineExpose({ open })
 }
 .error-collapse {
   margin-top: 12px;
+}
+.customer-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.5;
+}
+.customer-option .customer-name {
+  font-weight: 500;
+  color: #1f2937;
+}
+.customer-option .customer-code {
+  color: #909399;
+  font-size: 12px;
+}
+.customer-option .customer-country {
+  margin-left: auto;
+  color: #67c23a;
+  font-size: 12px;
+  background: #f0f9eb;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.customer-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  color: #909399;
+  font-size: 12px;
 }
 </style>
