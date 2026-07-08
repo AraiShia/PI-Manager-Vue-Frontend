@@ -10,6 +10,7 @@
  *  - 部署/PyQt：设置 VITE_API_BASE_URL 指向真实后端
  */
 const RAW_BASE = (import.meta.env.VITE_API_BASE_URL || '').trim()
+const ASSET_BASE = (import.meta.env.VITE_ASSET_BASE_URL || RAW_BASE || '').trim()
 
 /**
  * 拼接一个完整的 API URL
@@ -33,8 +34,8 @@ export const API_BASE_URL = RAW_BASE
 export function assetUrl(path: string | null | undefined): string {
   if (!path) return ''
   if (/^https?:\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) return path
-  if (!RAW_BASE) return path
-  const left = RAW_BASE.replace(/\/+$/, '')
+  if (!ASSET_BASE) return path
+  const left = ASSET_BASE.replace(/\/+$/, '')
   const right = path.replace(/^\/+/, '')
   return `${left}/${right}`
 }

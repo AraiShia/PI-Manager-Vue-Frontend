@@ -46,6 +46,10 @@ def _to_float(val: Any) -> float:
         return 0.0
 
 
+# 后端静态资源实际可访问的域名（生产环境）
+_ASSET_BASE = "https://piapi.wakabashia.tj.cn"
+
+
 def _absolute_url(request: Request, path: str) -> str:
     """把后端静态相对路径 /images/xxx 升级成绝对 URL，
     避免部署到不同域名（前端 piapi/后端 pidatabase）时浏览器找不到资源。
@@ -56,9 +60,7 @@ def _absolute_url(request: Request, path: str) -> str:
         return path
     if not path.startswith("/"):
         return path
-    scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
-    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
-    return f"{scheme}://{host}{path}"
+    return f"{_ASSET_BASE}{path}"
 
 
 def _to_str(val: Any) -> str:
