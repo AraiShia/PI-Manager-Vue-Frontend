@@ -485,6 +485,8 @@ def _build_item_detail_v11(db: Session, item: PiProformaInvoiceItem, customer: C
         ),
         "customer_model": customer_model,
         "company_code": getattr(item, 'company_code', None) or '',
+        "profit_margin": getattr(item, 'profit_margin', None) or '',
+        "exchange_rate": getattr(item, 'exchange_rate', None) or '',
         "product_feature": getattr(item, 'product_feature', None),
 
         # === B组: 价格与财务 (列9-20) ===
@@ -1087,6 +1089,10 @@ def update_pi_item(db: Session, item_id: int, update_data: dict) -> PiProformaIn
         db_item.customer_model = update_data['customer_model']
     if 'company_code' in update_data:
         db_item.company_code = update_data['company_code']
+    if 'profit_margin' in update_data:
+        db_item.profit_margin = update_data['profit_margin']
+    if 'exchange_rate' in update_data:
+        db_item.exchange_rate = update_data['exchange_rate']
     if 'detail_desc' in update_data:
         db_item.detail_desc = update_data['detail_desc']
     if 'detail_desc_en' in update_data:

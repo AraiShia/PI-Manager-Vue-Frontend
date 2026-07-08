@@ -76,6 +76,8 @@ class PiProformaInvoiceItem(Base):
     remaining_payment = Column(DECIMAL(15, 4), nullable=True)        # 剩余应收款 = total - prepayment
     factory_deposit = Column(DECIMAL(15, 4), nullable=True)          # 工厂定金(P2优先级)
     factory_balance = Column(DECIMAL(15, 4), nullable=True)          # 工厂尾款(P2优先级)
+    profit_margin = Column(DECIMAL(10, 4), nullable=True)            # 毛利率（%），导入预设
+    exchange_rate = Column(DECIMAL(10, 4), nullable=True)            # 汇率，导入预设
 
     # 产品细节(P1 同步)
     brand = Column(String(100), nullable=True)                       # 品牌

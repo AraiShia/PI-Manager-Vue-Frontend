@@ -111,6 +111,8 @@ async def import_orders(
     file: UploadFile = File(...),
     auto_match: bool = Query(True, description="是否自动匹配产品"),
     customer_id: int = Query(None, description="客户ID"),
+    profit_margin: float = Query(None, description="预设毛利率（%）"),
+    exchange_rate: float = Query(None, description="预设汇率"),
     db: Session = Depends(get_db)
 ):
     """
@@ -744,6 +746,8 @@ def _create_pi_order(items: list, customer_id: int, db: Session):
             # === F组: 其他属性 (Col 39-40) ===
             brand=item_data.get('brand'),                              # Col 39
             invoice_status=item_data.get('invoice_status'),            # Col 40
+            profit_margin=profit_margin,                              # 导入预设毛利率
+            exchange_rate=exchange_rate,                              # 导入预设汇率
         )
         db.add(item)
         items_created += 1
@@ -1126,7 +1130,9 @@ async def create_single_order(
             quantity=order_data.quantity,
             unit_price=order_data.unit_price,
             total_price=total_amount,
-            remark=order_data.remark
+            remark=order_data.remark,
+            profit_margin=profit_margin,
+            exchange_rate=exchange_rate,
         )
         db.add(item)
         db.commit()
@@ -1265,7 +1271,9 @@ async def supplement_order_items(
                     product_id=existing_product.id,
                     quantity=item_data.get('qty', 1),
                     unit_price=item_data.get('unit_price') or 0,
-                    amount=item_data.get('amount', 0)
+                    amount=item_data.get('amount', 0),
+                    profit_margin=profit_margin,
+                    exchange_rate=exchange_rate,
                 )
                 db.add(order_item)
                 created_count += 1
@@ -1315,7 +1323,9 @@ async def supplement_order_items(
                     product_id=new_product.id,
                     quantity=item_data.get('qty', 1),
                     unit_price=item_data.get('unit_price') or 0,
-                    amount=item_data.get('amount', 0)
+                    amount=item_data.get('amount', 0),
+                    profit_margin=profit_margin,
+                    exchange_rate=exchange_rate,
                 )
                 db.add(order_item)
                 created_count += 1

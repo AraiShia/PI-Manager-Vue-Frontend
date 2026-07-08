@@ -69,6 +69,8 @@ class OrderDetailItemSchema(BaseModel):
     tax_fee: float = 0
     freight: float = 0
     total_cost: float = 0
+    profit_margin: float = 0  # 毛利率（%），导入预设
+    exchange_rate: float = 0  # 汇率，导入预设
 
     # ========== C组：供应商采购 (列22-27) ==========
     factory_name: str = ""

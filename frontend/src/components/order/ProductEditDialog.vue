@@ -165,18 +165,17 @@
 
             <!-- 第3行：字段值 -->
             <div class="sales-detail-cell">
-              <el-input-number
+              <el-input
                 v-model="form.quantity"
-                :min="0"
+                type="number"
                 style="width: 100%"
                 @blur="saveField('quantity', form.quantity)"
               />
             </div>
             <div class="sales-detail-cell">
-              <el-input-number
+              <el-input
                 v-model="form.unit_price"
-                :min="0"
-                :precision="2"
+                type="number"
                 style="width: 100%"
                 @blur="saveField('unit_price', form.unit_price)"
               />
@@ -220,45 +219,36 @@
         <div class="section-body">
           <div class="purchase-cost-table">
               <!-- 第1行：价格 + 开票情况（沿用原表头） -->
-              <div class="purchase-cost-head">预估美金价</div>
-              <div class="purchase-cost-head required">人民币采购价</div>
+              
+              <div class="purchase-cost-head">预估美金价<br /><span style="font-size:10px;color:#909399">={{ form.purchase_price }}×{{ (1 + form.profit_margin/100).toFixed(2) }}/{{ form.exchange_rate }}</span></div>              <div class="purchase-cost-head required">人民币采购价</div>
               <div class="purchase-cost-head">贴标费</div>
               <div class="purchase-cost-head">运费</div>
               <div class="purchase-cost-head">金额</div>
               <div class="purchase-cost-head invoice-group-head">开票情况</div>
 
-              <div class="purchase-cost-cell">
-                <el-input-number
-                  v-model="form.estimated_usd_price"
-                  :min="0"
-                  :precision="2"
-                  style="width: 100%"
-                  @blur="saveField('estimated_usd_price', form.estimated_usd_price)"
-                />
+              <div class="purchase-cost-cell" style="color:#303133;font-weight:600;line-height:32px;">
+                {{ form.estimated_usd_price != null ? '$' + form.estimated_usd_price.toFixed(2) : '-' }}
               </div>
               <div class="purchase-cost-cell">
-                <el-input-number
+                <el-input
                   v-model="form.purchase_price"
-                  :min="0"
-                  :precision="2"
+                  type="number"
                   style="width: 100%"
                   @blur="saveField('purchase_price', form.purchase_price)"
                 />
               </div>
               <div class="purchase-cost-cell">
-                <el-input-number
+                <el-input
                   v-model="form.misc_fee"
-                  :min="0"
-                  :precision="2"
+                  type="number"
                   style="width: 100%"
                   @blur="saveField('misc_fee', form.misc_fee)"
                 />
               </div>
               <div class="purchase-cost-cell">
-                <el-input-number
+                <el-input
                   v-model="form.shipping_fee"
-                  :min="0"
-                  :precision="2"
+                  type="number"
                   style="width: 100%"
                   @blur="saveField('shipping_fee', form.shipping_fee)"
                 />
@@ -342,19 +332,17 @@
                 />
               </div>
               <div class="purchase-cost-cell payment-cell">
-                <el-input-number
+                <el-input
                   v-model="form.factory_deposit"
-                  :min="0"
-                  :precision="2"
+                  type="number"
                   style="width: 100%"
                   @blur="saveField('factory_deposit', form.factory_deposit)"
                 />
               </div>
               <div class="purchase-cost-cell payment-cell">
-                <el-input-number
+                <el-input
                   v-model="form.factory_balance"
-                  :min="0"
-                  :precision="2"
+                  type="number"
                   style="width: 100%"
                   @blur="saveField('factory_balance', form.factory_balance)"
                 />
@@ -409,29 +397,27 @@
                   </el-select>
                 </td>
                 <td>
-                  <el-input-number v-model="form.carton_length" :min="0" :precision="1" controls-position="right" style="width: 100%" @change="onCartonSizeChange" />
+                  <el-input v-model="form.carton_length" type="number" style="width: 100%" @change="onCartonSizeChange" />
                 </td>
                 <td>
-                  <el-input-number v-model="form.carton_width" :min="0" :precision="1" controls-position="right" style="width: 100%" @change="onCartonSizeChange" />
+                  <el-input v-model="form.carton_width" type="number" style="width: 100%" @change="onCartonSizeChange" />
                 </td>
                 <td>
-                  <el-input-number v-model="form.carton_height" :min="0" :precision="1" controls-position="right" style="width: 100%" @change="onCartonSizeChange" />
+                  <el-input v-model="form.carton_height" type="number" style="width: 100%" @change="onCartonSizeChange" />
                 </td>
                 <td>
                   <div class="pack-spec-cell">
-                    <el-input-number
+                    <el-input
                       v-if="form.packaging === '多件/箱'"
                       v-model="form.units_per_carton"
-                      :min="1"
-                      controls-position="right"
+                      type="number"
                       style="width: 100%"
                       @change="onUnitsPerCartonChange"
                     />
-                    <el-input-number
+                    <el-input
                       v-else-if="form.packaging === '1件多箱'"
                       v-model="form.cartons_per_unit"
-                      :min="1"
-                      controls-position="right"
+                      type="number"
                       style="width: 100%"
                       @change="onCartonsPerUnitChange"
                     />
@@ -439,7 +425,7 @@
                   </div>
                 </td>
                 <td>
-                  <el-input-number v-model="form.carton_gross_weight" :min="0" :precision="2" controls-position="right" style="width: 100%" @change="saveField('carton_gross_weight', form.carton_gross_weight)" />
+                  <el-input v-model="form.carton_gross_weight" type="number" style="width: 100%" @change="saveField('carton_gross_weight', form.carton_gross_weight)" />
                 </td>
                 <td>
                   <el-input :model-value="form.estimated_volume != null ? form.estimated_volume.toFixed(6) : ''" readonly />
@@ -454,18 +440,16 @@
                 </td>
                 <td colspan="4" class="row-secondary-text">
                   数量:
-                  <el-input-number
+                  <el-input
                     v-model="form.quantity"
-                    :min="0"
-                    controls-position="right"
+                    type="number"
                     style="width: 110px; margin: 0 6px;"
                     @blur="saveField('quantity', form.quantity)"
                   />
                   箱数:
-                  <el-input-number
+                  <el-input
                     v-model="form.carton_count"
-                    :min="0"
-                    controls-position="right"
+                    type="number"
                     style="width: 110px; margin: 0 6px;"
                     @blur="saveField('carton_count', form.carton_count)"
                   />
@@ -495,28 +479,27 @@
           <div class="form-grid">
             <div class="form-item">
               <label>入库数量</label>
-              <el-input-number
+              <el-input
                 v-model="form.stock_in_quantity"
-                :min="0"
+                type="number"
                 style="width: 100%"
                 @blur="saveField('stocked_qty', form.stock_in_quantity)"
               />
             </div>
             <div class="form-item">
               <label>箱数</label>
-              <el-input-number
+              <el-input
                 v-model="form.carton_count"
-                :min="0"
+                type="number"
                 style="width: 100%"
                 @blur="saveField('carton_count', form.carton_count)"
               />
             </div>
             <div class="form-item">
               <label>总重量</label>
-              <el-input-number
+              <el-input
                 v-model="form.total_weight"
-                :min="0"
-                :precision="2"
+                type="number"
                 style="width: 100%"
                 @blur="saveField('total_weight', form.total_weight)"
               />
@@ -953,7 +936,6 @@ watch(
       usdPrice = (price * factor) / rate
     }
     form.estimated_usd_price = Math.round(usdPrice * 100) / 100
-    saveField('estimated_usd_price', form.estimated_usd_price)
 
     // 预估毛利率 = (客户美金收入 - 采购总成本USD) / 客户美金收入 * 100
     const unitPrice = Number(form.unit_price) || 0
@@ -963,7 +945,6 @@ watch(
     if (revenue > 0) {
       const marginRate = ((revenue - cost) / revenue) * 100
       form.estimated_margin = Math.round(marginRate * 100) / 100
-      saveField('estimated_margin', form.estimated_margin)
     }
   },
   { immediate: true }
@@ -1075,6 +1056,7 @@ function initFromItem(source: ProductEditItem) {
   form.units_per_carton = (source as any).units_per_carton ?? undefined
   form.cartons_per_unit = (source as any).cartons_per_unit ?? (source as any).boxes_count ?? undefined
   form.pack_spec = (source as any).pack_spec || ''
+  form.factory_code = (source as any).company_code || ''
   form.estimated_volume = (source as any).estimated_volume ?? undefined
   form.carton_gross_weight = (source as any).carton_gross_weight ?? undefined
   // 解析纸箱尺寸字符串回填到长宽高
@@ -1554,6 +1536,16 @@ defineExpose({ open, close })
 .basic-info-table :deep(.el-input-number),
 .basic-info-table :deep(.field-input-wrapper) {
   width: 100%;
+}
+
+/* 隐藏原生 number 输入框的上下箭头 */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
 }
 
 .basic-info-table :deep(.el-input__wrapper) {

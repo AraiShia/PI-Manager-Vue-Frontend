@@ -456,6 +456,8 @@ def _build_order_detail_item(
         purchase_option_name=_to_str(item.purchase_option_name),
         product_detail=_to_str(item.product_detail),
         company_code=_to_str(item.company_code),
+        profit_margin=_to_float(item.profit_margin),
+        exchange_rate=_to_float(item.exchange_rate),
         factory_code=_to_str(item.factory_code),
         carton_size=carton_size,
         pack_spec=_to_str(item.pack_spec),

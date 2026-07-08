@@ -133,7 +133,7 @@
           <el-divider content-position="left">字段匹配</el-divider>
           <div class="mapping-tip">
             <el-icon><info-filled /></el-icon>
-            <span>请确认 Excel 列与系统字段的对应关系。最小必填：<b style="color:#f56c6c">客户产品编号</b> + <b style="color:#f56c6c">数量</b>（OE号、单价等可选，缺失可勾选"保留不完整行"）</span>
+            <span>请确认 Excel 列与系统字段的对应关系。最小必填：<b style="color:#f56c6c">客户型号</b> + <b style="color:#f56c6c">数量</b>（OE号、单价等可选，缺失可勾选"保留不完整行"）</span>
           </div>
 
           <el-form :model="columnMapping" label-width="120px" class="mapping-form">
@@ -161,37 +161,12 @@
             </el-row>
           </el-form>
 
-          <!-- 映射摘要 -->
-          <div class="mapping-summary">
-            <el-descriptions :column="3" border size="small">
-              <el-descriptions-item
-                v-for="field in mappingFields"
-                :key="field.key"
-                :label="field.label"
-              >
-                <el-tag v-if="columnMapping[field.key]" type="success" size="small">
-                  {{ columnMapping[field.key] }}
-                </el-tag>
-                <el-tag v-else-if="field.required" type="danger" size="small">未映射</el-tag>
-                <el-tag v-else type="info" size="small">未映射（可选）</el-tag>
-              </el-descriptions-item>
-            </el-descriptions>
-            <el-alert
-              v-if="!columnMapping.unit_price"
-              title='未映射"单价"列：导入后单价和合计金额将为 0，后续可在订单详情中补充'
-              type="warning"
-              :closable="false"
-              show-icon
-              style="margin-top: 8px;"
-            />
-            <el-alert
-              v-if="!columnMapping.detail_desc && !columnMapping.product_desc"
-              title='未映射"产品名称/描述"列：导入后产品名称将为空'
-              type="warning"
-              :closable="false"
-              show-icon
-              style="margin-top: 8px;"
-            />
+          <!--预设内容 -->
+          <div class="preset-content">
+            <span>毛利率：</span>
+            <el-input-number v-model="presetProfitMargin" :min="0" :max="100" controls-position="right" style="width: 80px;" />
+            <span style="margin-left: 16px;">汇率：</span>
+            <el-input-number v-model="presetExchangeRate" :min="0" :precision="2" controls-position="right" style="width: 80px;" />
           </div>
 
           <el-divider content-position="left">
@@ -420,7 +395,6 @@ const mappingFields: Array<{ key: string; label: string; required: boolean }> = 
   { key: 'unit_price',      label: '单价',         required: false },
   { key: 'detail_desc',     label: '产品名称',     required: false },
   { key: 'product_desc',    label: '产品描述',     required: false },
-  { key: 'product_feature', label: '产品特性',     required: false },
 ]
 
 const visible = ref(false)
@@ -465,6 +439,8 @@ const columnMapping = reactive<Record<string, string>>(
 )
 
 const keepIncomplete = ref(false) // 是否保留不完整行（缺客户产品编号/数量）
+const presetProfitMargin = ref(25)
+const presetExchangeRate = ref(6.8)
 
 const previewData = computed(() => excelData.value)
 
@@ -1005,10 +981,12 @@ async function onSubmitExcel() {
     const file = new File([blob], 'order_import.xlsx', { type: blob.type })
     const fd = new FormData()
     fd.append('file', file)
-    fd.append('auto_match', 'true')
-    if (form.customer_id) fd.append('customer_id', String(form.customer_id))
 
-    const res = await fetch(apiUrl('/api/orders/import?auto_match=true&customer_id=' + form.customer_id), {
+    let query = `auto_match=true`
+    if (form.customer_id) query += `&customer_id=${form.customer_id}`
+    query += `&profit_margin=${presetProfitMargin.value}&exchange_rate=${presetExchangeRate.value}`
+
+    const res = await fetch(apiUrl('/api/orders/import?' + query), {
       method: 'POST',
       body: fd,
     })
