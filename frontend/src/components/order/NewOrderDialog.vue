@@ -195,7 +195,7 @@
           </div>
 
           <el-divider content-position="left">
-            数据预览（前 10 行 / 共 {{ excelData.length }} 行）
+            数据预览（共 {{ excelData.length }} 行）
           </el-divider>
 
           <el-table :data="previewData" stripe size="small" max-height="320" border>
@@ -305,8 +305,8 @@
 
           <el-row :gutter="16">
             <el-col :span="12">
-              <el-form-item label="客户产品编号" prop="customer_code">
-                <el-input v-model="form.customer_code" placeholder="客户产品编号" />
+              <el-form-item label="客户型号" prop="customer_code">
+                <el-input v-model="form.customer_code" placeholder="客户型号" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
@@ -414,7 +414,7 @@ const FIELD_KEYS = [
 ] as const
 
 const mappingFields: Array<{ key: string; label: string; required: boolean }> = [
-  { key: 'customer_code',   label: '客户产品编号', required: true },
+  { key: 'customer_code',   label: '客户型号', required: true },
   { key: 'oe_number',       label: 'OE号',         required: false },
   { key: 'quantity',        label: '数量',         required: true },
   { key: 'unit_price',      label: '单价',         required: false },
@@ -466,7 +466,7 @@ const columnMapping = reactive<Record<string, string>>(
 
 const keepIncomplete = ref(false) // 是否保留不完整行（缺客户产品编号/数量）
 
-const previewData = computed(() => excelData.value.slice(0, 10))
+const previewData = computed(() => excelData.value)
 
 const getVal = (row: any, key: string): any => {
   const col = columnMapping[key]
