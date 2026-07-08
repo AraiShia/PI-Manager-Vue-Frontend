@@ -137,6 +137,7 @@
               v-if="row.image_url"
               :src="row.image_url"
               :preview-src-list="[row.image_url]"
+              :preview-teleported="true"
               fit="cover"
               style="width: 60px; height: 40px; border-radius: 2px; cursor: pointer"
             />

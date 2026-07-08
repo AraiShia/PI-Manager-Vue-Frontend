@@ -1090,6 +1090,10 @@ function open(source: OrderDetailItem, customerName?: string, customerCountry?: 
   editItem.customer_country = customerCountry || ''
   item.value = editItem
   initFromItem(editItem)
+  // 新增产品时，我司产编号默认等于客户型号
+  if (!editItem.id) {
+    form.factory_code = form.customer_model
+  }
   visible.value = true
 }
 
