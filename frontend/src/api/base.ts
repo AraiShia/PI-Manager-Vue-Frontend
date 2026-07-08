@@ -29,3 +29,12 @@ export function apiUrl(path: string): string {
  * 原始 base 地址（不拼接）
  */
 export const API_BASE_URL = RAW_BASE
+
+export function assetUrl(path: string | null | undefined): string {
+  if (!path) return ''
+  if (/^https?:\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) return path
+  if (!RAW_BASE) return path
+  const left = RAW_BASE.replace(/\/+$/, '')
+  const right = path.replace(/^\/+/, '')
+  return `${left}/${right}`
+}

@@ -593,6 +593,7 @@ import { ElMessage } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
 import { orderSummaryApi } from '@/api/orderSummary'
+import { assetUrl } from '@/api/base'
 import type { OrderDetailItem } from '@/types/orderSummary'
 import FieldInput from './FieldInput.vue'
 import ImagePreviewDialog from './ImagePreviewDialog.vue'
@@ -992,10 +993,11 @@ function initFromItem(source: ProductEditItem) {
   form.customer_country = source.customer_country || ''
   form.customer_model = source.customer_model || ''
   form.product_code = source.product_code || ''
-  form.image_url = source.image_url || ''
-  form.image_url_2 = source.image_url_2 || ''
+  form.image_url = assetUrl(source.image_url)
+  form.image_url_2 = assetUrl(source.image_url_2)
   // 加载附图列表（从 localStorage 或 source）
-  form.extra_images = loadExtraImages(source.id) || (source.image_url_2 ? [source.image_url_2] : [])
+  const savedExtraImages = loadExtraImages(source.id)
+  form.extra_images = (savedExtraImages || (source.image_url_2 ? [source.image_url_2] : [])).map(assetUrl)
   form.product_name = source.product_name || (source as any).detail_desc || ''
   form.product_name_en = source.product_name_en || (source as any).detail_desc_en || ''
   form.product_feature = source.product_feature || ''

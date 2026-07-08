@@ -1,4 +1,5 @@
 import client from './client'
+import { assetUrl } from './base'
 import type { AxiosResponse } from 'axios'
 import type { ApiResponse } from '@/types/api'
 import type { 
@@ -62,7 +63,7 @@ export const orderSummaryApi = {
         ...res,
         data: {
           code: 200,
-          data: { url: res.data.url },
+          data: { url: assetUrl(res.data.url) },
           message: res.data.message || '图片上传成功'
         }
       } as AxiosResponse<ApiResponse<{ url: string }>>
