@@ -13,7 +13,7 @@ IMAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
 os.makedirs(IMAGE_DIR, exist_ok=True)
 
 # 默认图片路径
-DEFAULT_IMAGE_URL = "http://localhost:8000/images/default_product.png"
+DEFAULT_IMAGE_URL = "/images/default_product.png"
 
 
 @router.post("/upload")
@@ -37,9 +37,9 @@ async def upload_image(file: UploadFile = File(...), db: Session = Depends(get_d
         content = await file.read()
         buffer.write(content)
     
-    # 构建URL
-    file_url = f"http://localhost:8000/images/{filename}"
-    
+    # 构建URL：使用相对路径，避免部署后指向错误的 host
+    file_url = f"/images/{filename}"
+
     return {
         "url": file_url,
         "filename": filename,
@@ -53,26 +53,26 @@ async def upload_multiple_images(files: list[UploadFile] = File(...), db: Sessio
     上传图片，多个文件
     """
     uploaded_files = []
-    
+
     print(f"DEBUG - 接收到多图片上传请求，数量: {len(files)}")
-    
+
     for file in files:
         # 验证文件类型
         if not file.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
             continue
-        
+
         # 生成唯一文件名
         ext = os.path.splitext(file.filename)[1]
         filename = f"{uuid.uuid4()}{ext}"
         filepath = os.path.join(IMAGE_DIR, filename)
-        
+
         # 保存文件
         with open(filepath, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
-        
-        # 构建URL
-        file_url = f"http://localhost:8000/images/{filename}"
+
+        # 构建URL：使用相对路径
+        file_url = f"/images/{filename}"
         uploaded_files.append(file_url)
     
     return {
