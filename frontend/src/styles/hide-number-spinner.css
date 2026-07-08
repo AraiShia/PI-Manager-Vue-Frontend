@@ -1,0 +1,33 @@
+/* ============================================================
+   全局隐藏所有 number / el-input-number 的原生上下箭头
+   文件：styles/hide-number-spinner.css
+   说明：scoped CSS 无法穿透到第三方组件内部 input,
+        故在此提供全局兜底,确保所有页面都不显示箭头
+   ============================================================ */
+
+/* 原生 input[type=number] */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+}
+input[type="number"] {
+  -moz-appearance: textfield !important;
+  -webkit-appearance: none !important;
+}
+
+/* Element Plus el-input-number 内部 input */
+.el-input-number .el-input__inner::-webkit-outer-spin-button,
+.el-input-number .el-input__inner::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+}
+.el-input-number .el-input__inner {
+  -moz-appearance: textfield !important;
+  -webkit-appearance: none !important;
+}
+
+/* 兼容 Firefox */
+.el-input-number .el-input__inner {
+  -moz-appearance: textfield !important;
+}

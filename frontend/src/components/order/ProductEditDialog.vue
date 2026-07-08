@@ -220,7 +220,8 @@
           <div class="purchase-cost-table">
               <!-- 第1行：价格 + 开票情况（沿用原表头） -->
               
-              <div class="purchase-cost-head">预估美金价<br /><span style="font-size:10px;color:#909399">={{ form.purchase_price }}×{{ (1 + form.profit_margin/100).toFixed(2) }}/{{ form.exchange_rate }}</span></div>              <div class="purchase-cost-head required">人民币采购价</div>
+              <div class="purchase-cost-head">预估美金价<br /><span style="font-size:10px;color:#909399">={{ form.purchase_price }}×{{ (1 + form.profit_margin/100).toFixed(2) }}/{{ form.exchange_rate }}</span></div>              
+              <div class="purchase-cost-head required">人民币采购价</div>
               <div class="purchase-cost-head">贴标费</div>
               <div class="purchase-cost-head">运费</div>
               <div class="purchase-cost-head">金额</div>
@@ -1031,7 +1032,7 @@ function initFromItem(source: ProductEditItem) {
   form.purchase_price = source.purchase_price || 0
   // 采购币种/汇率/毛利率优先从源数据读取，否则使用默认值
   form.purchase_currency = (source as any).purchase_currency === 'USD' ? 'USD' : 'RMB'
-  form.exchange_rate = (source as any).exchange_rate || 6.8
+  form.exchange_rate = (source as any).exchange_rate ?? 6.8
   form.profit_margin = (source as any).profit_margin ?? 25
   form.misc_fee = source.misc_fee || 0
   form.shipping_fee = source.shipping_fee || 0
@@ -1538,14 +1539,22 @@ defineExpose({ open, close })
   width: 100%;
 }
 
-/* 隐藏原生 number 输入框的上下箭头 */
-input[type="number"]::-webkit-outer-spin-button,
-input[type="number"]::-webkit-inner-spin-button {
+/* 隐藏原生 number 输入框的上下箭头（需 :deep 穿透到 el-input 内部 input） */
+:deep(input[type="number"]::-webkit-outer-spin-button),
+:deep(input[type="number"]::-webkit-inner-spin-button) {
   -webkit-appearance: none;
   margin: 0;
 }
-input[type="number"] {
+:deep(input[type="number"]) {
   -moz-appearance: textfield;
+}
+:deep(.el-input-number .el-input__inner::-webkit-outer-spin-button),
+:deep(.el-input-number .el-input__inner::-webkit-inner-spin-button) {
+  -webkit-appearance: none !important;
+  margin: 0;
+}
+:deep(.el-input-number .el-input__inner) {
+  -moz-appearance: textfield !important;
 }
 
 .basic-info-table :deep(.el-input__wrapper) {

@@ -400,8 +400,11 @@ def _build_order_detail_item(
     unit_price = _to_float(item.unit_price)
     shipping_fee = _to_float(item.shipping_fee)
     misc_fee = _to_float(item.misc_fee)
-    exchange_rate = _to_float(getattr(item, "exchange_rate", None)) or 6.8
-    profit_margin = _to_float(getattr(item, "profit_margin", None)) or 25.0
+    # 直接取原值，仅在 None 时使用默认值（不做假值判断，避免 0 被误判）
+    _raw_exchange = getattr(item, "exchange_rate", None)
+    _raw_profit = getattr(item, "profit_margin", None)
+    exchange_rate = _to_float(_raw_exchange) if _raw_exchange is not None else 6.8
+    profit_margin = _to_float(_raw_profit) if _raw_profit is not None else 25.0
     purchase_currency = _to_str(getattr(item, "purchase_currency", "RMB")).upper() or "RMB"
     factor = 1 + profit_margin / 100.0
     if purchase_currency == "USD":
@@ -456,8 +459,8 @@ def _build_order_detail_item(
         purchase_option_name=_to_str(item.purchase_option_name),
         product_detail=_to_str(item.product_detail),
         company_code=_to_str(item.company_code),
-        profit_margin=_to_float(item.profit_margin),
-        exchange_rate=_to_float(item.exchange_rate),
+        profit_margin=profit_margin if profit_margin is not None else None,
+        exchange_rate=exchange_rate if exchange_rate is not None else None,
         factory_code=_to_str(item.factory_code),
         carton_size=carton_size,
         pack_spec=_to_str(item.pack_spec),

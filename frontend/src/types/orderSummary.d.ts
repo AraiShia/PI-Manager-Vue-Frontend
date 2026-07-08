@@ -100,6 +100,10 @@ export interface OrderDetailItem {
   invoice_type: string | null
   invoice_rate: string | null
 
+  // ========== 导入预设字段 ==========
+  profit_margin: number | null   // 毛利率（%），导入时预设
+  exchange_rate: number | null    // 汇率，导入时预设
+
   // ========== 采购 Dialog 扩展字段（运行时添加） ==========
   labeling_fee?: number
   tax_fee?: number
