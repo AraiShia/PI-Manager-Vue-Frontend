@@ -1258,11 +1258,11 @@ def update_pi_item(db: Session, item_id: int, update_data: dict) -> PiProformaIn
         db_item.product_name = update_data['product_name']
         print(f"[DEBUG] update_pi_item: 更新 product_name={update_data['product_name']}")
     if 'image_url' in update_data:
-        db_item.image_url = update_data['image_url']
-        print(f"[DEBUG] update_pi_item: 更新 image_url={update_data['image_url']}")
+        db_item.temp_image = update_data['image_url']
+        print(f"[DEBUG] update_pi_item: 更新 temp_image={update_data['image_url']}")
     if 'default_image_url' in update_data:
-        db_item.image_url = update_data['default_image_url']
-        print(f"[DEBUG] update_pi_item: 更新 image_url from default_image_url={update_data['default_image_url']}")
+        db_item.temp_image = update_data['default_image_url']
+        print(f"[DEBUG] update_pi_item: 更新 temp_image from default_image_url={update_data['default_image_url']}")
     if 'brand' in update_data:
         db_item.brand = update_data['brand']
         print(f"[DEBUG] update_pi_item: 更新 brand={update_data['brand']}")
