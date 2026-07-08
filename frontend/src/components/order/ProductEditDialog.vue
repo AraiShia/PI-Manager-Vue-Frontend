@@ -127,8 +127,8 @@
             <div class="basic-info-cell own-code-cell">
               <FieldInput
                 v-model="form.factory_code"
-                :status="getFieldStatus('factory_code')"
-                @blur="saveField('factory_code', form.factory_code)"
+                :status="getFieldStatus('company_code')"
+                @blur="saveField('company_code', form.factory_code)"
               />
             </div>
           </div>
