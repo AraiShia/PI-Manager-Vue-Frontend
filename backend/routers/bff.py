@@ -2,7 +2,7 @@
 为 Vue 前端提供订单管理模块的聚合数据接口，
 减少前端多接口调用，提升页面加载速度。
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional, Dict, Any, List
@@ -44,6 +44,21 @@ def _to_float(val: Any) -> float:
         return float(val)
     except (ValueError, TypeError):
         return 0.0
+
+
+def _absolute_url(request: Request, path: str) -> str:
+    """把后端静态相对路径 /images/xxx 升级成绝对 URL，
+    避免部署到不同域名（前端 piapi/后端 pidatabase）时浏览器找不到资源。
+    """
+    if not path:
+        return ""
+    if path.startswith("http://") or path.startswith("https://") or path.startswith("data:"):
+        return path
+    if not path.startswith("/"):
+        return path
+    scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{scheme}://{host}{path}"
 
 
 def _to_str(val: Any) -> str:
@@ -344,6 +359,7 @@ def _build_order_detail_item(
     pi_no: str,
     order_date: Optional[str],
     latest_1688: Any = None,
+    request: Optional[Request] = None,
 ) -> OrderDetailItemSchema:
     carton_size = ""
     if item.carton_length_cm or item.carton_width_cm or item.carton_height_cm:
@@ -406,7 +422,7 @@ def _build_order_detail_item(
         remark=_to_str(item.remark),
         product_name=_to_str(item.detail_desc),
         product_name_en=_to_str(item.detail_desc_en),
-        image_url=_to_str(item.temp_image),
+        image_url=_absolute_url(request, _to_str(item.temp_image)) if request else _to_str(item.temp_image),
         customer_model=_to_str(item.customer_model),
         product_feature=_to_str(item.product_feature),
         product_acquires=_to_str(item.product_acquires),
@@ -452,6 +468,7 @@ def _build_order_detail_item(
 @router.get("/orders/{order_id}/full-detail")
 def get_order_full_detail(
     order_id: int,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """订单详情 BFF 接口（41列产品明细）"""
@@ -534,6 +551,7 @@ def get_order_full_detail(
         _build_order_detail_item(
             item, pi_no, order_date,
             latest_1688=latest_1688_map.get(item.product_id),
+            request=request,
         )
         for item in items
     ]

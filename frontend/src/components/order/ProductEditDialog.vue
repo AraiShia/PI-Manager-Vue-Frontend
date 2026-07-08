@@ -125,7 +125,11 @@
             </div>
             <div class="basic-info-label">我司产编号<br /><span>S.NO.</span></div>
             <div class="basic-info-cell own-code-cell">
-              <span>-</span>
+              <FieldInput
+                v-model="form.factory_code"
+                :status="getFieldStatus('factory_code')"
+                @blur="saveField('factory_code', form.factory_code)"
+              />
             </div>
           </div>
         </div>
@@ -656,6 +660,7 @@ interface ProductEditForm {
   units_per_carton: number | undefined
   cartons_per_unit: number | undefined
   pack_spec: string
+  factory_code: string
   estimated_volume: number | undefined
   carton_length: number | undefined
   carton_width: number | undefined
@@ -719,6 +724,7 @@ const form = reactive<ProductEditForm>({
   units_per_carton: undefined,
   cartons_per_unit: undefined,
   pack_spec: '',
+  factory_code: '',
   estimated_volume: undefined,
   carton_length: undefined,
   carton_width: undefined,
@@ -1055,6 +1061,7 @@ function initFromItem(source: ProductEditItem) {
   form.shop_url = (source as any).shop_url ?? ''
   form.product_detail = source.product_detail || ''
   form.purchase_option_name = source.purchase_option_name || ''
+  form.factory_code = (source as any).factory_code || ''
   form.payment_method = (source as any).payment_method || ''
   form.factory_deposit = source.factory_deposit ?? undefined
   form.factory_balance = source.factory_balance ?? undefined
