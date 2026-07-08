@@ -215,7 +215,7 @@
 
       <!-- 采购信息 -->
       <div class="edit-section">
-        <div class="section-title" style="background-color: #e1f3d8; color: #5daf34;">采购信息</div>
+        <div class="section-title" style="background-color: #e1f3d8; color: #5daf34;">采购基础信息</div>
         <div class="section-body">
           <div class="purchase-cost-table">
               <!-- 第1行：价格 + 开票情况（沿用原表头） -->
@@ -1539,22 +1539,10 @@ defineExpose({ open, close })
   width: 100%;
 }
 
-/* 隐藏原生 number 输入框的上下箭头（需 :deep 穿透到 el-input 内部 input） */
-:deep(input[type="number"]::-webkit-outer-spin-button),
-:deep(input[type="number"]::-webkit-inner-spin-button) {
-  -webkit-appearance: none;
-  margin: 0;
-}
-:deep(input[type="number"]) {
-  -moz-appearance: textfield;
-}
-:deep(.el-input-number .el-input__inner::-webkit-outer-spin-button),
-:deep(.el-input-number .el-input__inner::-webkit-inner-spin-button) {
-  -webkit-appearance: none !important;
-  margin: 0;
-}
-:deep(.el-input-number .el-input__inner) {
-  -moz-appearance: textfield !important;
+/* 隐藏 el-input-number 的上下箭头按钮 */
+:deep(.el-input-number__increase),
+:deep(.el-input-number__decrease) {
+  display: none !important;
 }
 
 .basic-info-table :deep(.el-input__wrapper) {
