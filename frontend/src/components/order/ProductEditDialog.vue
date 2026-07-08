@@ -8,35 +8,23 @@
     destroy-on-close
     @closed="onClosed"
   >
-    <div v-if="item" class="product-edit-dialog">
+    <div v-if="item" class="product-edit-dialog" @click="onDocClick">
       <!-- 基础信息 -->
       <div class="edit-section">
         <div class="section-title" style="background-color: #fde2e2; color: #c45650;">基础信息</div>
         <div class="section-body">
-          <!-- 第一行：客户、客户型号、国家 -->
-          <div class="form-grid info-row-3">
-            <div class="form-item">
-              <label class="required">客户</label>
+          <div class="basic-info-table">
+            <div class="basic-info-label required">客户<br /><span>Customer</span></div>
+            <div class="basic-info-cell customer-cell">
               <el-input v-model="form.customer_name" disabled />
             </div>
-            <div class="form-item">
-              <label class="required">客户型号</label>
-              <FieldInput
-                v-model="form.customer_model"
-                :status="getFieldStatus('customer_model')"
-                @blur="saveField('customer_model', form.customer_model)"
-              />
+            <div class="basic-info-action">搜索</div>
+            <div class="basic-info-action">新增客户</div>
+            <div class="basic-info-cell country-cell">
+              {{ form.customer_country || '-' }}
             </div>
-            <div class="form-item">
-              <label>国家</label>
-              <el-input v-model="form.customer_country" disabled />
-            </div>
-          </div>
 
-          <!-- 第二行：主图、附图、中文名、英文名（同一行紧凑布局） -->
-          <div class="compact-image-name-row">
-            <div class="image-cell main-image-block">
-              <label>主图</label>
+            <div class="basic-info-image main-image-cell" @contextmenu="onImageContextMenu($event, 'main')" @dblclick="onMainImageDblClick">
               <el-upload
                 class="image-uploader-main"
                 :auto-upload="false"
@@ -44,16 +32,18 @@
                 :on-change="handleImageChange"
               >
                 <img v-if="form.image_url" :src="form.image_url" class="preview-image-main" alt="主图" />
-                <el-icon v-else class="image-placeholder-icon"><Plus /></el-icon>
+                <span v-else class="image-placeholder-text"><el-icon><Plus /></el-icon>主图必填</span>
               </el-upload>
+              <span v-if="!form.image_url" class="main-image-required-star">*</span>
             </div>
-            <div class="image-cell extra-image-block">
-              <label>附图 ({{ form.extra_images.length }})</label>
+            <div class="basic-info-image extra-images-cell">
               <div class="extra-images-scroll">
                 <div
                   v-for="(img, idx) in form.extra_images"
                   :key="idx"
                   class="extra-image-item"
+                  @contextmenu="onImageContextMenu($event, 'extra', idx)"
+                  @dblclick="onExtraImageDblClick(img)"
                 >
                   <img :src="img" alt="附图" />
                   <el-icon class="remove-icon" @click="removeExtraImage(idx)"><Close /></el-icon>
@@ -68,84 +58,75 @@
                 </el-upload>
               </div>
             </div>
-            <!-- 产品名称（中英文两行输入，表格布局） -->
-            <div class="name-table-row">
-              <div class="name-label">
-                <span class="required">*</span>
-                <div>产品名称</div>
-              </div>
-              <div class="name-row-zh">
-                <div class="name-input-label">中文名</div>
-                <div class="name-input-cell">
-                  <el-input
-                    v-model="form.product_name"
-                    @blur="saveField('detail_desc', form.product_name)"
-                  />
-                </div>
-              </div>
-              <div class="name-row-en">
-                <div class="name-input-label">英文名</div>
-                <div class="name-input-cell">
-                  <FieldInput
-                    v-model="form.product_name_en"
-                    :status="getFieldStatus('detail_desc_en')"
-                    @blur="saveField('detail_desc_en', form.product_name_en)"
-                  />
-                </div>
-              </div>
+            <div class="basic-info-label category-label required">产品类别<br /><span>P-Category</span></div>
+            <div class="basic-info-cell category-cell">
+              <el-input :model-value="productCategoryDisplay" readonly />
             </div>
-          </div>
 
-          <!-- 第三行：产品颜色 -->
-          <div class="form-grid info-row-4">
-            <div class="form-item">
-              <label>产品需求</label>
+            <div class="basic-info-label model-label required">客户型号<br /><span>Model</span></div>
+            <div class="basic-info-cell model-cell emphasis-cell">
+              <FieldInput
+                v-model="form.customer_model"
+                :status="getFieldStatus('customer_model')"
+                @blur="saveField('customer_model', form.customer_model)"
+              />
+            </div>
+            <div class="basic-info-label pname-label required">产品名称<br /><span>P-Name</span></div>
+            <div class="basic-info-cell product-name-zh">
+              <el-input
+                v-model="form.product_name"
+                @blur="saveField('detail_desc', form.product_name)"
+              />
+            </div>
+            <div class="basic-info-cell product-name-en">
+              <FieldInput
+                v-model="form.product_name_en"
+                :status="getFieldStatus('detail_desc_en')"
+                @blur="saveField('detail_desc_en', form.product_name_en)"
+              />
+            </div>
+
+            <div class="basic-info-label">产品需求<br /><span>P-Details</span></div>
+            <div class="basic-info-cell details-cell">
               <FieldInput
                 v-model="form.product_acquires"
                 :status="getFieldStatus('product_acquires')"
                 @blur="saveField('product_acquires', form.product_acquires)"
               />
             </div>
-            <div class="form-item">
-              <label>产品颜色</label>
+            <div class="basic-info-label">产品颜色<br /><span>P-color</span></div>
+            <div class="basic-info-cell color-cell">
               <FieldInput
                 v-model="form.product_color"
                 :status="getFieldStatus('product_color')"
                 @blur="saveField('product_color', form.product_color)"
               />
             </div>
-            <div class="form-item">
-              <label>产品类别</label>
-              <el-input :model-value="productCategoryDisplay" readonly />
-            </div>
-            <div class="form-item"></div>
-            <div class="form-item"></div>
-          </div>
 
-          <!-- 第四行：OE号、编号备注（高框） -->
-          <div class="form-grid info-row-4">
-            <div class="form-item tall">
-              <label>OE号（索引）</label>
+            <div class="basic-info-label oe-label">OE号（索引）<br /><span>OE-NO.</span></div>
+            <div class="basic-info-cell oe-cell">
               <el-input
                 v-model="form.oe_number"
                 type="textarea"
-                :rows="3"
+                :rows="2"
                 resize="none"
                 @blur="saveField('oe_number', form.oe_number)"
               />
             </div>
-            <div class="form-item tall">
-              <label>编号备注</label>
+            <div class="basic-info-label">编号备注</div>
+            <div class="basic-info-cell remark-cell">
               <el-input
-                v-model="form.remark"
+                v-model="form.product_code"
                 type="textarea"
-                :rows="3"
+                :rows="2"
                 resize="none"
-                @blur="onRemarkBlur"
+                @blur="saveField('customer_code', form.product_code)"
               />
             </div>
-            <div class="form-item"></div>
-            <div class="form-item"></div>
+            <div class="basic-info-label">我司产编号<br /><span>S.NO.</span></div>
+            <div class="basic-info-cell own-code-cell">
+              <span>-</span>
+            </div>
           </div>
         </div>
       </div>
@@ -307,9 +288,9 @@
               <div class="purchase-cost-head span-2 required">供应商（HJLK2204）</div>
               <div class="purchase-cost-cell span-2">
                 <FieldInput
-                  v-model="form.factory_name"
-                  :status="getFieldStatus('factory_name')"
-                  @blur="saveField('factory_name', form.factory_name)"
+                  v-model="form.supplier_name"
+                  :status="getFieldStatus('supplier_name')"
+                  @blur="saveField('supplier_name', form.supplier_name)"
                 />
               </div>
               <div class="purchase-cost-head required">产品特性/选项/采购备注</div>
@@ -583,6 +564,23 @@
       </div>
     </div>
 
+    <!-- 图片预览弹窗 -->
+    <ImagePreviewDialog v-model="previewDialog" :src="previewSrc" />
+
+    <!-- 右键菜单 -->
+    <Teleport to="body">
+      <div
+        v-if="imageMenu.visible"
+        class="image-context-menu"
+        :style="{ left: imageMenu.x + 'px', top: imageMenu.y + 'px' }"
+        @click.stop
+      >
+        <div v-if="(imageMenu.type === 'main' && form.image_url) || (imageMenu.type === 'extra' && imageMenu.index !== undefined)" class="menu-item" @click="onMenuPreview">预览</div>
+        <div class="menu-item" @click="onMenuUpload">{{ imageMenu.type === 'main' && form.image_url ? '更新图片' : '上传图片' }}</div>
+        <div v-if="(imageMenu.type === 'main' && form.image_url) || (imageMenu.type === 'extra' && imageMenu.index !== undefined)" class="menu-item" @click="onMenuDelete">删除图片</div>
+      </div>
+    </Teleport>
+
     <template #footer>
       <el-button @click="close">关闭</el-button>
     </template>
@@ -597,6 +595,7 @@ import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
 import { orderSummaryApi } from '@/api/orderSummary'
 import type { OrderDetailItem } from '@/types/orderSummary'
 import FieldInput from './FieldInput.vue'
+import ImagePreviewDialog from './ImagePreviewDialog.vue'
 
 
 interface ProductEditItem extends OrderDetailItem {
@@ -608,6 +607,7 @@ interface ProductEditForm {
   customer_name: string
   customer_country: string
   customer_model: string
+  product_code: string
   image_url: string
   image_url_2: string
   extra_images: string[]
@@ -636,7 +636,7 @@ interface ProductEditForm {
   invoice_status: string
   invoice_type: string
   invoice_rate: string
-  factory_name: string
+  supplier_name: string
   shop_url: string
   product_detail: string
   purchase_option_name: string
@@ -670,6 +670,7 @@ const form = reactive<ProductEditForm>({
   customer_name: '',
   customer_country: '',
   customer_model: '',
+  product_code: '',
   image_url: '',
   image_url_2: '',
   extra_images: [] as string[],
@@ -698,7 +699,7 @@ const form = reactive<ProductEditForm>({
   invoice_status: '',
   invoice_type: '',
   invoice_rate: '',
-  factory_name: '',
+  supplier_name: '',
   shop_url: '',
   product_detail: '',
   purchase_option_name: '',
@@ -926,9 +927,13 @@ watch(
     form.purchase_currency,
     form.profit_margin,
     form.exchange_rate,
+    form.unit_price,
+    form.quantity,
+    form.shipping_fee,
+    form.misc_fee,
   ],
   () => {
-    if (form.purchase_price == null) return
+    if (!item.value) return
     const price = Number(form.purchase_price) || 0
     const margin = Number(form.profit_margin) || 0
     const rate = Number(form.exchange_rate) || 6.8
@@ -941,6 +946,18 @@ watch(
       usdPrice = (price * factor) / rate
     }
     form.estimated_usd_price = Math.round(usdPrice * 100) / 100
+    saveField('estimated_usd_price', form.estimated_usd_price)
+
+    // 预估毛利率 = (客户美金收入 - 采购总成本USD) / 客户美金收入 * 100
+    const unitPrice = Number(form.unit_price) || 0
+    const qty = Number(form.quantity) || 0
+    const revenue = unitPrice * qty
+    const cost = (price * qty + (Number(form.shipping_fee) || 0) + (Number(form.misc_fee) || 0)) / (form.purchase_currency === 'USD' ? 1 : rate)
+    if (revenue > 0) {
+      const marginRate = ((revenue - cost) / revenue) * 100
+      form.estimated_margin = Math.round(marginRate * 100) / 100
+      saveField('estimated_margin', form.estimated_margin)
+    }
   },
   { immediate: true }
 )
@@ -974,12 +991,13 @@ function initFromItem(source: ProductEditItem) {
   form.customer_name = source.customer_name || ''
   form.customer_country = source.customer_country || ''
   form.customer_model = source.customer_model || ''
+  form.product_code = source.product_code || ''
   form.image_url = source.image_url || ''
   form.image_url_2 = source.image_url_2 || ''
   // 加载附图列表（从 localStorage 或 source）
   form.extra_images = loadExtraImages(source.id) || (source.image_url_2 ? [source.image_url_2] : [])
-  form.product_name = source.product_name || ''
-  form.product_name_en = source.product_name_en || ''
+  form.product_name = source.product_name || (source as any).detail_desc || ''
+  form.product_name_en = source.product_name_en || (source as any).detail_desc_en || ''
   form.product_feature = source.product_feature || ''
   // 产品需求/产品颜色以换行方式存入 remark 字段；读取时按换行拆出
   const remarkText = source.remark || ''
@@ -1013,7 +1031,7 @@ function initFromItem(source: ProductEditItem) {
       remarkRemainLines.push(line)
     }
   }
-  form.product_acquires = parsedAcquires || (source as any).product_acquires || ''
+  form.product_acquires = (source as any).product_acquires || parsedAcquires || ''
   form.product_color = parsedColor || (source as any).product_color || ''
   form.remark = remarkRemainLines.join('\n').trim()
   form.oe_number = source.oe_number || ''
@@ -1031,8 +1049,8 @@ function initFromItem(source: ProductEditItem) {
   form.invoice_status = source.invoice_status || ''
   form.invoice_type = (source as any).invoice_type || ''
   form.invoice_rate = (source as any).invoice_rate || ''
-  form.factory_name = source.factory_name || ''
-  form.shop_url = source.shop_url || ''
+  form.supplier_name = (source as any).supplier_name ?? (source as any).factory_name ?? ''
+  form.shop_url = (source as any).shop_url ?? ''
   form.product_detail = source.product_detail || ''
   form.purchase_option_name = source.purchase_option_name || ''
   form.payment_method = (source as any).payment_method || ''
@@ -1058,11 +1076,9 @@ function initFromItem(source: ProductEditItem) {
 }
 
 function open(source: OrderDetailItem, customerName?: string, customerCountry?: string) {
-  const editItem: ProductEditItem = {
-    ...source,
-    customer_name: customerName || '',
-    customer_country: customerCountry || '',
-  }
+  const editItem = source as ProductEditItem
+  editItem.customer_name = customerName || ''
+  editItem.customer_country = customerCountry || ''
   item.value = editItem
   initFromItem(editItem)
   visible.value = true
@@ -1146,6 +1162,97 @@ async function handleExtraImageChange(file: any) {
   }
 }
 
+// 右键菜单状态
+const imageMenu = ref<{ visible: boolean; x: number; y: number; type: 'main' | 'extra'; index?: number }>({
+  visible: false,
+  x: 0,
+  y: 0,
+  type: 'main',
+})
+
+// 图片预览
+const previewDialog = ref(false)
+const previewSrc = ref('')
+const previewWrapperRef = ref<HTMLElement>()
+
+function openPreview(src: string) {
+  previewSrc.value = src
+  previewDialog.value = true
+}
+
+function resetPreviewPosition() {
+  const el = previewWrapperRef.value
+  if (el) {
+    el.scrollLeft = 0
+    el.scrollTop = 0
+  }
+}
+
+function onImageContextMenu(e: MouseEvent, type: 'main' | 'extra', index?: number) {
+  e.preventDefault()
+  imageMenu.value = { visible: true, x: e.clientX, y: e.clientY, type, index }
+}
+
+function hideImageMenu() {
+  imageMenu.value.visible = false
+}
+
+function onMenuUpload() {
+  hideImageMenu()
+  if (imageMenu.value.type === 'main') {
+    triggerMainUpload()
+  } else {
+    triggerExtraUpload(imageMenu.value.index ?? -1)
+  }
+}
+
+function onMenuDelete() {
+  hideImageMenu()
+  if (imageMenu.value.type === 'main') {
+    if (form.image_url) {
+      form.image_url = ''
+      saveField('image_url', '')
+    }
+  } else if (imageMenu.value.index !== undefined) {
+    removeExtraImage(imageMenu.value.index)
+  }
+}
+
+// 触发 el-upload 的文件选择
+function triggerMainUpload() {
+  const el = document.querySelector('.image-uploader-main .el-upload__input') as HTMLInputElement
+  el?.click()
+}
+
+function triggerExtraUpload(idx: number) {
+  const els = document.querySelectorAll('.extra-image-uploader .el-upload__input')
+  const target = els[idx] as HTMLInputElement
+  target?.click()
+}
+
+function onMenuPreview() {
+  hideImageMenu()
+  if (imageMenu.value.type === 'main') {
+    if (form.image_url) openPreview(form.image_url)
+  } else if (imageMenu.value.index !== undefined) {
+    openPreview(form.extra_images[imageMenu.value.index])
+  }
+}
+
+// 点击主图/附图双击预览
+function onMainImageDblClick() {
+  if (form.image_url) openPreview(form.image_url)
+}
+
+function onExtraImageDblClick(img: string) {
+  openPreview(img)
+}
+
+// 关闭右键菜单
+function onDocClick() {
+  hideImageMenu()
+}
+
 // 移除附图
 function removeExtraImage(idx: number) {
   form.extra_images.splice(idx, 1)
@@ -1221,6 +1328,247 @@ defineExpose({ open, close })
 
 .section-body {
   padding: 10px 12px;
+}
+
+.basic-info-table {
+  display: grid;
+  grid-template-columns: 105px repeat(5, 1fr) 115px 1.2fr;
+  grid-template-rows: 46px 84px 36px 36px 72px 36px 36px;
+  border: 1px solid #222;
+  background: #fff;
+  overflow: hidden;
+}
+
+.basic-info-label,
+.basic-info-cell,
+.basic-info-image,
+.basic-info-action,
+.basic-info-plus {
+  min-width: 0;
+  border-right: 1px solid #222;
+  border-bottom: 1px solid #222;
+  background: #fff;
+}
+
+.basic-info-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #f56c6c;
+  font-size: 13px;
+  line-height: 1.2;
+  font-family: 'Times New Roman', 'SimSun', serif;
+}
+
+.basic-info-label.required::before {
+  content: '*';
+  margin-right: 3px;
+}
+
+.basic-info-label span {
+  color: #c00000;
+  font-size: 12px;
+}
+
+.basic-info-cell,
+.basic-info-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+}
+
+.basic-info-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f56c6c;
+  font-size: 13px;
+  font-family: 'Times New Roman', 'SimSun', serif;
+}
+
+.customer-label {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.customer-cell {
+  grid-column: 2 / 6;
+  grid-row: 1;
+}
+
+.basic-info-action:nth-child(3) {
+  grid-column: 6;
+  grid-row: 1;
+}
+
+.basic-info-action:nth-child(4) {
+  grid-column: 7;
+  grid-row: 1;
+}
+
+.country-cell {
+  grid-column: 8;
+  grid-row: 1;
+  border-right: none;
+}
+
+.main-image-cell {
+  grid-column: 1;
+  grid-row: 2;
+  padding: 4px;
+  border: 2px solid #f56c6c;
+}
+
+.extra-images-cell {
+  grid-column: 2 / 7;
+  grid-row: 2;
+  padding: 4px 10px;
+  justify-content: flex-start;
+  border: 2px solid #67c23a;
+}
+
+.category-label {
+  grid-column: 7;
+  grid-row: 2;
+}
+
+.category-cell {
+  grid-column: 8;
+  grid-row: 2;
+  border-right: none;
+}
+
+.model-label {
+  grid-column: 1;
+  grid-row: 3 / 5;
+}
+
+.model-cell {
+  grid-column: 2 / 4;
+  grid-row: 3 / 5;
+}
+
+.emphasis-cell :deep(.el-input__inner) {
+  text-align: center;
+  font-size: 20px;
+}
+
+.pname-label {
+  grid-column: 4;
+  grid-row: 3 / 5;
+}
+
+.product-name-zh {
+  grid-column: 5 / 9;
+  grid-row: 3;
+  justify-content: flex-start;
+  border-right: none;
+}
+
+.product-name-en {
+  grid-column: 5 / 9;
+  grid-row: 4;
+  justify-content: flex-start;
+  border-right: none;
+}
+
+.basic-info-label:nth-of-type(5) {
+  grid-column: 1;
+  grid-row: 5;
+}
+
+.details-cell {
+  grid-column: 2 / 5;
+  grid-row: 5;
+  justify-content: flex-start;
+  align-items: stretch;
+  padding: 4px 8px;
+}
+
+.basic-info-label:nth-of-type(6) {
+  grid-column: 5;
+  grid-row: 5;
+}
+
+.color-cell {
+  grid-column: 6 / 9;
+  grid-row: 5;
+  border-right: none;
+}
+
+.basic-info-label:nth-of-type(7) {
+  grid-column: 1;
+  grid-row: 6 / 8;
+}
+
+.oe-cell {
+  grid-column: 2 / 4;
+  grid-row: 6 / 8;
+  align-items: stretch;
+  padding: 4px 8px;
+}
+
+.remark-label {
+  grid-column: 4;
+  grid-row: 6 / 8;
+}
+
+.remark-cell {
+  grid-column: 5 / 7;
+  grid-row: 6 / 8;
+  align-items: stretch;
+  padding: 4px 8px;
+}
+
+.basic-info-label:nth-of-type(9) {
+  grid-column: 7;
+  grid-row: 6 / 8;
+}
+
+.own-code-cell {
+  grid-column: 8;
+  grid-row: 6 / 8;
+  border-right: none;
+  color: #f56c6c;
+  font-family: 'Times New Roman', 'SimSun', serif;
+  font-size: 13px;
+}
+
+.basic-info-table :deep(.el-input),
+.basic-info-table :deep(.el-input-number),
+.basic-info-table :deep(.field-input-wrapper) {
+  width: 100%;
+}
+
+.basic-info-table :deep(.el-input__wrapper) {
+  box-shadow: none !important;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.basic-info-table :deep(.el-input__inner) {
+  color: #000;
+  font-size: 13px;
+  font-family: 'Times New Roman', 'SimSun', serif;
+}
+
+.basic-info-table :deep(.el-textarea),
+.basic-info-table :deep(.el-textarea__inner) {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  background: transparent;
+  color: #000;
+  font-size: 12px;
+  font-family: 'Times New Roman', 'SimSun', serif;
 }
 
 .form-grid {
@@ -1795,13 +2143,13 @@ defineExpose({ open, close })
 .extra-images-scroll {
   display: flex;
   align-items: center;
-  gap: 6px;
-  width: 360px;
-  height: 80px;
-  padding: 4px;
-  border: 1px solid #ebeef5;
-  border-radius: 4px;
-  background: #fafafa;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  padding: 0 4px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
@@ -1860,25 +2208,77 @@ defineExpose({ open, close })
 
 .extra-image-uploader {
   flex-shrink: 0;
-  width: 72px;
-  height: 72px;
-  border: 1px dashed #d9d9d9;
-  border-radius: 4px;
+  width: 64px;
+  height: 64px;
+  border: none;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  background: #fff;
-  transition: border-color 0.2s;
+  background: transparent;
+  transition: color 0.2s;
 }
 
 .extra-image-uploader:hover {
-  border-color: #409eff;
+  color: #409eff;
 }
 
 .image-placeholder-icon {
   font-size: 20px;
   color: #909399;
+}
+
+.image-placeholder-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: #c00000;
+  font-size: 12px;
+}
+
+.main-image-required-star {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  color: #c00000;
+  font-size: 16px;
+  font-weight: bold;
+  pointer-events: none;
+  line-height: 1;
+}
+
+.main-image-cell {
+  position: relative;
+}
+
+.extra-image-item {
+  cursor: pointer;
+}
+
+.image-context-menu {
+  position: fixed;
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  z-index: 9999;
+  padding: 4px 0;
+  min-width: 100px;
+}
+
+.image-context-menu .menu-item {
+  padding: 6px 16px;
+  font-size: 13px;
+  color: #606266;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.image-context-menu .menu-item:hover {
+  background: #f5f7fa;
+  color: #409eff;
 }
 
 .archive-file-name {

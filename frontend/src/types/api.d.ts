@@ -1,9 +1,11 @@
 // API 响应类型
 
 export interface ApiResponse<T = any> {
-  code: number
+  code?: number
   data: T
-  message: string
+  message?: string
+  /** 某些接口（如 PUT /api/pi/items/{id}）直接返回 success:true 而非 code:200 */
+  success?: boolean
 }
 
 export interface PaginatedData<T> {

@@ -4,7 +4,7 @@ import { resolve } from 'path'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const apiTarget = env.VITE_API_TARGET || 'http://localhost:8000'
+  const apiTarget = env.VITE_API_TARGET || 'http://localhost:8001'
 
   return {
     plugins: [vue()],

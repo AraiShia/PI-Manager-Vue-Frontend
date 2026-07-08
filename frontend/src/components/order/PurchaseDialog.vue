@@ -237,7 +237,13 @@ import { purchaseApi, type PurchasePayload, type PurchaseItem } from '@/api/purc
 import type { OrderDetailItem } from '@/types/orderSummary'
 
 const emit = defineEmits<{
-  success: []
+  success: [],
+  'purchase-complete': [payload: {
+    factory_name: string
+    shop_url: string
+    wechatId: string
+    wechatNickname: string
+  }]
 }>()
 
 const visible = ref(false)
@@ -300,7 +306,8 @@ function open(
   orderItems: OrderDetailItem[],
   piId: number,
   urls: Record<number, string[]> = {},
-  prefillShopName: string = ''
+  prefillShopName: string = '',
+  prefillLinkUrl: string = ''
 ) {
   visible.value = true
   orderId = piId
@@ -322,6 +329,10 @@ function open(
   // 顶层 1688 店铺名称预填
   if (prefillShopName) {
     shopName.value = prefillShopName
+  }
+  // 顶层采购链接预填
+  if (prefillLinkUrl) {
+    linkUrl.value = prefillLinkUrl
   }
 
   // 加载初始费用
@@ -655,6 +666,14 @@ async function onSubmit() {
     if (res.data.code === 200) {
       ElMessage.success('采购订单创建成功')
       emit('success')
+      emit('purchase-complete', {
+        factory_name: platform.value === 'wechat'
+          ? `${wechatNickname.value}(微信: ${wechatId.value})`
+          : shopName.value,
+        shop_url: linkUrl.value,
+        wechatId: platform.value === 'wechat' ? wechatId.value : '',
+        wechatNickname: platform.value === 'wechat' ? wechatNickname.value : '',
+      })
       onClose()
     } else {
       ElMessage.error(res.data.message || '采购失败')

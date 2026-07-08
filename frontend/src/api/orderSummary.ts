@@ -12,6 +12,13 @@ export interface OrderItemUpdatePayload {
   [key: string]: any
 }
 
+export interface OrderItemUpdateResponse {
+  success: boolean
+  id: number
+  product_id?: number | null
+  message?: string
+}
+
 export const orderSummaryApi = {
   getOrders: (params: OrderListParams) =>
     client.get<ApiResponse<OrderListResponse>>('/api/bff/orders', { params }),
@@ -29,10 +36,16 @@ export const orderSummaryApi = {
     ),
 
   updateOrderItem: (itemId: number, payload: OrderItemUpdatePayload) =>
-    client.put<ApiResponse<{ id: number; success: boolean }>>(
+    client.put<OrderItemUpdateResponse>(
       `/api/pi/items/${itemId}`,
       payload
     ),
+
+  checkFormalRecord: (orderId: number) =>
+    client.get<{ exists: boolean }>(`/api/pi/${orderId}/formal-record/exists`),
+
+  saveFormalRecord: (orderId: number) =>
+    client.post(`/api/pi/${orderId}/formal-record`),
 
   uploadProductImage: (file: File) => {
     const formData = new FormData()

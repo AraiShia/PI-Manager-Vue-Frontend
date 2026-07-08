@@ -35,12 +35,16 @@ export interface OrderDetailItem {
   product_code: string
   oe_number: string
   remark: string | null
+  detail_desc?: string | null
+  detail_desc_en?: string | null
   product_name: string
   product_name_en: string | null
   image_url: string | null
   image_url_2: string | null
   customer_model: string | null
   product_feature: string | null
+  product_acquires?: string | null
+  product_color?: string | null
   category_id?: string | null
   category_name?: string | null
   category_parent_name?: string | null
@@ -57,10 +61,14 @@ export interface OrderDetailItem {
   purchase_price: number
   shipping_fee: number
   misc_fee: number
+  labeling_fee?: number
+  tax_fee?: number
+  freight?: number
   total_cost: number
 
   // ========== C组：供应商采购 (列22-27) ==========
   factory_name: string | null
+  supplier_name?: string | null
   shop_url?: string | null
   delivery_date: string | null
   storage_status: string

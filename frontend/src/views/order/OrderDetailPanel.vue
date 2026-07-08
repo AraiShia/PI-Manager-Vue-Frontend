@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="order-detail-panel" v-loading="store.detailLoading">
     <div class="detail-header">
       <div class="header-left">
@@ -42,7 +42,8 @@
                   v-for="col in columnVisibilityOptions"
                   :key="col.key"
                   v-model="colVisible[col.key]"
-                  :label="col.label"
+                  :label="col.locked ? `${col.label}（锁定）` : col.label"
+                  :disabled="col.locked"
                 />
               </div>
               <el-divider style="margin: 8px 0;" />
@@ -58,18 +59,30 @@
           </template>
         </el-popover>
         <el-button :icon="Download" @click="onExportExcel">导出Excel</el-button>
+        <el-tooltip :content="formalRecordTooltip" placement="bottom">
+          <el-button
+            v-if="!hasFormalRecord"
+            type="warning"
+            plain
+            :loading="formalRecordLoading || formalRecordSaving"
+            @click="onSaveFormalRecord"
+          >
+            保存正式纪录
+          </el-button>
+          <el-tag v-else type="success" effect="light">已保存正式PI</el-tag>
+        </el-tooltip>
         <el-button type="primary" :icon="Wallet" @click="onAddPayment">添加付款</el-button>
         <el-button
           type="success"
           :icon="ShoppingCart"
-          :disabled="selectedRows.length === 0"
+          :disabled="selectedRows.length === 0 || !hasFormalRecord"
           @click="onPurchaseSelected"
         >
           采购选中 ({{ selectedRows.length }})
         </el-button>
-        <el-button type="success" plain :icon="ShoppingCart" @click="onPurchaseAll">采购全部</el-button>
+        <el-button type="success" plain :icon="ShoppingCart" :disabled="!hasFormalRecord" @click="onPurchaseAll">采购全部</el-button>
         <el-button type="warning" :icon="Plus" @click="onSupplement">补充商品</el-button>
-        <el-button type="info" :icon="Box" @click="onBatchInbound">全部入库</el-button>
+        <el-button type="info" :icon="Box" :disabled="!hasFormalRecord" @click="onBatchInbound">全部入库</el-button>
         <el-button type="danger" :icon="Van" @click="onShipment">出货</el-button>
       </div>
     </div>
@@ -89,21 +102,36 @@
         @row-contextmenu="onRowContextMenu"
         @cell-dblclick="onCellDblClick"
       >
-        <el-table-column type="selection" width="44" fixed="left" />
-        <el-table-column type="index" label="#" width="50" align="center" fixed="left" />
-        <el-table-column prop="import_seq" label="导入序号" width="80" align="center" fixed="left" show-overflow-tooltip />
+        <el-table-column type="selection" width="44" />
+        <el-table-column type="index" label="#" width="50" align="center" />
+        <el-table-column prop="import_seq" label="导入序号" width="80" align="center" show-overflow-tooltip />
 
-        <el-table-column prop="order_date" label="订单日期" width="110" align="center" v-show="colVisible['order_date']">
+        <!-- 锁定列：永不隐藏 -->
+        <el-table-column prop="order_date" label="订单日期" width="110" align="center">
           <template #default="{ row }">
             {{ formatDate(row.order_date) }}
           </template>
         </el-table-column>
-        <el-table-column prop="pi_no" label="PI号" width="140" show-overflow-tooltip v-show="colVisible['pi_no']" />
-        <el-table-column prop="product_code" label="客户产品编号" width="130" fixed="left" show-overflow-tooltip v-show="colVisible['product_code']" />
-        <el-table-column prop="oe_number" label="OE号" width="120" fixed="left" show-overflow-tooltip v-show="colVisible['oe_number']" />
-        <el-table-column prop="remark" label="客户需求/产品备注" width="150" show-overflow-tooltip v-show="colVisible['remark']" />
-        <el-table-column prop="product_name" label="产品名称" width="180" show-overflow-tooltip v-show="colVisible['product_name']" />
-        <el-table-column prop="image_url" label="图片" width="70" align="center" v-show="colVisible['image_url']">
+        <el-table-column prop="pi_no" label="PI号" width="140" show-overflow-tooltip v-if="colVisible['pi_no']" />
+        <el-table-column prop="product_code" label="编号备注" width="130" show-overflow-tooltip />
+        <el-table-column prop="oe_number" label="OE号" width="120" show-overflow-tooltip v-if="colVisible['oe_number']" />
+        <el-table-column prop="product_acquires" label="客户需求/产品备注" width="150" v-if="colVisible['remark']">
+          <template #default="{ row }">
+            <div class="product-name-lines" v-if="buildDisplayRemark(row.product_acquires, row.product_color).length">
+              <div v-for="line in buildDisplayRemark(row.product_acquires, row.product_color)" :key="line" class="product-name-line">{{ line }}</div>
+            </div>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="product_name" label="产品名称" width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div class="product-name-lines" v-if="buildDisplayProductName(row.product_name, row.product_name_en).length">
+              <div v-for="line in buildDisplayProductName(row.product_name, row.product_name_en)" :key="line" class="product-name-line">{{ line }}</div>
+            </div>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="image_url" label="图片" width="70" align="center">
           <template #default="{ row }">
             <el-image
               v-if="row.image_url"
@@ -115,64 +143,64 @@
             <span v-else class="no-image">暂无</span>
           </template>
         </el-table-column>
-        <el-table-column prop="customer_model" label="客户型号" width="130" show-overflow-tooltip v-show="colVisible['customer_model']" />
-        <el-table-column prop="product_feature" label="产品特性" width="130" show-overflow-tooltip v-show="colVisible['product_feature']" />
-        <el-table-column prop="quantity" label="数量" width="80" align="right" v-show="colVisible['quantity']" />
-        <el-table-column prop="unit_price" label="报价" width="100" align="right" v-show="colVisible['unit_price']">
+        <el-table-column prop="customer_model" label="客户型号" width="130" show-overflow-tooltip v-if="colVisible['customer_model']" />
+        <el-table-column prop="product_feature" label="产品特性" width="130" show-overflow-tooltip v-if="colVisible['product_feature']" />
+        <el-table-column prop="quantity" label="数量" width="80" align="right" />
+        <el-table-column prop="unit_price" label="报价" width="100" align="right">
           <template #default="{ row }">
             {{ formatAmount(row.unit_price) }}
           </template>
         </el-table-column>
-        <el-table-column prop="total_amount" label="合计金额" width="110" align="right" v-show="colVisible['total_amount']">
+        <el-table-column prop="total_amount" label="合计金额" width="110" align="right">
           <template #default="{ row }">
             {{ formatAmount(row.total_amount) }}
           </template>
         </el-table-column>
-        <el-table-column prop="latest_customer_reply" label="最新客户回复" width="140" show-overflow-tooltip v-show="colVisible['latest_customer_reply']" />
-        <el-table-column prop="customer_prepayment" label="客户预付款" width="110" align="right" v-show="colVisible['customer_prepayment']">
+        <el-table-column prop="latest_customer_reply" label="最新客户回复" width="140" show-overflow-tooltip v-if="colVisible['latest_customer_reply']" />
+        <el-table-column prop="customer_prepayment" label="客户预付款" width="110" align="right" v-if="colVisible['customer_prepayment']">
           <template #default="{ row }">
             {{ formatAmount(row.customer_prepayment) }}
           </template>
         </el-table-column>
-        <el-table-column prop="remaining_payment" label="待收尾款" width="110" align="right" v-show="colVisible['remaining_payment']">
+        <el-table-column prop="remaining_payment" label="待收尾款" width="110" align="right" v-if="colVisible['remaining_payment']">
           <template #default="{ row }">
             {{ formatAmount(row.remaining_payment) }}
           </template>
         </el-table-column>
-        <el-table-column prop="estimated_usd_price" label="预估美金报价" width="120" align="right" v-show="colVisible['estimated_usd_price']">
+        <el-table-column prop="estimated_usd_price" label="预估美金报价" width="120" align="right" v-if="colVisible['estimated_usd_price']">
           <template #default="{ row }">
             {{ formatAmount(row.estimated_usd_price) }}
           </template>
         </el-table-column>
-        <el-table-column prop="estimated_margin" label="预估毛利率" width="100" align="right" v-show="colVisible['estimated_margin']">
+        <el-table-column prop="estimated_margin" label="预估毛利率" width="100" align="right" v-if="colVisible['estimated_margin']">
           <template #default="{ row }">
             <span :class="{ 'text-success': row.estimated_margin >= 20 }">
               {{ row.estimated_margin ? row.estimated_margin.toFixed(1) + '%' : '-' }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="purchase_price" label="采购价格" width="100" align="right" v-show="colVisible['purchase_price']">
+        <el-table-column prop="purchase_price" label="采购价格" width="100" align="right">
           <template #default="{ row }">
             {{ formatAmount(row.purchase_price) }}
           </template>
         </el-table-column>
-        <el-table-column prop="shipping_fee" label="运费" width="90" align="right" v-show="colVisible['shipping_fee']">
+        <el-table-column prop="shipping_fee" label="运费" width="90" align="right">
           <template #default="{ row }">
             {{ formatAmount(row.shipping_fee) }}
           </template>
         </el-table-column>
-        <el-table-column prop="misc_fee" label="杂费" width="90" align="right" v-show="colVisible['misc_fee']">
+        <el-table-column prop="misc_fee" label="杂费" width="90" align="right">
           <template #default="{ row }">
             {{ formatAmount(row.misc_fee) }}
           </template>
         </el-table-column>
-        <el-table-column prop="total_cost" label="总金额(成本)" width="120" align="right" v-show="colVisible['total_cost']">
+        <el-table-column prop="total_cost" label="总金额(成本)" width="120" align="right">
           <template #default="{ row }">
             {{ formatAmount(row.total_cost) }}
           </template>
         </el-table-column>
-        <el-table-column prop="factory_name" label="工厂简称" width="130" show-overflow-tooltip v-show="colVisible['factory_name']" />
-        <el-table-column prop="shop_url" label="店铺链接" width="120" show-overflow-tooltip v-show="colVisible['shop_url']">
+        <el-table-column prop="factory_name" label="工厂简称" width="130" show-overflow-tooltip />
+        <el-table-column prop="shop_url" label="店铺链接" width="120" show-overflow-tooltip v-if="colVisible['shop_url']">
           <template #default="{ row }">
             <el-link
               v-if="row.shop_url"
@@ -186,54 +214,54 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="delivery_date" label="交货日期" width="110" align="center" v-show="colVisible['delivery_date']">
+        <el-table-column prop="delivery_date" label="交货日期" width="110" align="center" v-if="colVisible['delivery_date']">
           <template #default="{ row }">
             {{ formatDate(row.delivery_date) }}
           </template>
         </el-table-column>
-        <el-table-column prop="storage_status" label="是否已收货" width="100" align="center" v-show="colVisible['storage_status']">
+        <el-table-column prop="storage_status" label="是否已收货" width="100" align="center" v-if="colVisible['storage_status']">
           <template #default="{ row }">
             <el-tag v-if="row.storage_status === '已收货'" type="success" size="small">已收货</el-tag>
             <el-tag v-else-if="row.storage_status === '部分入库'" type="warning" size="small">部分入库</el-tag>
             <el-tag v-else type="info" size="small">未收货</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="factory_deposit" label="工厂订金" width="100" align="right" v-show="colVisible['factory_deposit']">
+        <el-table-column prop="factory_deposit" label="工厂订金" width="100" align="right" v-if="colVisible['factory_deposit']">
           <template #default="{ row }">
             {{ formatAmount(row.factory_deposit) }}
           </template>
         </el-table-column>
-        <el-table-column prop="factory_balance" label="工厂尾款" width="100" align="right" v-show="colVisible['factory_balance']">
+        <el-table-column prop="factory_balance" label="工厂尾款" width="100" align="right" v-if="colVisible['factory_balance']">
           <template #default="{ row }">
             {{ formatAmount(row.factory_balance) }}
           </template>
         </el-table-column>
-        <el-table-column prop="stock_in_action" label="入库操作" width="100" align="center" v-show="colVisible['stock_in_action']" />
-        <el-table-column prop="stock_in_quantity" label="入库数量" width="90" align="right" v-show="colVisible['stock_in_quantity']" />
-        <el-table-column prop="packaging" label="包装方式" width="110" show-overflow-tooltip v-show="colVisible['packaging']" />
-        <el-table-column prop="purchase_option_name" label="采购选项/名称" width="140" show-overflow-tooltip v-show="colVisible['purchase_option_name']" />
-        <el-table-column prop="product_detail" label="产品细节" width="150" show-overflow-tooltip v-show="colVisible['product_detail']" />
-        <el-table-column prop="factory_code" label="工厂编号" width="120" show-overflow-tooltip v-show="colVisible['factory_code']" />
-        <el-table-column prop="carton_size" label="纸箱尺寸" width="120" show-overflow-tooltip v-show="colVisible['carton_size']" />
-        <el-table-column prop="pack_spec" label="打包规格" width="110" show-overflow-tooltip v-show="colVisible['pack_spec']" />
-        <el-table-column prop="carton_count" label="箱数" width="80" align="right" v-show="colVisible['carton_count']" />
-        <el-table-column prop="estimated_volume" label="预估体积(m³)" width="110" align="right" v-show="colVisible['estimated_volume']">
+        <el-table-column prop="stock_in_action" label="入库操作" width="100" align="center" v-if="colVisible['stock_in_action']" />
+        <el-table-column prop="stock_in_quantity" label="入库数量" width="90" align="right" v-if="colVisible['stock_in_quantity']" />
+        <el-table-column prop="packaging" label="包装方式" width="110" show-overflow-tooltip v-if="colVisible['packaging']" />
+        <el-table-column prop="purchase_option_name" label="采购选项/名称" width="140" show-overflow-tooltip v-if="colVisible['purchase_option_name']" />
+        <el-table-column prop="product_detail" label="产品细节" width="150" show-overflow-tooltip v-if="colVisible['product_detail']" />
+        <el-table-column prop="factory_code" label="工厂编号" width="120" show-overflow-tooltip v-if="colVisible['factory_code']" />
+        <el-table-column prop="carton_size" label="纸箱尺寸" width="120" show-overflow-tooltip v-if="colVisible['carton_size']" />
+        <el-table-column prop="pack_spec" label="打包规格" width="110" show-overflow-tooltip v-if="colVisible['pack_spec']" />
+        <el-table-column prop="carton_count" label="箱数" width="80" align="right" v-if="colVisible['carton_count']" />
+        <el-table-column prop="estimated_volume" label="预估体积(m³)" width="110" align="right">
           <template #default="{ row }">
             {{ row.estimated_volume ? row.estimated_volume.toFixed(4) : '-' }}
           </template>
         </el-table-column>
-        <el-table-column prop="carton_gross_weight" label="整箱毛重(kg)" width="110" align="right" v-show="colVisible['carton_gross_weight']">
+        <el-table-column prop="carton_gross_weight" label="整箱毛重(kg)" width="110" align="right" v-if="colVisible['carton_gross_weight']">
           <template #default="{ row }">
             {{ row.carton_gross_weight ? row.carton_gross_weight.toFixed(2) : '-' }}
           </template>
         </el-table-column>
-        <el-table-column prop="total_weight" label="总重量(kg)" width="110" align="right" v-show="colVisible['total_weight']">
+        <el-table-column prop="total_weight" label="总重量(kg)" width="110" align="right" v-if="colVisible['total_weight']">
           <template #default="{ row }">
             {{ row.total_weight ? row.total_weight.toFixed(2) : '-' }}
           </template>
         </el-table-column>
-        <el-table-column prop="brand" label="品牌" width="100" show-overflow-tooltip v-show="colVisible['brand']" />
-        <el-table-column prop="invoice_status" label="开票情况" width="100" show-overflow-tooltip v-show="colVisible['invoice_status']" />
+        <el-table-column prop="brand" label="品牌" width="100" show-overflow-tooltip v-if="colVisible['brand']" />
+        <el-table-column prop="invoice_status" label="开票情况" width="100" show-overflow-tooltip />
 
         <template #empty>
           <el-empty description="暂无产品数据" />
@@ -348,7 +376,7 @@
             <li
               v-else
               class="context-menu-item"
-              :class="{ danger: item.danger }"
+              :class="{ danger: item.danger, disabled: isContextMenuItemDisabled(item.action) }"
               @click="handleContextMenuAction(item.action)"
             >
               <el-icon v-if="item.icon"><component :is="item.icon" /></el-icon>
@@ -363,7 +391,7 @@
     <PaymentDialog ref="paymentDialogRef" @success="onDetailSuccess" />
     <SupplementDialog ref="supplementDialogRef" @success="onDetailSuccess" />
     <ProductEditDialog ref="productEditDialogRef" @closed="onDetailSuccess" />
-    <PurchaseDialog ref="purchaseDialogRef" @success="onDetailSuccess" />
+    <PurchaseDialog ref="purchaseDialogRef" @success="onDetailSuccess" @purchase-complete="onPurchaseComplete" />
     <InboundDialog ref="inboundDialogRef" @success="onDetailSuccess" />
     <BatchInboundDialog ref="batchInboundDialogRef" @success="onDetailSuccess" />
   </div>
@@ -398,6 +426,26 @@ import {
   isDuplicateIndex,
   type DuplicateGroup,
 } from '@/utils/duplicateDetector'
+import {
+  applyStoredColumnVisibility as applyStoredColumnVisibilityUtil,
+  enforceLockedColumnsVisible as enforceLockedColumnsVisibleUtil,
+  getColumnVisibilityStorageKey as getColumnVisibilityStorageKeyUtil,
+  LOCKED_COLUMNS,
+  resetColumnVisibilityToDefault as resetColumnVisibilityToDefaultUtil,
+  serializeColumnVisibility,
+} from '@/utils/columnVisibility'
+import {
+  detectTemporaryPi,
+  getFormalRecordTooltip,
+  isFormalRecordRequiredAction,
+} from '@/utils/formalRecord'
+import {
+  DEFAULT_IMPORT_FIELDS,
+  autoMapImportColumns as autoMapImportColumnsUtil,
+  buildDisplayProductName,
+  buildDisplayRemark,
+  buildImportItemFromRow,
+} from '@/utils/orderImportMapping'
 import PaymentDialog from '@/components/order/PaymentDialog.vue'
 import SupplementDialog from '@/components/order/SupplementDialog.vue'
 import ProductEditDialog from '@/components/order/ProductEditDialog.vue'
@@ -452,6 +500,10 @@ const batchInboundDialogRef = ref<InstanceType<typeof BatchInboundDialog>>()
 const selectedRows = ref<OrderDetailItem[]>([])
 const duplicateGroups = ref<DuplicateGroup[]>([])
 
+const hasFormalRecord = ref(false)
+const formalRecordLoading = ref(false)
+const formalRecordSaving = ref(false)
+
 // 列筛选状态：每个列独立开关
 const colVisible = reactive<Record<string, boolean>>({
   order_date: true,
@@ -497,29 +549,37 @@ const colVisible = reactive<Record<string, boolean>>({
   invoice_status: true,
 })
 
-const columnVisibilityOptions = [
-  { key: 'order_date', label: '订单日期' },
+const lockedColumnSet = new Set(LOCKED_COLUMNS)
+
+type ColumnVisibilityOption = {
+  key: string
+  label: string
+  locked?: boolean
+}
+
+const columnVisibilityOptions: ColumnVisibilityOption[] = [
+  { key: 'order_date', label: '订单日期', locked: true },
   { key: 'pi_no', label: 'PI号' },
-  { key: 'product_code', label: '客户产品编号' },
+  { key: 'product_code', label: '客户产品编号', locked: true },
   { key: 'oe_number', label: 'OE号' },
   { key: 'remark', label: '客户需求/产品备注' },
-  { key: 'product_name', label: '产品名称' },
-  { key: 'image_url', label: '图片' },
+  { key: 'product_name', label: '产品名称', locked: true },
+  { key: 'image_url', label: '图片', locked: true },
   { key: 'customer_model', label: '客户型号' },
   { key: 'product_feature', label: '产品特性' },
-  { key: 'quantity', label: '数量' },
-  { key: 'unit_price', label: '报价' },
-  { key: 'total_amount', label: '合计金额' },
+  { key: 'quantity', label: '数量', locked: true },
+  { key: 'unit_price', label: '报价', locked: true },
+  { key: 'total_amount', label: '合计金额', locked: true },
   { key: 'latest_customer_reply', label: '最新客户回复' },
   { key: 'customer_prepayment', label: '客户预付款' },
   { key: 'remaining_payment', label: '待收尾款' },
   { key: 'estimated_usd_price', label: '预估美金报价' },
   { key: 'estimated_margin', label: '预估毛利率' },
-  { key: 'purchase_price', label: '采购价格' },
-  { key: 'shipping_fee', label: '运费' },
-  { key: 'misc_fee', label: '杂费' },
-  { key: 'total_cost', label: '总金额(成本)' },
-  { key: 'factory_name', label: '工厂简称' },
+  { key: 'purchase_price', label: '采购价格', locked: true },
+  { key: 'shipping_fee', label: '运费', locked: true },
+  { key: 'misc_fee', label: '杂费', locked: true },
+  { key: 'total_cost', label: '总金额(成本)', locked: true },
+  { key: 'factory_name', label: '工厂简称', locked: true },
   { key: 'shop_url', label: '店铺链接' },
   { key: 'delivery_date', label: '交货日期' },
   { key: 'storage_status', label: '是否已收货' },
@@ -534,12 +594,94 @@ const columnVisibilityOptions = [
   { key: 'carton_size', label: '纸箱尺寸' },
   { key: 'pack_spec', label: '打包规格' },
   { key: 'carton_count', label: '箱数' },
-  { key: 'estimated_volume', label: '预估体积' },
+  { key: 'estimated_volume', label: '预估体积', locked: true },
   { key: 'carton_gross_weight', label: '整箱毛重' },
   { key: 'total_weight', label: '总重量' },
   { key: 'brand', label: '品牌' },
-  { key: 'invoice_status', label: '开票情况' },
+  { key: 'invoice_status', label: '开票情况', locked: true },
 ]
+
+function enforceLockedColumnsVisible() {
+  Object.assign(colVisible, enforceLockedColumnsVisibleUtil(colVisible))
+}
+
+function getColumnVisibilityStorageKey() {
+  return getColumnVisibilityStorageKeyUtil(store.currentOrder?.id)
+}
+
+function resetColumnVisibilityToDefault() {
+  const defaults = resetColumnVisibilityToDefaultUtil(columnVisibilityOptions)
+  Object.assign(colVisible, defaults)
+}
+
+function loadColumnVisibility() {
+  const merged = applyStoredColumnVisibilityUtil(
+    columnVisibilityOptions,
+    localStorage.getItem(getColumnVisibilityStorageKey())
+  )
+  Object.assign(colVisible, merged)
+}
+
+function saveColumnVisibility() {
+  localStorage.setItem(
+    getColumnVisibilityStorageKey(),
+    serializeColumnVisibility(columnVisibilityOptions, colVisible)
+  )
+}
+
+async function loadFormalRecordStatus() {
+  const orderId = store.currentOrder?.id
+  hasFormalRecord.value = false
+  if (!orderId) return
+
+  formalRecordLoading.value = true
+  try {
+    const res = await orderSummaryApi.checkFormalRecord(orderId)
+    hasFormalRecord.value = Boolean(res.data?.exists)
+  } catch (error) {
+    hasFormalRecord.value = false
+  } finally {
+    formalRecordLoading.value = false
+  }
+}
+
+async function onSaveFormalRecord() {
+  const orderId = store.currentOrder?.id
+  if (!orderId) return
+
+  try {
+    await ElMessageBox.confirm(
+      '确定将当前状态固化为正式纪录？保存后 PI 将锁定，可进行采购/入库操作。',
+      '保存正式纪录',
+      { type: 'warning' }
+    )
+  } catch {
+    return
+  }
+
+  formalRecordSaving.value = true
+  try {
+    await orderSummaryApi.saveFormalRecord(orderId)
+    hasFormalRecord.value = true
+    ElMessage.success('正式纪录已保存，PI 已锁定，可进行采购/入库操作')
+  } finally {
+    formalRecordSaving.value = false
+  }
+}
+
+function ensureFormalRecord(actionText = '采购/入库') {
+  if (hasFormalRecord.value) return true
+  ElMessage.warning(`请先点击「保存正式纪录」锁定PI后再${actionText}`)
+  return false
+}
+
+function isFormalRecordRequiredActionInView(action: string) {
+  return isFormalRecordRequiredAction(action)
+}
+
+function isContextMenuItemDisabled(action: string) {
+  return isFormalRecordRequiredActionInView(action) && !hasFormalRecord.value
+}
 
 function onRestoreImportOrder() {
   // 按 import_seq 恢复原始导入顺序（seq > 0 才排序）
@@ -558,16 +700,7 @@ function onRestoreImportOrder() {
   ElMessage.success('已按导入序号恢复原始顺序')
 }
 
-const importFields = [
-  { key: 'product_code', label: '客户产品编号', required: true },
-  { key: 'oe_number', label: 'OE号', required: false },
-  { key: 'product_name', label: '产品名称', required: false },
-  { key: 'quantity', label: '数量', required: true },
-  { key: 'unit_price', label: '报价', required: false },
-  { key: 'remark', label: '客户需求/产品备注', required: false },
-  { key: 'customer_model', label: '客户型号', required: false },
-  { key: 'product_feature', label: '产品特性', required: false },
-]
+const importFields = DEFAULT_IMPORT_FIELDS
 
 const previewData = computed(() => importedRawData.value.slice(0, 20))
 
@@ -591,6 +724,11 @@ const progressStatus = computed(() => {
   return 'exception'
 })
 
+const isTemporaryPi = computed(() => detectTemporaryPi(store.currentOrder?.pi_no))
+const formalRecordTooltip = computed(() =>
+  getFormalRecordTooltip(hasFormalRecord.value, isTemporaryPi.value)
+)
+
 const totalAmountSum = computed(() => {
   return store.detailItems.reduce((sum, item) => sum + (item.total_amount || 0), 0)
 })
@@ -600,9 +738,28 @@ const totalStockInQuantity = computed(() => {
 })
 
 onMounted(() => {
+  loadColumnVisibility()
+  loadFormalRecordStatus()
   document.addEventListener('click', hideContextMenu)
   document.addEventListener('contextmenu', hideContextMenu)
 })
+
+watch(
+  () => store.currentOrder?.id,
+  () => {
+    loadColumnVisibility()
+    loadFormalRecordStatus()
+  }
+)
+
+watch(
+  colVisible,
+  () => {
+    enforceLockedColumnsVisible()
+    saveColumnVisibility()
+  },
+  { deep: true }
+)
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', hideContextMenu)
@@ -719,29 +876,9 @@ function processImportedData(data: any[]) {
 }
 
 function autoMapColumns(headers: string[]) {
-  const keywordMap: Record<string, string[]> = {
-    product_code: ['客户产品编号', '产品编号', '产品编码', 'product_code', 'product code'],
-    oe_number: ['OE号', 'OE编号', 'oe_number', 'oe number'],
-    product_name: ['产品名称', '品名', 'product_name', 'product name'],
-    quantity: ['数量', '订货数量', 'quantity', 'qty'],
-    unit_price: ['报价', '单价', '价格', 'unit_price', 'unit price', 'price'],
-    remark: ['客户需求', '产品备注', '备注', 'remark', 'note'],
-    customer_model: ['客户型号', '型号', 'customer_model', 'model'],
-    product_feature: ['产品特性', '特性', 'product_feature', 'feature'],
-  }
-
+  const mapping = autoMapImportColumnsUtil(headers)
   for (const field of importFields) {
-    columnMapping[field.key] = ''
-    const keywords = keywordMap[field.key] || []
-    for (const keyword of keywords) {
-      const matched = headers.find(
-        (h) => h.toLowerCase().includes(keyword.toLowerCase())
-      )
-      if (matched) {
-        columnMapping[field.key] = matched
-        break
-      }
-    }
+    columnMapping[field.key] = mapping[field.key] || ''
   }
 }
 
@@ -763,20 +900,13 @@ async function onConfirmImport() {
   try {
     importSubmitting.value = true
 
-    const mappedItems = importedRawData.value.map((row, idx) => {
-      const item: Record<string, any> = {}
-      for (const field of importFields) {
-        const colName = columnMapping[field.key]
-        if (colName) {
-          item[field.key] = row[colName]
-        }
-      }
-      return {
-        ...item,
-        // 记录原始导入行号（恢复顺序用）
-        import_seq: (row as any).__excel_row_index ?? (idx + 1),
-      }
-    })
+    const mappedItems = importedRawData.value.map((row, idx) =>
+      buildImportItemFromRow(
+        row,
+        { ...columnMapping },
+        (row as any).__excel_row_index ?? (idx + 1)
+      )
+    )
 
     const res = await orderSummaryApi.importItems(orderId, mappedItems)
     if (res.data.code === 200) {
@@ -893,6 +1023,7 @@ function onAddPayment() {
 }
 
 function onPurchaseAll() {
+  if (!ensureFormalRecord('采购')) return
   if (!store.currentOrder || store.detailItems.length === 0) {
     ElMessage.warning('当前订单无产品可采购')
     return
@@ -901,6 +1032,7 @@ function onPurchaseAll() {
 }
 
 function onPurchaseSelected() {
+  if (!ensureFormalRecord('采购')) return
   if (selectedRows.value.length === 0) {
     ElMessage.warning('请先勾选要采购的产品')
     return
@@ -928,16 +1060,31 @@ function onPurchaseSelected() {
 }
 
 function openPurchaseDialog(items: OrderDetailItem[]) {
+  if (!ensureFormalRecord('采购')) return
   if (!store.currentOrder) return
-  // 提取预填的 1688 链接（key=product_id）和供应商名称
+  // 提取预填的 1688 链接（key=product_id）
   const prefillUrls: Record<number, string[]> = {}
+  // 用第一个产品的供应商信息预填弹窗
+  let prefillShopName = ''
+  let prefillLinkUrl = ''
   for (const it of items) {
     if (it.product_id && (it as any).shop_url) {
       prefillUrls[it.product_id] = [(it as any).shop_url]
     }
+    // 优先用产品自身的供应商名称
+    if (!prefillShopName && (it as any).supplier_name) {
+      prefillShopName = (it as any).supplier_name
+    }
+    // 优先用产品自身的采购链接
+    if (!prefillLinkUrl && (it as any).shop_url) {
+      prefillLinkUrl = (it as any).shop_url
+    }
   }
-  const prefillShopName = (store.currentOrder as any).supplier_name || ''
-  purchaseDialogRef.value?.open(items, store.currentOrder.id, prefillUrls, prefillShopName)
+  // fallback 到 PI 级别的供应商名称
+  if (!prefillShopName) {
+    prefillShopName = (store.currentOrder as any).supplier_name || ''
+  }
+  purchaseDialogRef.value?.open(items, store.currentOrder.id, prefillUrls, prefillShopName, prefillLinkUrl)
 }
 
 function onSelectionChange(rows: OrderDetailItem[]) {
@@ -969,6 +1116,7 @@ watch(
 )
 
 function onBatchInbound() {
+  if (!ensureFormalRecord('入库')) return
   if (!store.currentOrder || store.detailItems.length === 0) {
     ElMessage.warning('当前订单无产品可入库')
     return
@@ -993,6 +1141,20 @@ function onDetailSuccess() {
   }
 }
 
+function onPurchaseComplete(payload: { factory_name: string; shop_url: string; wechatId: string; wechatNickname: string }) {
+  store.detailItems.forEach((item) => {
+    if (payload.factory_name) {
+      ;(item as any).supplier_name = payload.factory_name
+    }
+    if (payload.shop_url) {
+      ;(item as any).shop_url = payload.shop_url
+    }
+  })
+  if (store.currentOrder?.id) {
+    store.fetchOrderDetail(store.currentOrder.id)
+  }
+}
+
 function onRowContextMenu(row: OrderDetailItem, _column: any, event: MouseEvent) {
   // el-table row-contextmenu 事件签名: (row, column, event)
   if (!event || typeof event.preventDefault !== 'function') {
@@ -1012,6 +1174,7 @@ function hideContextMenu() {
 async function handleContextMenuAction(action: string) {
   hideContextMenu()
   if (!currentContextRow.value) return
+  if (isFormalRecordRequiredActionInView(action) && !ensureFormalRecord(action === 'stockIn' ? '入库' : '采购')) return
   
   const item = currentContextRow.value
   
@@ -1032,7 +1195,8 @@ async function handleContextMenuAction(action: string) {
         item.product_id && (item as any).shop_url
           ? { [item.product_id]: [(item as any).shop_url] }
           : {},
-        (store.currentOrder as any).supplier_name || ''
+        (item as any).supplier_name || (store.currentOrder as any).supplier_name || '',
+        (item as any).shop_url || ''
       )
       break
     case 'stockIn':
@@ -1124,6 +1288,20 @@ function onCellDblClick(row: OrderDetailItem) {
 /* 重复行 hover */
 :deep(.el-table .duplicate-row:hover > td) {
   background-color: #fde68a !important;
+}
+
+.product-name-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 18px;
+  white-space: normal;
+}
+
+.product-name-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .order-detail-panel {
@@ -1274,6 +1452,16 @@ function onCellDblClick(row: OrderDetailItem) {
   color: #2563eb;
 }
 
+.context-menu-item.disabled {
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.context-menu-item.disabled:hover {
+  background-color: transparent;
+  color: #9ca3af;
+}
+
 .context-menu-item.danger:hover {
   background-color: #fef2f2;
   color: #dc2626;
@@ -1342,3 +1530,4 @@ function onCellDblClick(row: OrderDetailItem) {
   overflow: hidden;
 }
 </style>
+
