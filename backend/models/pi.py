@@ -85,6 +85,7 @@ class PiProformaInvoiceItem(Base):
 
     # 🔧 2026-06-22 新增：41列设计缺失字段(导入时直接存入主表)
     customer_model = Column(String(100), nullable=True)              # Col 7 客户型号
+    company_code = Column(String(100), nullable=True)                  # 我司产编号 S.NO.（默认等于 customer_model）
     color = Column(String(100), nullable=True)                       # Col 8 产品颜色（与 product_feature 拼接显示）
     product_feature = Column(Text, nullable=True)                    # Col 8 产品特性
     product_acquires = Column(Text, nullable=True)                   # Col 8 产品需求

@@ -86,6 +86,7 @@ class OrderDetailItemSchema(BaseModel):
     # ========== E组：产品细节 (列31-39) ==========
     purchase_option_name: str = ""
     product_detail: str = ""
+    company_code: str = ""  # 我司产编号 S.NO.（默认等于 customer_model）
     factory_code: str = ""
     carton_size: str = ""
     pack_spec: str = ""

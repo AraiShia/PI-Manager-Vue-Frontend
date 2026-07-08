@@ -484,6 +484,7 @@ def _build_item_detail_v11(db: Session, item: PiProformaInvoiceItem, customer: C
             or (getattr(po_item, 'color', None) if po_item else None)
         ),
         "customer_model": customer_model,
+        "company_code": getattr(item, 'company_code', None) or '',
         "product_feature": getattr(item, 'product_feature', None),
 
         # === B组: 价格与财务 (列9-20) ===
@@ -1084,6 +1085,8 @@ def update_pi_item(db: Session, item_id: int, update_data: dict) -> PiProformaIn
         db_item.customer_code = update_data['customer_code']
     if 'customer_model' in update_data:
         db_item.customer_model = update_data['customer_model']
+    if 'company_code' in update_data:
+        db_item.company_code = update_data['company_code']
     if 'detail_desc' in update_data:
         db_item.detail_desc = update_data['detail_desc']
     if 'detail_desc_en' in update_data:

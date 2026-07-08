@@ -973,6 +973,7 @@ async function onSubmitExcel() {
       product_feature: '产品特性',
       quantity: '数量',
       unit_price: '单价',
+      company_code: '我司产编号',
     }
     const usedFieldToExcelCol: Record<string, string> = {}
     for (const [field, col] of Object.entries(columnMapping)) {
@@ -981,10 +982,15 @@ async function onSubmitExcel() {
       }
     }
     const outHeaders = Object.keys(usedFieldToExcelCol)
+    const customerCodeCol = columnMapping['customer_code']
     const outRows = rowsToImport.map(row => {
       const obj: Record<string, any> = {}
       for (const [sysName, col] of Object.entries(usedFieldToExcelCol)) {
         obj[sysName] = row[col]
+      }
+      // 我司产编号默认等于客户产品编号
+      if (!obj['我司产编号'] && customerCodeCol) {
+        obj['我司产编号'] = row[customerCodeCol] || ''
       }
       return obj
     })

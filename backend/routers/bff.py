@@ -455,6 +455,7 @@ def _build_order_detail_item(
         packaging=_to_str(item.packaging),
         purchase_option_name=_to_str(item.purchase_option_name),
         product_detail=_to_str(item.product_detail),
+        company_code=_to_str(item.company_code),
         factory_code=_to_str(item.factory_code),
         carton_size=carton_size,
         pack_spec=_to_str(item.pack_spec),
