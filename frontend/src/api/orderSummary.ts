@@ -1,4 +1,5 @@
 import client from './client'
+import type { AxiosResponse } from 'axios'
 import type { ApiResponse } from '@/types/api'
 import type { 
   OrderListFilter, 
@@ -47,13 +48,26 @@ export const orderSummaryApi = {
   saveFormalRecord: (orderId: number) =>
     client.post(`/api/pi/${orderId}/formal-record`),
 
-  uploadProductImage: (file: File) => {
+  uploadProductImage: async (file: File): Promise<AxiosResponse<ApiResponse<{ url: string }>>> => {
     const formData = new FormData()
     formData.append('file', file)
-    return client.post<ApiResponse<{ url: string }>>(
-      '/api/upload/product-image',
+    const res = await client.post<ApiResponse<{ url: string }> | { url: string; message?: string }>(
+      '/api/images/upload',
       formData,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     )
+
+    if ('url' in res.data) {
+      return {
+        ...res,
+        data: {
+          code: 200,
+          data: { url: res.data.url },
+          message: res.data.message || '图片上传成功'
+        }
+      } as AxiosResponse<ApiResponse<{ url: string }>>
+    }
+
+    return res as AxiosResponse<ApiResponse<{ url: string }>>
   }
 }
