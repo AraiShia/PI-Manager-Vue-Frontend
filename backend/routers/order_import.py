@@ -263,7 +263,7 @@ async def import_orders(
             logger.info(f"  items数量: {len(all_items)}")
 
             pi_create_start = datetime.now()
-            pi = _create_pi_order(all_items, customer_id, db)
+            pi = _create_pi_order(all_items, customer_id, db, profit_margin=profit_margin, exchange_rate=exchange_rate)
             pi_create_duration = (datetime.now() - pi_create_start).total_seconds()
 
             logger.info(f"[✅ PI订单创建函数返回成功]")
@@ -584,7 +584,7 @@ def _auto_match_entities(data: dict, product_matcher: ProductMatcher, customer_i
     logger.info(f"[导入匹配] 完成 - 最终product_id={new_product.id}")
 
 
-def _create_pi_order(items: list, customer_id: int, db: Session):
+def _create_pi_order(items: list, customer_id: int, db: Session, profit_margin: float = None, exchange_rate: float = None):
     """创建PI订单（一个Excel = 一个PI，多行 = 多个Items）"""
     from models.pi import PiProformaInvoice, PiProformaInvoiceItem
     from models.customer import CrmCustomer
