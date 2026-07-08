@@ -1,38 +1,38 @@
 /* ============================================================
-   全局隐藏 el-input-number 的上下箭头按钮
+   全局隐藏所有 number 输入框上下箭头（覆盖 el-input 和 el-input-number）
+   注意：CSS 必须在 element-plus/dist/index.css 之后引入
    ============================================================ */
 
-/* Element Plus el-input-number 组件的上下箭头按钮 */
-.el-input-number__increase,
-.el-input-number__decrease {
-  display: none !important;
-}
-
-/* 全局移除 el-input-number 的控制按钮区域高度 */
-.el-input-number .el-input-number__controls {
-  display: none !important;
-}
-
-/* el-input type=number 的原生箭头 */
-.el-input input[type="number"] {
-  -moz-appearance: textfield !important;
-  -webkit-appearance: none !important;
-}
-
-.el-input input[type="number"]::-webkit-outer-spin-button,
-.el-input input[type="number"]::-webkit-inner-spin-button {
-  -webkit-appearance: none !important;
-  margin: 0 !important;
-}
-
-/* 确保优先级 */
+/* === 1. 原生 HTML input[type=number] 箭头（最深、优先级最高） === */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none !important;
   margin: 0 !important;
+  display: none !important;
 }
 
 input[type="number"] {
   -moz-appearance: textfield !important;
   -webkit-appearance: none !important;
+}
+
+/* === 2. Element Plus el-input-number 的自定义 span 按钮 === */
+.el-input-number__increase,
+.el-input-number__decrease {
+  display: none !important;
+}
+
+/* === 3. el-input-number 内部包裹原生 input 的情况 === */
+.el-input-number input,
+.el-input-number .el-input__inner {
+  -moz-appearance: textfield !important;
+}
+
+.el-input-number input::-webkit-outer-spin-button,
+.el-input-number input::-webkit-inner-spin-button,
+.el-input-number .el-input__inner::-webkit-outer-spin-button,
+.el-input-number .el-input__inner::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+  display: none !important;
 }
