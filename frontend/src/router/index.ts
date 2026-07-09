@@ -13,6 +13,11 @@ const router = createRouter({
       component: () => import('@/views/order/OrderSummary.vue'),
     },
     {
+      path: '/payments',
+      name: 'PaymentManagement',
+      component: () => import('@/views/payment/PaymentListPage.vue'),
+    },
+    {
       path: '/orders/:id',
       name: 'OrderSummaryDetail',
       component: () => import('@/views/order/OrderSummary.vue'),
