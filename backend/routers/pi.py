@@ -222,8 +222,6 @@ def add_payment(pi_id: int, payload: dict, db: Session = Depends(get_db)):
         stage_type=payload.get("stage_type") or "deposit",
         stage_no=next_no,
         amount=amount,
-        payment_method=payload.get("payment_method"),
-        percentage=payload.get("percentage"),
         status=2,  # 2=已付
         paid_date=date.today(),
     )
