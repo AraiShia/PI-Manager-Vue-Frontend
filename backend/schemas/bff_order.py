@@ -54,6 +54,9 @@ class OrderDetailItemSchema(BaseModel):
     product_feature: str = ""
     product_acquires: str = ""
     product_color: str = ""
+    category_id: Optional[str] = None
+    category_name: Optional[str] = None
+    category_parent_name: Optional[str] = None
 
     # ========== B组：价格财务 (列10-21) ==========
     quantity: float = 0

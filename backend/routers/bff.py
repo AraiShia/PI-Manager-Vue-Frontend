@@ -10,6 +10,8 @@ from datetime import datetime
 
 from app.database import get_db
 from models.customer import CrmCustomer
+from models.customer_product import PrdCustomerProduct
+from models.product_category import PrdProductCategory
 from models.pi import PiProformaInvoice, PiProformaInvoiceItem, PiPaymentStage
 from models.purchase import Po1688Purchase
 from schemas.bff_order import (
@@ -26,6 +28,19 @@ STATUS_MAP = {
     1: "待处理",
     2: "处理中",
     3: "已完成",
+}
+
+_FALLBACK_CATEGORY_NAMES = {
+    "C": "汽配件", "F": "办公家具", "B": "百货类",
+    "C01": "发动机", "C02": "曲轴", "C03": "刹车片", "C09": "杂项",
+    "F01": "椅子类", "F02": "桌子类", "F88": "工程定制",
+    "B00": "百货类",
+}
+
+_FALLBACK_CATEGORY_PARENTS = {
+    "C01": "C", "C02": "C", "C03": "C", "C09": "C",
+    "F01": "F", "F02": "F", "F88": "F",
+    "B00": "B",
 }
 
 
@@ -362,6 +377,8 @@ def _build_order_detail_item(
     order_date: Optional[str],
     latest_1688: Any = None,
     request: Optional[Request] = None,
+    customer_product_map: Optional[Dict[int, PrdCustomerProduct]] = None,
+    category_map: Optional[Dict[str, PrdProductCategory]] = None,
 ) -> OrderDetailItemSchema:
     carton_size = ""
     if item.carton_length_cm or item.carton_width_cm or item.carton_height_cm:
@@ -416,6 +433,24 @@ def _build_order_detail_item(
     revenue_usd = unit_price * quantity
     estimated_margin = round(((revenue_usd - purchase_cost_usd) / revenue_usd) * 100, 2) if revenue_usd else 0.0
 
+    category_id = None
+    category_name = None
+    category_parent_name = None
+    customer_product = None
+    if item.product_id and customer_product_map:
+        customer_product = customer_product_map.get(item.product_id)
+    if customer_product and customer_product.category_id:
+        category_id = customer_product.category_id
+    elif item.temp_category_id:
+        category_id = item.temp_category_id
+    if category_id:
+        category = category_map.get(category_id) if category_map else None
+        category_name = category.name if category else _FALLBACK_CATEGORY_NAMES.get(category_id)
+        parent_code = category.parent_id if category else _FALLBACK_CATEGORY_PARENTS.get(category_id)
+        if parent_code:
+            parent_category = category_map.get(parent_code) if category_map else None
+            category_parent_name = parent_category.name if parent_category else _FALLBACK_CATEGORY_NAMES.get(parent_code)
+
     return OrderDetailItemSchema(
         id=item.id or 0,
         pi_id=item.pi_id or 0,
@@ -434,6 +469,9 @@ def _build_order_detail_item(
         product_feature=_to_str(item.product_feature),
         product_acquires=_to_str(item.product_acquires),
         product_color=_to_str(item.product_color),
+        category_id=category_id,
+        category_name=category_name,
+        category_parent_name=category_parent_name,
         quantity=_to_float(item.quantity),
         unit_price=_to_float(item.unit_price),
         total_amount=_to_float(item.total_price),
@@ -557,11 +595,28 @@ def get_order_full_detail(
         )
         latest_1688_map = {r.product_id: r for r in latest_records}
 
+    customer_product_map: Dict[int, PrdCustomerProduct] = {}
+    category_map: Dict[str, PrdProductCategory] = {}
+    if product_ids:
+        customer_products = db.query(PrdCustomerProduct).filter(
+            PrdCustomerProduct.id.in_(product_ids)
+        ).all()
+        customer_product_map = {p.id: p for p in customer_products}
+        category_codes = [p.category_id for p in customer_products if p.category_id]
+        category_codes.extend([item.temp_category_id for item in items if item.temp_category_id])
+        if category_codes:
+            categories = db.query(PrdProductCategory).filter(
+                PrdProductCategory.code.in_(category_codes + list(_FALLBACK_CATEGORY_PARENTS.values()))
+            ).all()
+            category_map = {c.code: c for c in categories}
+
     detail_items = [
         _build_order_detail_item(
             item, pi_no, order_date,
             latest_1688=latest_1688_map.get(item.product_id),
             request=request,
+            customer_product_map=customer_product_map,
+            category_map=category_map,
         )
         for item in items
     ]

@@ -54,7 +54,36 @@
             </div>
             <div class="basic-info-label category-label required">产品类别<br /><span>P-Category</span></div>
             <div class="basic-info-cell category-cell">
-              <el-input :model-value="productCategoryDisplay" readonly />
+              <div class="category-select-group">
+                <el-select
+                  v-model="categoryLevel1"
+                  placeholder="大类"
+                  :disabled="categoryLocked"
+                  @change="onCategoryLevel1Change"
+                >
+                  <el-option label="-- 请选择大类 --" value="" />
+                  <el-option
+                    v-for="category in parentCategories"
+                    :key="category.code"
+                    :label="category.name"
+                    :value="category.code"
+                  />
+                </el-select>
+                <el-select
+                  v-model="categoryLevel2"
+                  placeholder="子类"
+                  :disabled="categoryLocked || !categoryLevel1"
+                  @change="onCategoryLevel2Change"
+                >
+                  <el-option label="-- 请选择子类 --" value="" />
+                  <el-option
+                    v-for="category in childCategoryOptions"
+                    :key="category.code"
+                    :label="category.name"
+                    :value="category.code"
+                  />
+                </el-select>
+              </div>
             </div>
 
             <div class="basic-info-label model-label required">客户型号<br /><span>Model</span></div>
@@ -62,7 +91,8 @@
               <FieldInput
                 v-model="form.customer_model"
                 :status="getFieldStatus('customer_model')"
-                @blur="saveField('customer_model', form.customer_model)"
+                :disabled="modelLocked"
+                @blur="onCustomerModelBlur"
               />
             </div>
             <div class="basic-info-label pname-label required">产品名称<br /><span>P-Name</span></div>
@@ -222,24 +252,24 @@
         </div>
       </div>
 
-      <!-- 采购信息 -->
+      <!-- 采购基础信息 -->
       <div class="edit-section">
         <div class="section-title" style="background-color: #e1f3d8; color: #5daf34;">采购基础信息</div>
         <div class="section-body">
           <div class="purchase-cost-table">
               <!-- 第1行：价格 + 开票情况（沿用原表头） -->
               
-              <div class="purchase-cost-head">预估美金价<br /><span style="font-size:10px;color:#909399">={{ form.purchase_price }}×{{ (1 + form.profit_margin/100).toFixed(2) }}/{{ form.exchange_rate }}</span></div>              
-              <div class="purchase-cost-head required">人民币采购价</div>
-              <div class="purchase-cost-head">贴标费</div>
-              <div class="purchase-cost-head">运费</div>
-              <div class="purchase-cost-head">金额</div>
+              <div class="purchase-cost-head cost-head">预估美金价<br /><span style="font-size:10px;color:#909399">={{ form.purchase_price }}×{{ (1 + form.profit_margin/100).toFixed(2) }}/{{ form.exchange_rate }}</span></div>              
+              <div class="purchase-cost-head cost-head required">人民币采购价</div>
+              <div class="purchase-cost-head cost-head">贴标费</div>
+              <div class="purchase-cost-head cost-head">运费</div>
+              <div class="purchase-cost-head cost-head">金额</div>
               <div class="purchase-cost-head invoice-group-head">开票情况</div>
 
-              <div class="purchase-cost-cell" style="color:#303133;font-weight:600;line-height:32px;">
+              <div class="purchase-cost-cell cost-cell" style="color:#303133;font-weight:600;line-height:32px;">
                 {{ form.estimated_usd_price != null ? '$' + form.estimated_usd_price.toFixed(2) : '-' }}
               </div>
-              <div class="purchase-cost-cell">
+              <div class="purchase-cost-cell cost-cell">
                 <el-input
                   v-model="form.purchase_price"
                   type="number"
@@ -247,7 +277,7 @@
                   @blur="saveField('purchase_price', form.purchase_price)"
                 />
               </div>
-              <div class="purchase-cost-cell">
+              <div class="purchase-cost-cell cost-cell">
                 <el-input
                   v-model="form.misc_fee"
                   type="number"
@@ -255,7 +285,7 @@
                   @blur="saveField('misc_fee', form.misc_fee)"
                 />
               </div>
-              <div class="purchase-cost-cell">
+              <div class="purchase-cost-cell cost-cell">
                 <el-input
                   v-model="form.shipping_fee"
                   type="number"
@@ -263,7 +293,7 @@
                   @blur="saveField('shipping_fee', form.shipping_fee)"
                 />
               </div>
-              <div class="purchase-cost-cell amount-cell">
+              <div class="purchase-cost-cell cost-cell amount-cell">
                 {{ formatMoney(form.purchase_price * form.quantity + (form.misc_fee || 0) + (form.shipping_fee || 0)) }}
               </div>
               <div class="purchase-cost-cell invoice-type-cell">
@@ -297,7 +327,7 @@
                   @blur="saveField('supplier_name', form.supplier_name)"
                 />
               </div>
-              <div class="purchase-cost-head required">产品特性/选项/采购备注</div>
+              <div class="purchase-cost-head product-detail-head required">产品特性<br />选项/采购备注</div>
               <div class="purchase-cost-cell span-2 product-detail-cell detail-right" rowspan="2">
                 <el-input
                   v-model="form.product_detail"
@@ -317,15 +347,22 @@
                   @blur="saveField('shop_url', form.shop_url)"
                 />
               </div>
-              <div class="purchase-cost-head detail-label-placeholder"></div>
 
               <!-- 第5行：采购方式 + 付款标题 -->
-              <div class="purchase-cost-head span-2">采购方式</div>
-              <div class="purchase-cost-cell span-2">
+              <div class="purchase-cost-head">采购方式</div>
+              <div class="purchase-cost-cell">
                 <FieldInput
                   v-model="form.purchase_option_name"
                   :status="getFieldStatus('purchase_option_name')"
                   @blur="saveField('purchase_option_name', form.purchase_option_name)"
+                />
+              </div>
+              <div class="purchase-cost-head">付款方式</div>
+              <div class="purchase-cost-cell">
+                <FieldInput
+                  v-model="form.payment_method"
+                  :status="getFieldStatus('payment_method')"
+                  @blur="saveField('payment_method', form.payment_method)"
                 />
               </div>
               <div class="purchase-cost-head payment-head">付款1</div>
@@ -333,12 +370,20 @@
               <div class="purchase-cost-head payment-head">未付款金额</div>
 
               <!-- 第6行：付款方式 + 付款金额 -->
-              <div class="purchase-cost-head span-2">付款方式</div>
-              <div class="purchase-cost-cell span-2">
+              <div class="purchase-cost-head">开票工厂（全称）：</div>
+              <div class="purchase-cost-cell">
                 <FieldInput
-                  v-model="form.payment_method"
-                  :status="getFieldStatus('payment_method')"
-                  @blur="saveField('payment_method', form.payment_method)"
+                  v-model="form.factory_invoice_name"
+                  :status="getFieldStatus('factory_invoice_name')"
+                  @blur="onUnmappedBlur('factory_invoice_name')"
+                />
+              </div>
+              <div class="purchase-cost-head">货源地</div>
+              <div class="purchase-cost-cell">
+                <FieldInput
+                  v-model="form.source_place"
+                  :status="getFieldStatus('source_place')"
+                  @blur="onUnmappedBlur('source_place')"
                 />
               </div>
               <div class="purchase-cost-cell payment-cell">
@@ -360,125 +405,51 @@
               <div class="purchase-cost-cell amount-cell payment-cell">
                 {{ formatMoney(unpaidAmount) }}
               </div>
+              <!-- 第8-10行：包装规格 -->
+              <div class="purchase-cost-head packaging-head span-3 required">纸箱包装<br /><span style="font-size:10px;color:#909399;">长×宽×高 (cm)</span></div>
+              <div class="purchase-cost-head packaging-head packaging-head-packing required">打包规格</div>
+              <div class="purchase-cost-head packaging-head">整箱毛重</div>
+              <div class="purchase-cost-head packaging-head">预估体积</div>
+              <div class="purchase-cost-head packaging-head">预估毛重</div>
 
-              <!-- 第7行：开票工厂 + 货源地 -->
-              <div class="purchase-cost-head span-2">开票工厂（全称）：</div>
-              <div class="purchase-cost-cell span-2">
-                <FieldInput
-                  v-model="form.factory_invoice_name"
-                  :status="getFieldStatus('factory_invoice_name')"
-                  @blur="onUnmappedBlur('factory_invoice_name')"
-                />
+              <div class="purchase-cost-cell packaging-cell packaging-cell-carton">
+                <el-input v-model="form.carton_length" placeholder="长" type="number" style="width: 100%" @change="onCartonSizeChange" />
               </div>
-              <div class="purchase-cost-head">货源地</div>
-              <div class="purchase-cost-cell span-2">
-                <FieldInput
-                  v-model="form.source_place"
-                  :status="getFieldStatus('source_place')"
-                  @blur="onUnmappedBlur('source_place')"
-                />
+              <div class="purchase-cost-cell packaging-cell packaging-cell-carton">
+                <el-input v-model="form.carton_width" placeholder="宽" type="number" style="width: 100%" @change="onCartonSizeChange" />
+              </div>
+              <div class="purchase-cost-cell packaging-cell packaging-cell-carton">
+                <el-input v-model="form.carton_height" placeholder="高" type="number" style="width: 100%" @change="onCartonSizeChange" />
+              </div>
+              <div class="purchase-cost-cell packaging-cell">
+                <div class="pack-spec-cell">
+                  <el-input
+                    v-if="form.packaging === '多件/箱'"
+                    v-model="form.units_per_carton"
+                    type="number"
+                    style="width: 100%"
+                    @change="onUnitsPerCartonChange"
+                  />
+                  <el-input
+                    v-else-if="form.packaging === '1件多箱'"
+                    v-model="form.cartons_per_unit"
+                    type="number"
+                    style="width: 100%"
+                    @change="onCartonsPerUnitChange"
+                  />
+                  <el-input v-else :model-value="1" readonly style="width: 100%" />
+                </div>
+              </div>
+              <div class="purchase-cost-cell packaging-cell">
+                <el-input v-model="form.carton_gross_weight" type="number" style="width: 100%" @change="saveField('carton_gross_weight', form.carton_gross_weight)" />
+              </div>
+              <div class="purchase-cost-cell packaging-cell">
+                <el-input :model-value="form.estimated_volume != null ? form.estimated_volume.toFixed(6) : ''" readonly />
+              </div>
+              <div class="purchase-cost-cell packaging-cell">
+                <el-input :model-value="estimatedGrossWeight" readonly />
               </div>
             </div>
-        </div>
-      </div>
-
-      <!-- 包装规格 -->
-      <div class="edit-section">
-        <div class="section-title" style="background-color: #f0f0f0; color: #666;">包装规格</div>
-        <div class="section-body" style="padding: 8px 10px;">
-          <table class="packaging-table">
-            <thead>
-              <tr>
-                <th class="th-left">纸箱包装</th>
-                <th colspan="3">长 × 宽 × 高 (cm)</th>
-                <th>打包规格</th>
-                <th>整箱毛重</th>
-                <th>预估体积</th>
-                <th>预估毛重</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td class="td-label">
-                  <el-select v-model="form.packaging" style="width: 100%" @change="onPackagingChangeSave">
-                    <el-option label="1件/箱" value="1件/箱" />
-                    <el-option label="多件/箱" value="多件/箱" />
-                    <el-option label="1件多箱" value="1件多箱" />
-                  </el-select>
-                </td>
-                <td>
-                  <el-input v-model="form.carton_length" type="number" style="width: 100%" @change="onCartonSizeChange" />
-                </td>
-                <td>
-                  <el-input v-model="form.carton_width" type="number" style="width: 100%" @change="onCartonSizeChange" />
-                </td>
-                <td>
-                  <el-input v-model="form.carton_height" type="number" style="width: 100%" @change="onCartonSizeChange" />
-                </td>
-                <td>
-                  <div class="pack-spec-cell">
-                    <el-input
-                      v-if="form.packaging === '多件/箱'"
-                      v-model="form.units_per_carton"
-                      type="number"
-                      style="width: 100%"
-                      @change="onUnitsPerCartonChange"
-                    />
-                    <el-input
-                      v-else-if="form.packaging === '1件多箱'"
-                      v-model="form.cartons_per_unit"
-                      type="number"
-                      style="width: 100%"
-                      @change="onCartonsPerUnitChange"
-                    />
-                    <el-input v-else :model-value="1" readonly style="width: 100%" />
-                  </div>
-                </td>
-                <td>
-                  <el-input v-model="form.carton_gross_weight" type="number" style="width: 100%" @change="saveField('carton_gross_weight', form.carton_gross_weight)" />
-                </td>
-                <td>
-                  <el-input :model-value="form.estimated_volume != null ? form.estimated_volume.toFixed(6) : ''" readonly />
-                </td>
-                <td>
-                  <el-input :model-value="estimatedGrossWeight" readonly />
-                </td>
-              </tr>
-              <tr class="row-secondary">
-                <td class="td-label">
-                  <span class="row-secondary-label">数量 / 箱数</span>
-                </td>
-                <td colspan="4" class="row-secondary-text">
-                  数量:
-                  <el-input
-                    v-model="form.quantity"
-                    type="number"
-                    style="width: 110px; margin: 0 6px;"
-                    @blur="saveField('quantity', form.quantity)"
-                  />
-                  箱数:
-                  <el-input
-                    v-model="form.carton_count"
-                    type="number"
-                    style="width: 110px; margin: 0 6px;"
-                    @blur="saveField('carton_count', form.carton_count)"
-                  />
-                  (自动:
-                  <el-input :model-value="computedCartonCount" readonly style="width: 80px; display: inline-block; margin: 0 4px;" />
-                  )
-                </td>
-                <td colspan="3">
-                  纸箱尺寸:
-                  <el-input
-                    v-model="form.carton_size"
-                    placeholder="如: 60x40x30"
-                    style="width: calc(100% - 70px); display: inline-block; margin-left: 4px;"
-                    @blur="onCartonSizeTextChange"
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
 
@@ -586,11 +557,11 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
 import { orderSummaryApi } from '@/api/orderSummary'
-import { assetUrl } from '@/api/base'
+import { apiUrl, assetUrl } from '@/api/base'
 import type { OrderDetailItem } from '@/types/orderSummary'
 import FieldInput from './FieldInput.vue'
 import ImagePreviewDialog from './ImagePreviewDialog.vue'
@@ -600,6 +571,29 @@ interface ProductEditItem extends OrderDetailItem {
   customer_name?: string
   customer_country?: string
 }
+
+interface ProductCategory {
+  code: string
+  name: string
+  parent_id?: string | null
+}
+
+const FALLBACK_PARENT_CATEGORIES: ProductCategory[] = [
+  { code: 'C', name: '汽配件' },
+  { code: 'F', name: '办公家具' },
+  { code: 'B', name: '百货类' },
+]
+
+const FALLBACK_CHILD_CATEGORIES: ProductCategory[] = [
+  { code: 'C01', name: '发动机', parent_id: 'C' },
+  { code: 'C02', name: '曲轴', parent_id: 'C' },
+  { code: 'C03', name: '刹车片', parent_id: 'C' },
+  { code: 'C09', name: '杂项', parent_id: 'C' },
+  { code: 'F01', name: '椅子类', parent_id: 'F' },
+  { code: 'F02', name: '桌子类', parent_id: 'F' },
+  { code: 'F88', name: '工程定制', parent_id: 'F' },
+  { code: 'B00', name: '百货类', parent_id: 'B' },
+]
 
 interface ProductEditForm {
   customer_name: string
@@ -666,6 +660,9 @@ interface ProductEditForm {
 const visible = ref(false)
 const item = ref<ProductEditItem | null>(null)
 const { fieldStates, saveField } = useProductEdit(item as any)
+const categories = ref<ProductCategory[]>([])
+const categoryLevel1 = ref('')
+const categoryLevel2 = ref('')
 
 const form = reactive<ProductEditForm>({
   customer_name: '',
@@ -750,12 +747,23 @@ const dialogTitle = computed(() => {
   return `编辑产品 - ${name} - ${customer} - ${customer_country}`
 })
 
-const productCategoryDisplay = computed(() => {
-  const parentName = item.value?.category_parent_name
-  const categoryName = item.value?.category_name
-  if (parentName && categoryName) return `${parentName} / ${categoryName}`
-  return parentName || categoryName || '-'
+const parentCategories = computed(() => {
+  const parents = categories.value.filter(category => !category.parent_id)
+  return parents.length ? parents : FALLBACK_PARENT_CATEGORIES
 })
+
+const childCategories = computed(() => {
+  const children = categories.value.filter(category => category.parent_id)
+  return children.length ? children : FALLBACK_CHILD_CATEGORIES
+})
+
+const childCategoryOptions = computed(() => {
+  return childCategories.value.filter(category => category.parent_id === categoryLevel1.value)
+})
+
+const categoryLocked = computed(() => Boolean(item.value?.category_id))
+
+const modelLocked = ref(false)
 
 const computedAmount = computed(() => {
   const qty = Number(form.quantity || 0)
@@ -843,6 +851,7 @@ function onPackagingChange() {
 function onPackagingChangeSave() {
   onPackagingChange()
   syncCartonCount()
+  updateVolume()
   saveField('packaging', form.packaging)
   saveField('pack_spec', form.pack_spec)
   saveField('carton_count', form.carton_count)
@@ -852,6 +861,7 @@ function onPackagingChangeSave() {
 function onUnitsPerCartonChange() {
   updatePackSpec()
   syncCartonCount()
+  updateVolume()
   saveField('units_per_carton', form.units_per_carton)
   saveField('pack_spec', form.pack_spec)
   saveField('carton_count', form.carton_count)
@@ -861,6 +871,7 @@ function onUnitsPerCartonChange() {
 function onCartonsPerUnitChange() {
   updatePackSpec()
   syncCartonCount()
+  updateVolume()
   saveField('cartons_per_unit', form.cartons_per_unit)
   saveField('pack_spec', form.pack_spec)
   saveField('carton_count', form.carton_count)
@@ -884,6 +895,157 @@ function onCartonSizeTextChange() {
 function syncCartonCount() {
   const count = computedCartonCount.value
   form.carton_count = count > 0 ? count : undefined
+}
+
+// 加载产品类目（API 优先，空则用硬编码兜底）
+async function loadCategories() {
+  try {
+    const res = await fetch(apiUrl('/api/product-categories/'))
+    if (res.ok) {
+      const data = await res.json()
+      if (data && data.length) {
+        categories.value = data.map((cat: any) => ({
+          code: String(cat.code),
+          name: cat.name,
+          parent_id: cat.parent_id ?? null,
+        }))
+        return
+      }
+    }
+  } catch { /* fallthrough */ }
+  // 硬编码兜底：与旧客户端 client/product_categories.py 保持一致
+  categories.value = [
+    ...FALLBACK_PARENT_CATEGORIES,
+    ...FALLBACK_CHILD_CATEGORIES,
+  ]
+}
+
+// 大类变化 → 清空子类，重置子类选中值
+function onCategoryLevel1Change() {
+  categoryLevel2.value = ''
+}
+
+// 子类变化 → 首次设置时弹出确认，仅可设置一次
+async function onCategoryLevel2Change() {
+  if (!categoryLevel2.value) return
+  const productId = item.value?.product_id
+  const categoryName = childCategories.value.find(c => c.code === categoryLevel2.value)?.name || categoryLevel2.value
+  try {
+    await ElMessageBox.confirm(
+      `产品类目设置为 ${categoryName} 后将无法再次修改，是否确认？`,
+      '确认产品类目',
+      { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
+    )
+  } catch {
+    syncCategoryFromItem()
+    return
+  }
+  if (productId) {
+    // 已有客户产品：走单独更新接口（不触发 PI item 保存）
+    updateCustomerProductCategory(productId, categoryLevel2.value)
+  } else {
+    // 新产品：直接通过 saveField 写入 PI item
+    saveField('category_id', categoryLevel2.value)
+  }
+}
+
+// 调用客户产品接口更新类目（已有类目后锁定）
+async function updateCustomerProductCategory(productId: number, categoryId: string) {
+  const prevCategoryId = item.value?.category_id
+  if (prevCategoryId) {
+    ElMessage.warning('产品类目已设置，不可再次修改')
+    // 恢复原值
+    syncCategoryFromItem()
+    return
+  }
+  try {
+    const res = await fetch(apiUrl(`/api/customer-products/${productId}`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category_id: categoryId }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      // 锁定类目编辑
+      if (item.value) item.value.category_id = data.category_id
+      ElMessage.success('产品类目已保存')
+    } else {
+      const err = await res.json().catch(() => ({}))
+      ElMessage.error(err.detail || '保存类目失败')
+      syncCategoryFromItem()
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || '保存类目失败')
+    syncCategoryFromItem()
+  }
+}
+
+// 从 item 回填类目两级选择
+function syncCategoryFromItem() {
+  const catId = item.value?.category_id
+  if (!catId) {
+    categoryLevel1.value = ''
+    categoryLevel2.value = ''
+    return
+  }
+  // 查找父类
+  const childCat = childCategories.value.find(c => c.code === catId)
+  if (childCat) {
+    categoryLevel1.value = childCat.parent_id || ''
+    categoryLevel2.value = catId
+  } else {
+    // 直接是一级代码（如 'C'）
+    categoryLevel1.value = catId
+    categoryLevel2.value = ''
+  }
+}
+
+// 客户型号blur时弹确认，确认后锁定
+async function onCustomerModelBlur() {
+  if (modelLocked.value) return
+  const productId = item.value?.product_id
+  if (!productId) {
+    // 无客户产品，直接保存
+    saveField('customer_model', form.customer_model)
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `客户型号设置为「${form.customer_model}」后将无法再次修改，是否确认？`,
+      '确认客户型号',
+      { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
+    )
+  } catch {
+    // 用户取消，恢复原值
+    if (item.value) form.customer_model = item.value.customer_model || ''
+    return
+  }
+  // 确认后更新并锁定
+  try {
+    const res = await fetch(apiUrl(`/api/customer-products/${productId}`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer_model: form.customer_model }),
+    })
+    if (res.ok) {
+      modelLocked.value = true
+      if (item.value) item.value.customer_model = form.customer_model
+      ElMessage.success('客户型号已保存并锁定')
+    } else {
+      const err = await res.json().catch(() => ({}))
+      ElMessage.error(err.detail || '保存失败')
+      if (item.value) form.customer_model = item.value.customer_model || ''
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || '保存失败')
+    if (item.value) form.customer_model = item.value.customer_model || ''
+  }
+}
+
+// 客户型号锁定：open时读取
+function syncModelFromItem() {
+  modelLocked.value = Boolean(item.value?.product_id && item.value?.customer_model)
+  if (item.value) form.customer_model = item.value.customer_model || ''
 }
 
 function updateCartonSizeText() {
@@ -911,8 +1073,20 @@ function updateVolume() {
   const l = Number(form.carton_length || 0)
   const w = Number(form.carton_width || 0)
   const h = Number(form.carton_height || 0)
+  const qty = Number(form.quantity || 0)
   if (l > 0 && w > 0 && h > 0) {
-    form.estimated_volume = (l * w * h) / 1000000
+    const cartonVolume = (l * w * h) / 1000000 // CBM per carton
+    const unitsPerCarton = form.packaging === '多件/箱'
+      ? Number(form.units_per_carton || 0)
+      : form.packaging === '1件多箱'
+      ? Number(form.cartons_per_unit || 0)
+      : 1
+    if (unitsPerCarton > 0 && qty > 0) {
+      // 单品体积 × 采购数量
+      form.estimated_volume = (cartonVolume / unitsPerCarton) * qty
+    } else {
+      form.estimated_volume = cartonVolume * qty
+    }
   } else {
     form.estimated_volume = undefined
   }
@@ -962,6 +1136,9 @@ watch(
       const marginRate = ((revenue - cost) / revenue) * 100
       form.estimated_margin = Math.round(marginRate * 100) / 100
     }
+
+    // 同步预估体积（单品体积 × 采购数量）
+    updateVolume()
   },
   { immediate: true }
 )
@@ -981,6 +1158,7 @@ watch(
 onMounted(() => {
   updatePackSpec()
   updateVolume()
+  loadCategories()
 })
 
 const emit = defineEmits<{
@@ -1090,7 +1268,9 @@ function open(source: OrderDetailItem, customerName?: string, customerCountry?: 
   editItem.customer_country = customerCountry || ''
   item.value = editItem
   initFromItem(editItem)
-  // 新增产品时，我司产编号默认等于客户型号
+  syncCategoryFromItem()
+  syncModelFromItem()
+  // 新增产品时，我司产品编号默认等于客户型号
   if (!editItem.id) {
     form.factory_code = form.customer_model
   }
@@ -1102,6 +1282,7 @@ function close() {
 }
 
 function onClosed() {
+  modelLocked.value = false
   emit('closed')
 }
 
@@ -1426,6 +1607,19 @@ defineExpose({ open, close })
   grid-column: 8;
   grid-row: 1;
   border-right: none;
+  overflow: hidden;
+}
+
+.category-select-group {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.category-select-group .el-select {
+  flex: 1;
+  min-width: 0;
 }
 
 .model-label {
@@ -1678,7 +1872,7 @@ defineExpose({ open, close })
   grid-column: span 6;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  grid-template-rows: repeat(7, 42px);
+  grid-template-rows: repeat(8, 42px);
   border: 1px solid #222;
   border-radius: 0;
   overflow: hidden;
@@ -1703,6 +1897,10 @@ defineExpose({ open, close })
 
 .purchase-cost-head.span-2 {
   grid-column: span 2;
+}
+
+.purchase-cost-head.span-3 {
+  grid-column: span 3;
 }
 
 .invoice-group-head {
@@ -1768,6 +1966,7 @@ defineExpose({ open, close })
 }
 
 .product-detail-cell {
+  grid-row: span 2;
   align-items: stretch;
   padding: 4px;
 }
@@ -1776,13 +1975,56 @@ defineExpose({ open, close })
   grid-row: span 2;
 }
 
-.detail-label-placeholder {
-  background: #fff;
+.product-detail-head {
+  grid-row: span 2;
+  flex-direction: column;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.cost-head,
+.cost-cell {
+  background: #b7e1a3;
+  position: relative;
+}
+
+.cost-head:first-child::before {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  top: -1px;
+  left: -1px;
+  width: calc(500% + 4px);
+  height: calc(200% + 0px);
+  border: 1px solid #000;
+  border-radius: 1px;
+  pointer-events: none;
 }
 
 .payment-head,
 .payment-cell {
   background: #c6e0b4;
+}
+
+.packaging-head,
+.packaging-cell {
+  background: #f0f0f0;
+}
+
+.packaging-head.span-3 {
+  flex-direction: column;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.packaging-cell-carton :deep(.el-input__inner) {
+  text-align: center;
+  font-size: 14px;
+  font-family: 'Times New Roman', 'SimSun', serif;
+}
+
+.packaging-cell-carton {
+  padding: 0 6px;
 }
 
 .product-detail-cell :deep(.el-textarea),
@@ -2071,61 +2313,7 @@ defineExpose({ open, close })
   display: block;
 }
 
-/* ============ 包装规格表格 ============ */
-.packaging-table {
-  width: 100%;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-
-.packaging-table th,
-.packaging-table td {
-  border: 1px solid #dcdfe6;
-  padding: 4px 6px;
-  vertical-align: middle;
-  text-align: center;
-  background: #fff;
-}
-
-.packaging-table thead th {
-  background: #f5f7fa;
-  color: #606266;
-  font-weight: 600;
-  font-size: 12px;
-  height: 32px;
-}
-
-.packaging-table .th-left {
-  width: 110px;
-}
-
-.packaging-table .td-label {
-  width: 110px;
-  background: #fafafa;
-}
-
-.packaging-table .row-secondary td {
-  background: #fafbfc;
-}
-
-.packaging-table .row-secondary-label {
-  color: #606266;
-  font-weight: 500;
-}
-
-.packaging-table .row-secondary-text {
-  text-align: left;
-  color: #606266;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.packaging-table .row-secondary-text :deep(.el-input),
-.packaging-table .row-secondary-text :deep(.el-input-number) {
-  vertical-align: middle;
-}
-
+/* ============ 包装规格 ============ */
 .pack-spec-cell {
   width: 100%;
 }
@@ -2133,19 +2321,6 @@ defineExpose({ open, close })
 .pack-spec-cell :deep(.el-input-number),
 .pack-spec-cell :deep(.el-input) {
   width: 100%;
-}
-
-.packaging-table :deep(.el-input-number .el-input__inner),
-.packaging-table :deep(.el-input__inner) {
-  font-size: 12px;
-  text-align: center;
-  height: 26px;
-  line-height: 26px;
-}
-
-.packaging-table :deep(.el-input__wrapper) {
-  padding: 1px 6px;
-  min-height: 26px;
 }
 
 /* ============ 附图 360x80 横向滚动 ============ */

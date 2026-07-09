@@ -234,14 +234,17 @@ def add_payment(pi_id: int, payload: dict, db: Session = Depends(get_db)):
     else:
         payment_date = datetime.utcnow()
 
+    handling_fee = float(payload.get("handling_fee") or 0)
+    actual_amount = max(amount - handling_fee, 0)
+
     customer_payment = ArCustomerPayment(
         dept_id=pi.dept_id,
         receipt_no=NumberGenerator.generate_receipt_no(db, pi.dept_id),
         pi_id=pi_id,
         customer_id=pi.customer_id,
         amount=amount,
-        handling_fee=0,
-        actual_amount=amount,
+        handling_fee=handling_fee,
+        actual_amount=actual_amount,
         is_fully_paid=False,
         payment_date=payment_date,
         payment_method=payload.get("payment_method") or "",
@@ -287,6 +290,8 @@ def add_payment(pi_id: int, payload: dict, db: Session = Depends(get_db)):
             "id": customer_payment.id,
             "receipt_no": customer_payment.receipt_no,
             "actual_amount": float(customer_payment.actual_amount or 0),
+            "handling_fee": float(customer_payment.handling_fee or 0),
+            "payment_method": customer_payment.payment_method,
             "payment_date": customer_payment.payment_date.isoformat() if customer_payment.payment_date else None,
         },
         "pi_id": pi_id,

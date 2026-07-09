@@ -56,7 +56,25 @@
           value-format="YYYY-MM-DD"
         />
       </el-form-item>
-      
+
+      <el-form-item label="付款方式" prop="payment_method">
+        <el-select v-model="form.payment_method" placeholder="请选择付款方式" style="width: 100%">
+          <el-option label="银行转账" value="银行转账" />
+          <el-option label="现金" value="现金" />
+          <el-option label="支票" value="支票" />
+          <el-option label="其他" value="其他" />
+        </el-select>
+      </el-form-item>
+
+      <el-form-item label="手续费">
+        <el-input-number
+          v-model="form.handling_fee"
+          :min="0"
+          :precision="2"
+          style="width: 100%"
+        />
+      </el-form-item>
+
       <el-form-item label="备注">
         <el-input v-model="form.remark" type="textarea" :rows="2" />
       </el-form-item>
@@ -88,6 +106,8 @@ const form = reactive({
   stage_type: 'prepayment',
   amount: 0,
   paid_date: new Date().toISOString().split('T')[0],
+  payment_method: '',
+  handling_fee: 0,
   remark: ''
 })
 
@@ -121,6 +141,8 @@ async function onSubmit() {
           stage_type: form.stage_type,
           amount: form.amount,
           paid_date: form.paid_date,
+          payment_method: form.payment_method || undefined,
+          handling_fee: form.handling_fee || 0,
           remark: form.remark || undefined
         })
       })
@@ -146,6 +168,8 @@ function onClose() {
   form.stage_type = 'prepayment'
   form.amount = 0
   form.paid_date = new Date().toISOString().split('T')[0]
+  form.payment_method = ''
+  form.handling_fee = 0
   form.remark = ''
   visible.value = false
 }

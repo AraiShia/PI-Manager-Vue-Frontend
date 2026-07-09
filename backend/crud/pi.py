@@ -1119,6 +1119,10 @@ def update_pi_item(db: Session, item_id: int, update_data: dict) -> PiProformaIn
         db_item.product_acquires = update_data['product_acquires']
     if 'product_color' in update_data:
         db_item.product_color = update_data['product_color']
+    if 'category_id' in update_data:
+        db_item.temp_category_id = update_data['category_id']
+    if 'temp_category_id' in update_data:
+        db_item.temp_category_id = update_data['temp_category_id']
     if 'product_detail' in update_data:
         db_item.product_detail = update_data['product_detail']
     if 'invoice_status' in update_data:
