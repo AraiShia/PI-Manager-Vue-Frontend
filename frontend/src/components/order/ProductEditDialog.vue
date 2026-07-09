@@ -407,10 +407,13 @@
               </div>
               <!-- 第8-10行：包装规格 -->
               <div class="purchase-cost-head packaging-head span-3 required">纸箱包装<br /><span style="font-size:10px;color:#909399;">长×宽×高 (cm)</span></div>
-              <div class="purchase-cost-head packaging-head packaging-head-packing required">打包规格</div>
-              <div class="purchase-cost-head packaging-head">整箱毛重</div>
-              <div class="purchase-cost-head packaging-head">预估体积</div>
-              <div class="purchase-cost-head packaging-head">预估毛重</div>
+              <div class="purchase-cost-head packaging-head required">
+                <span class="packaging-type-label">打包规格</span>
+                
+              </div>
+              <div class="purchase-cost-head packaging-head">整箱毛重(kg)</div>
+              <div class="purchase-cost-head packaging-head">预估体积(m³)</div>
+              <div class="purchase-cost-head packaging-head">预估毛重(kg)</div>
 
               <div class="purchase-cost-cell packaging-cell packaging-cell-carton">
                 <el-input v-model="form.carton_length" placeholder="长" type="number" style="width: 100%" @change="onCartonSizeChange" />
@@ -421,24 +424,40 @@
               <div class="purchase-cost-cell packaging-cell packaging-cell-carton">
                 <el-input v-model="form.carton_height" placeholder="高" type="number" style="width: 100%" @change="onCartonSizeChange" />
               </div>
-              <div class="purchase-cost-cell packaging-cell">
-                <div class="pack-spec-cell">
-                  <el-input
-                    v-if="form.packaging === '多件/箱'"
-                    v-model="form.units_per_carton"
-                    type="number"
-                    style="width: 100%"
-                    @change="onUnitsPerCartonChange"
-                  />
-                  <el-input
-                    v-else-if="form.packaging === '1件多箱'"
-                    v-model="form.cartons_per_unit"
-                    type="number"
-                    style="width: 100%"
-                    @change="onCartonsPerUnitChange"
-                  />
-                  <el-input v-else :model-value="1" readonly style="width: 100%" />
-                </div>
+              <div class="purchase-cost-cell packaging-cell pack-spec-cell">
+                <el-popover placement="bottom" :width="260" trigger="click">
+                  <template #reference>
+                    <el-input :model-value="form.pack_spec || '1pcs/1ctn'" readonly style="width: 100%" />
+                  </template>
+                  <template #default>
+                    <div class="pack-spec-popover">
+                      <el-radio-group v-model="form.packaging" @change="onPackagingChange">
+                        <el-radio label="1件/箱">1pcs/1ctn</el-radio>
+                        <el-radio label="多件/箱">Apcs/1ctn</el-radio>
+                        <el-radio label="1件多箱">1pcs/Bctn</el-radio>
+                      </el-radio-group>
+                      <el-input-number
+                        v-if="form.packaging === '多件/箱'"
+                        v-model="form.units_per_carton"
+                        :min="1"
+                        :precision="0"
+                        style="width: 100%"
+                        @change="updatePackSpec"
+                        @blur="onPackSpecBlur"
+                      />
+                      <el-input-number
+                        v-else-if="form.packaging === '1件多箱'"
+                        v-model="form.cartons_per_unit"
+                        :min="1"
+                        :precision="0"
+                        style="width: 100%"
+                        @change="updatePackSpec"
+                        @blur="onPackSpecBlur"
+                      />
+                      <el-button size="small" type="primary" style="width: 100%" @click="onPackSpecBlur">确定</el-button>
+                    </div>
+                  </template>
+                </el-popover>
               </div>
               <div class="purchase-cost-cell packaging-cell">
                 <el-input v-model="form.carton_gross_weight" type="number" style="width: 100%" @change="saveField('carton_gross_weight', form.carton_gross_weight)" />
@@ -832,18 +851,34 @@ const computedCartonCount = computed(() => {
   return qty // 1件/箱
 })
 
-// 预估毛重 = 总箱数 × 整箱毛重
+// 预估毛重 = 整箱毛重 / 每箱件数 × 采购数量 = 单品毛重 × 采购数量
 const estimatedGrossWeight = computed(() => {
-  const cnt = Number(computedCartonCount.value || 0)
   const gw = Number(form.carton_gross_weight || 0)
-  if (!cnt || !gw) return ''
-  return (cnt * gw).toFixed(2)
+  const qty = Number(form.quantity || 0)
+  if (!gw || !qty) return ''
+  const unitsPerCarton = form.packaging === '多件/箱'
+    ? Number(form.units_per_carton || 0)
+    : form.packaging === '1件多箱'
+    ? Number(form.cartons_per_unit || 0)
+    : 1
+  if (unitsPerCarton > 0) {
+    return ((gw / unitsPerCarton) * qty).toFixed(2)
+  }
+  return (gw * qty).toFixed(2)
 })
 
 // 包装方式切换
 function onPackagingChange() {
-  form.units_per_carton = undefined
-  form.cartons_per_unit = undefined
+  if (form.packaging === '多件/箱') {
+    form.units_per_carton = form.units_per_carton || 1
+    form.cartons_per_unit = undefined
+  } else if (form.packaging === '1件多箱') {
+    form.units_per_carton = undefined
+    form.cartons_per_unit = form.cartons_per_unit || 1
+  } else {
+    form.units_per_carton = undefined
+    form.cartons_per_unit = undefined
+  }
   updatePackSpec()
 }
 
@@ -1059,13 +1094,24 @@ function updateCartonSizeText() {
 function updatePackSpec() {
   if (form.packaging === '多件/箱') {
     const upc = Number(form.units_per_carton || 0)
-    form.pack_spec = upc > 0 ? `${upc} pcs/ctn` : ''
+    form.pack_spec = upc > 0 ? `${upc}pcs/1ctn` : ''
   } else if (form.packaging === '1件多箱') {
     const cpu = Number(form.cartons_per_unit || 0)
-    form.pack_spec = cpu > 0 ? `1pcs/${cpu} ctn` : ''
+    form.pack_spec = cpu > 0 ? `1pcs/${cpu}ctn` : ''
   } else {
-    form.pack_spec = '1 pcs/ctn'
+    form.pack_spec = '1pcs/1ctn'
   }
+}
+
+function onPackSpecBlur() {
+  updatePackSpec()
+  syncCartonCount()
+  updateVolume()
+  saveField('packaging', form.packaging)
+  saveField('units_per_carton', form.units_per_carton)
+  saveField('cartons_per_unit', form.cartons_per_unit)
+  saveField('pack_spec', form.pack_spec)
+  saveField('carton_count', form.carton_count)
 }
 
 // 更新预估体积
@@ -1252,6 +1298,11 @@ function initFromItem(source: ProductEditItem) {
   form.units_per_carton = (source as any).units_per_carton ?? undefined
   form.cartons_per_unit = (source as any).cartons_per_unit ?? (source as any).boxes_count ?? undefined
   form.pack_spec = (source as any).pack_spec || ''
+  if (form.pack_spec) {
+    parsePackSpec(form.pack_spec)
+  } else {
+    updatePackSpec()
+  }
   form.factory_code = (source as any).company_code || ''
   form.estimated_volume = (source as any).estimated_volume ?? undefined
   form.carton_gross_weight = (source as any).carton_gross_weight ?? undefined
@@ -1260,6 +1311,27 @@ function initFromItem(source: ProductEditItem) {
   form.carton_length = size.l || ((source as any).carton_length ?? undefined)
   form.carton_width = size.w || ((source as any).carton_width ?? undefined)
   form.carton_height = size.h || ((source as any).carton_height ?? undefined)
+}
+
+function parsePackSpec(packSpec: string) {
+  const match = packSpec.match(/^(\d+)\s*pcs\s*\/\s*(\d+)\s*ctn$/i)
+  if (!match) return
+
+  const pcs = Number(match[1])
+  const ctn = Number(match[2])
+  if (pcs === 1 && ctn === 1) {
+    form.packaging = '1件/箱'
+    form.units_per_carton = undefined
+    form.cartons_per_unit = undefined
+  } else if (ctn === 1) {
+    form.packaging = '多件/箱'
+    form.units_per_carton = pcs
+    form.cartons_per_unit = undefined
+  } else if (pcs === 1) {
+    form.packaging = '1件多箱'
+    form.units_per_carton = undefined
+    form.cartons_per_unit = ctn
+  }
 }
 
 function open(source: OrderDetailItem, customerName?: string, customerCountry?: string) {
@@ -2015,6 +2087,51 @@ defineExpose({ open, close })
   flex-direction: column;
   line-height: 1.2;
   text-align: center;
+}
+
+.packaging-type-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.packaging-type-option {
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #303133;
+  user-select: none;
+}
+
+.packaging-type-option:hover {
+  background: #f0f0f0;
+}
+
+.packaging-type-option.active {
+  background: #b7e1a3;
+  color: #000;
+  font-weight: 600;
+}
+
+.packaging-type-label {
+  font-size: 12px;
+  color: #303133;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pack-spec-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pack-spec-popover :deep(.el-radio-group) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 
 .packaging-cell-carton :deep(.el-input__inner) {
