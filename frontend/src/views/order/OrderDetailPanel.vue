@@ -1,10 +1,11 @@
-﻿﻿<template>
+﻿﻿﻿﻿﻿﻿<template>
   <div class="order-detail-panel" v-loading="store.detailLoading">
     <div class="detail-header">
       <div class="header-left">
         <el-button :icon="ArrowLeft" @click="onBack">返回订单列表</el-button>
         <div class="order-title">
           <span class="order-no">{{ store.currentOrder?.pi_no || '-' }}</span>
+          <span class="order-date" v-if="store.currentOrder?.order_date">{{ store.currentOrder?.order_date }}</span>
           <span class="customer-name">{{ store.currentOrder?.customer_name || '-' }}</span>
         </div>
       </div>
@@ -107,11 +108,6 @@
         <el-table-column prop="import_seq" label="导入序号" width="80" align="center" show-overflow-tooltip />
 
         <!-- 锁定列：永不隐藏 -->
-        <el-table-column prop="order_date" label="订单日期" width="110" align="center">
-          <template #default="{ row }">
-            {{ formatDate(row.order_date) }}
-          </template>
-        </el-table-column>
         <el-table-column prop="pi_no" label="PI号" width="140" show-overflow-tooltip v-if="colVisible['pi_no']" />
         <el-table-column prop="product_code" label="编号备注" width="130" show-overflow-tooltip />
         <el-table-column prop="oe_number" label="OE号" width="120" show-overflow-tooltip v-if="colVisible['oe_number']" />
@@ -507,7 +503,6 @@ const formalRecordSaving = ref(false)
 
 // 列筛选状态：每个列独立开关
 const colVisible = reactive<Record<string, boolean>>({
-  order_date: true,
   pi_no: true,
   product_code: true,
   oe_number: true,
@@ -559,7 +554,6 @@ type ColumnVisibilityOption = {
 }
 
 const columnVisibilityOptions: ColumnVisibilityOption[] = [
-  { key: 'order_date', label: '订单日期', locked: true },
   { key: 'pi_no', label: 'PI号' },
   { key: 'product_code', label: '客户产品编号', locked: true },
   { key: 'oe_number', label: 'OE号' },
