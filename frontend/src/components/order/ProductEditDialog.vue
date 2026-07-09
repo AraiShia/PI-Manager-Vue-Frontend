@@ -15,6 +15,23 @@
         <div class="section-title" style="background-color: #fde2e2; color: #c45650;">基础信息</div>
         <div class="section-body">
           <div class="basic-info-table">
+            <div class="basic-info-label model-label required">客户型号<br /><span>Model</span></div>
+            <div class="basic-info-cell model-cell emphasis-cell">
+              <FieldInput
+                v-model="form.customer_model"
+                :status="getFieldStatus('customer_model')"
+                :disabled="modelLocked"
+                @blur="onCustomerModelBlur"
+              />
+            </div>
+            <div class="basic-info-label own-code-label">我司产品编号<br /><span>S.NO.</span></div>
+            <div class="basic-info-cell own-code-cell">
+              <FieldInput
+                v-model="form.factory_code"
+                :status="getFieldStatus('company_code')"
+                @blur="saveField('company_code', form.factory_code)"
+              />
+            </div>
             <div class="basic-info-image main-image-cell" @contextmenu="onImageContextMenu($event, 'main')" @dblclick="onMainImageDblClick">
               <el-upload
                 class="image-uploader-main"
@@ -52,6 +69,73 @@
                 </el-upload>
               </div>
             </div>
+
+            <div class="basic-info-label pname-label required">产品名称<br /><span>P-Name</span></div>
+            <div class="basic-info-cell product-name-zh">
+              <el-input
+                v-model="form.product_name"
+                @blur="saveField('detail_desc', form.product_name)"
+              />
+            </div>
+            <div class="basic-info-cell product-name-en">
+              <FieldInput
+                v-model="form.product_name_en"
+                :status="getFieldStatus('detail_desc_en')"
+                @blur="saveField('detail_desc_en', form.product_name_en)"
+              />
+            </div>
+            <div class="basic-info-label short-name-label">产品简称<br /><span>P-Name</span></div>
+            <div class="basic-info-cell short-name-zh">
+              <FieldInput
+                v-model="form.product_short_name"
+                :status="getFieldStatus('product_short_name')"
+                @blur="saveField('product_short_name', form.product_short_name)"
+              />
+            </div>
+            <div class="basic-info-cell short-name-en">
+              <FieldInput
+                v-model="form.product_short_name_en"
+                :status="getFieldStatus('product_short_name_en')"
+                @blur="saveField('product_short_name_en', form.product_short_name_en)"
+              />
+            </div>
+            <div class="basic-info-label oe-label">OE号列表<br /><span>OE-NO.</span></div>
+            <div class="basic-info-cell oe-cell">
+              <el-input
+                v-model="form.oe_number"
+                type="textarea"
+                :rows="1"
+                resize="none"
+                @blur="saveField('oe_number', form.oe_number)"
+              />
+            </div>
+            <div class="basic-info-label remark-label">编号备注</div>
+            <div class="basic-info-cell remark-cell">
+              <el-input
+                v-model="form.product_code"
+                type="textarea"
+                :rows="1"
+                resize="none"
+                @blur="saveField('customer_code', form.product_code)"
+              />
+            </div>
+
+            <div class="basic-info-label details-label">产品要求<br /><span>P-Details</span></div>
+            <div class="basic-info-cell details-cell">
+              <FieldInput
+                v-model="form.product_acquires"
+                :status="getFieldStatus('product_acquires')"
+                @blur="saveField('product_acquires', form.product_acquires)"
+              />
+            </div>
+            <div class="basic-info-label color-label">产品颜色<br /><span>P-color</span></div>
+            <div class="basic-info-cell color-cell">
+              <FieldInput
+                v-model="form.product_color"
+                :status="getFieldStatus('product_color')"
+                @blur="saveField('product_color', form.product_color)"
+              />
+            </div>
             <div class="basic-info-label category-label required">产品类别<br /><span>P-Category</span></div>
             <div class="basic-info-cell category-cell">
               <div class="category-select-group">
@@ -84,91 +168,6 @@
                   />
                 </el-select>
               </div>
-            </div>
-
-            <div class="basic-info-label model-label required">客户型号<br /><span>Model</span></div>
-            <div class="basic-info-cell model-cell emphasis-cell">
-              <FieldInput
-                v-model="form.customer_model"
-                :status="getFieldStatus('customer_model')"
-                :disabled="modelLocked"
-                @blur="onCustomerModelBlur"
-              />
-            </div>
-            <div class="basic-info-label pname-label required">产品名称<br /><span>P-Name</span></div>
-            <div class="basic-info-cell product-name-zh">
-              <el-input
-                v-model="form.product_name"
-                @blur="saveField('detail_desc', form.product_name)"
-              />
-            </div>
-            <div class="basic-info-cell product-name-en">
-              <FieldInput
-                v-model="form.product_name_en"
-                :status="getFieldStatus('detail_desc_en')"
-                @blur="saveField('detail_desc_en', form.product_name_en)"
-              />
-            </div>
-            <div class="basic-info-label short-name-label">产品简称<br /><span>Short Name</span></div>
-            <div class="basic-info-cell short-name-zh">
-              <FieldInput
-                v-model="form.product_short_name"
-                :status="getFieldStatus('product_short_name')"
-                @blur="saveField('product_short_name', form.product_short_name)"
-              />
-            </div>
-            <div class="basic-info-cell short-name-en">
-              <FieldInput
-                v-model="form.product_short_name_en"
-                :status="getFieldStatus('product_short_name_en')"
-                @blur="saveField('product_short_name_en', form.product_short_name_en)"
-              />
-            </div>
-
-            <div class="basic-info-label details-label">产品需求<br /><span>P-Details</span></div>
-            <div class="basic-info-cell details-cell">
-              <FieldInput
-                v-model="form.product_acquires"
-                :status="getFieldStatus('product_acquires')"
-                @blur="saveField('product_acquires', form.product_acquires)"
-              />
-            </div>
-            <div class="basic-info-label color-label">产品颜色<br /><span>P-color</span></div>
-            <div class="basic-info-cell color-cell">
-              <FieldInput
-                v-model="form.product_color"
-                :status="getFieldStatus('product_color')"
-                @blur="saveField('product_color', form.product_color)"
-              />
-            </div>
-
-            <div class="basic-info-label oe-label">OE号（索引）<br /><span>OE-NO.</span></div>
-            <div class="basic-info-cell oe-cell">
-              <el-input
-                v-model="form.oe_number"
-                type="textarea"
-                :rows="2"
-                resize="none"
-                @blur="saveField('oe_number', form.oe_number)"
-              />
-            </div>
-            <div class="basic-info-label remark-label">编号备注</div>
-            <div class="basic-info-cell remark-cell">
-              <el-input
-                v-model="form.product_code"
-                type="textarea"
-                :rows="2"
-                resize="none"
-                @blur="saveField('customer_code', form.product_code)"
-              />
-            </div>
-            <div class="basic-info-label own-code-label">我司产品编号<br /><span>S.NO.</span></div>
-            <div class="basic-info-cell own-code-cell">
-              <FieldInput
-                v-model="form.factory_code"
-                :status="getFieldStatus('company_code')"
-                @blur="saveField('company_code', form.factory_code)"
-              />
             </div>
           </div>
         </div>
@@ -432,9 +431,9 @@
                   <template #default>
                     <div class="pack-spec-popover">
                       <el-radio-group v-model="form.packaging" @change="onPackagingChange">
-                        <el-radio label="1件/箱">1pcs/1ctn</el-radio>
-                        <el-radio label="多件/箱">Apcs/1ctn</el-radio>
-                        <el-radio label="1件多箱">1pcs/Bctn</el-radio>
+                        <el-radio value="1件/箱">1pcs/1ctn</el-radio>
+                        <el-radio value="多件/箱">Apcs/1ctn</el-radio>
+                        <el-radio value="1件多箱">1pcs/Bctn</el-radio>
                       </el-radio-group>
                       <el-input-number
                         v-if="form.packaging === '多件/箱'"
@@ -508,9 +507,9 @@
                   <template #default>
                     <div class="pack-spec-popover">
                       <el-radio-group v-model="record.packaging" @change="onInboundPackagingChange(record)">
-                        <el-radio label="1件/箱">1pcs/1ctn</el-radio>
-                        <el-radio label="多件/箱">Apcs/1ctn</el-radio>
-                        <el-radio label="1件多箱">1pcs/Bctn</el-radio>
+                        <el-radio value="1件/箱">1pcs/1ctn</el-radio>
+                        <el-radio value="多件/箱">Apcs/1ctn</el-radio>
+                        <el-radio value="1件多箱">1pcs/Bctn</el-radio>
                       </el-radio-group>
                       <el-input-number
                         v-if="record.packaging === '多件/箱'"
@@ -1173,9 +1172,11 @@ async function onCustomerModelBlur() {
   }
 }
 
-// 客户型号锁定：open时读取
+// 客户型号锁定：product_id 存在且 customer_model 有非空值时才锁定
 function syncModelFromItem() {
-  modelLocked.value = Boolean(item.value?.product_id && item.value?.customer_model)
+  const hasProduct = Boolean(item.value?.product_id)
+  const hasModel = Boolean(item.value?.customer_model)
+  modelLocked.value = hasProduct && hasModel
   if (item.value) form.customer_model = item.value.customer_model || ''
 }
 
@@ -1798,8 +1799,8 @@ defineExpose({ open, close })
 
 .basic-info-table {
   display: grid;
-  grid-template-columns: 105px repeat(5, 1fr) 115px 1.2fr;
-  grid-template-rows: 84px 36px 36px 72px 36px 36px;
+  grid-template-columns: 105px 1.25fr 105px 1.2fr 90px 1.05fr 105px 1.1fr 95px 1.1fr;
+  grid-template-rows: 84px 48px 48px 72px;
   border: 1px solid #222;
   background: #fff;
   overflow: hidden;
@@ -1822,7 +1823,7 @@ defineExpose({ open, close })
   align-items: center;
   justify-content: center;
   text-align: center;
-  color: #f56c6c;
+  color: #ff0000;
   font-size: 13px;
   line-height: 1.2;
   font-family: 'Times New Roman', 'SimSun', serif;
@@ -1843,7 +1844,7 @@ defineExpose({ open, close })
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 8px;
+  padding: 0 6px;
 }
 
 .basic-info-action {
@@ -1855,92 +1856,106 @@ defineExpose({ open, close })
   font-family: 'Times New Roman', 'SimSun', serif;
 }
 
-.main-image-cell {
-  grid-column: 1;
-  grid-row: 1;
-  padding: 4px;
-  border: 2px solid #f56c6c;
-}
-
-.extra-images-cell {
-  grid-column: 2 / 7;
-  grid-row: 1;
-  padding: 4px 10px;
-  justify-content: flex-start;
-  border: 2px solid #67c23a;
-}
-
-.category-label {
-  grid-column: 7;
-  grid-row: 1;
-}
-
-.category-cell {
-  grid-column: 8;
-  grid-row: 1;
-  border-right: none;
-  overflow: hidden;
-}
-
-.category-select-group {
-  display: flex;
-  gap: 4px;
-  width: 100%;
-  min-width: 0;
-}
-
-.category-select-group .el-select {
-  flex: 1;
-  min-width: 0;
-}
-
 .model-label {
   grid-column: 1;
-  grid-row: 2 / 4;
+  grid-row: 1;
 }
 
 .model-cell {
   grid-column: 2 / 4;
-  grid-row: 2 / 4;
+  grid-row: 1;
 }
 
 .emphasis-cell :deep(.el-input__inner) {
   text-align: center;
-  font-size: 80px;
+  font-size: 42px;
+  font-family: 'Times New Roman', 'SimSun', serif;
+}
+
+.own-code-label {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+.own-code-cell {
+  grid-column: 5 / 7;
+  grid-row: 1;
+  color: #f56c6c;
+  font-family: 'Times New Roman', 'SimSun', serif;
+  font-size: 13px;
+}
+
+.main-image-cell {
+  grid-column: 7;
+  grid-row: 1;
+  padding: 4px;
+}
+
+.extra-images-cell {
+  grid-column: 8 / 11;
+  grid-row: 1;
+  padding: 4px 10px;
+  justify-content: flex-start;
+  border-right: none;
 }
 
 .pname-label {
-  grid-column: 4;
+  grid-column: 1;
   grid-row: 2 / 4;
 }
 
 .product-name-zh {
-  grid-column: 5 / 7;
+  grid-column: 2 / 4;
   grid-row: 2;
   justify-content: flex-start;
 }
 
 .product-name-en {
-  grid-column: 5 / 7;
+  grid-column: 2 / 4;
   grid-row: 3;
   justify-content: flex-start;
 }
 
 .short-name-label {
-  grid-column: 7;
+  grid-column: 4;
   grid-row: 2 / 4;
 }
 
 .short-name-zh {
-  grid-column: 8;
+  grid-column: 5 / 7;
   grid-row: 2;
   justify-content: flex-start;
-  border-right: none;
 }
 
 .short-name-en {
-  grid-column: 8;
+  grid-column: 5 / 7;
   grid-row: 3;
+  justify-content: flex-start;
+}
+
+.oe-label {
+  grid-column: 7;
+  grid-row: 2;
+}
+
+.oe-cell {
+  grid-column: 8 / 11;
+  grid-row: 2;
+  align-items: stretch;
+  padding: 4px 8px;
+  border-right: none;
+}
+
+.remark-label {
+  grid-column: 7;
+  grid-row: 3;
+}
+
+.remark-cell {
+  grid-column: 8 / 11;
+  grid-row: 3;
+  align-items: stretch;
+  padding: 4px 8px;
   border-right: none;
 }
 
@@ -1963,47 +1978,33 @@ defineExpose({ open, close })
 }
 
 .color-cell {
-  grid-column: 6 / 9;
+  grid-column: 6 / 8;
+  grid-row: 4;
+  justify-content: flex-start;
+}
+
+.category-label {
+  grid-column: 8;
+  grid-row: 4;
+}
+
+.category-cell {
+  grid-column: 9 / 11;
   grid-row: 4;
   border-right: none;
+  overflow: hidden;
 }
 
-.oe-label {
-  grid-column: 1;
-  grid-row: 5 / 7;
+.category-select-group {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
 }
 
-.oe-cell {
-  grid-column: 2 / 4;
-  grid-row: 5 / 7;
-  align-items: stretch;
-  padding: 4px 8px;
-}
-
-.remark-label {
-  grid-column: 4;
-  grid-row: 5 / 7;
-}
-
-.remark-cell {
-  grid-column: 5 / 7;
-  grid-row: 5 / 7;
-  align-items: stretch;
-  padding: 4px 8px;
-}
-
-.own-code-label {
-  grid-column: 7;
-  grid-row: 5 / 7;
-}
-
-.own-code-cell {
-  grid-column: 8;
-  grid-row: 5 / 7;
-  border-right: none;
-  color: #f56c6c;
-  font-family: 'Times New Roman', 'SimSun', serif;
-  font-size: 13px;
+.category-select-group .el-select {
+  flex: 1;
+  min-width: 0;
 }
 
 .basic-info-table :deep(.el-input),
