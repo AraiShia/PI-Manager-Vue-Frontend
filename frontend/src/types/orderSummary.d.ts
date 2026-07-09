@@ -95,6 +95,7 @@ export interface OrderDetailItem {
   estimated_volume: number | null        // 预估体积（自动计算）
   carton_gross_weight: number | null
   total_weight: number | null
+  inbound_records?: Array<Record<string, any>>
 
   // ========== F组：其他属性 (列40-41) ==========
   brand: string | null

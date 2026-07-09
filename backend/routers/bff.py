@@ -508,6 +508,7 @@ def _build_order_detail_item(
         estimated_volume=round(estimated_volume, 4),
         carton_gross_weight=_to_float(item.carton_gross_weight),
         total_weight=round(total_weight, 4),
+        inbound_records=getattr(item, "inbound_records", None) or [],
         brand=_to_str(item.brand),
         invoice_status=_to_str(item.invoice_status),
     )

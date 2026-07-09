@@ -6,7 +6,7 @@
 OrderDetailItemSchema 共 41 列，按 A-F 组排列，与 Excel 订单管理总表完全对齐
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional
 from datetime import datetime
 
@@ -101,6 +101,7 @@ class OrderDetailItemSchema(BaseModel):
     estimated_volume: float = 0
     carton_gross_weight: float = 0
     total_weight: float = 0
+    inbound_records: List[dict] = Field(default_factory=list)
 
     # ========== F组：其他属性 (列40-41) ==========
     brand: str = ""

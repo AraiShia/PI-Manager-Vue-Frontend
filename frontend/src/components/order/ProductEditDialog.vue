@@ -476,52 +476,95 @@
       <div class="edit-section">
         <div class="section-title" style="background-color: #d9ecff; color: #409eff;">收货入库信息</div>
         <div class="section-body">
-          <div class="form-grid">
-            <div class="form-item">
-              <label>入库数量</label>
-              <el-input
-                v-model="form.stock_in_quantity"
-                type="number"
-                style="width: 100%"
-                @blur="saveField('stocked_qty', form.stock_in_quantity)"
-              />
+          <div class="inbound-table">
+            <div class="inbound-head">纸箱规格 cm</div>
+            <div class="inbound-head">箱数 CTN</div>
+            <div class="inbound-head">打包规格</div>
+            <div class="inbound-head">入库数量</div>
+            <div class="inbound-head">入库体积</div>
+            <div class="inbound-head">单箱重量</div>
+            <div class="inbound-head">总重量</div>
+
+            <div
+              v-for="(record, index) in inboundRecords"
+              :key="record.id"
+              class="inbound-row"
+            >
+              <div class="inbound-cell carton-size-cell">
+                <el-input v-model="record.length" placeholder="长" type="number" @blur="saveInboundRecords" />
+                <span>*</span>
+                <el-input v-model="record.width" placeholder="宽" type="number" @blur="saveInboundRecords" />
+                <span>*</span>
+                <el-input v-model="record.height" placeholder="高" type="number" @blur="saveInboundRecords" />
+              </div>
+              <div class="inbound-cell">
+                <el-input v-model="record.carton_count" type="number" @blur="saveInboundRecords" />
+              </div>
+              <div class="inbound-cell pack-spec-cell">
+                <el-popover placement="bottom" :width="260" trigger="click">
+                  <template #reference>
+                    <el-input :model-value="record.pack_spec || '1pcs/1ctn'" readonly />
+                  </template>
+                  <template #default>
+                    <div class="pack-spec-popover">
+                      <el-radio-group v-model="record.packaging" @change="onInboundPackagingChange(record)">
+                        <el-radio label="1件/箱">1pcs/1ctn</el-radio>
+                        <el-radio label="多件/箱">Apcs/1ctn</el-radio>
+                        <el-radio label="1件多箱">1pcs/Bctn</el-radio>
+                      </el-radio-group>
+                      <el-input-number
+                        v-if="record.packaging === '多件/箱'"
+                        v-model="record.units_per_carton"
+                        :min="1"
+                        :precision="0"
+                        style="width: 100%"
+                        @change="updateInboundPackSpec(record)"
+                        @blur="saveInboundRecords"
+                      />
+                      <el-input-number
+                        v-else-if="record.packaging === '1件多箱'"
+                        v-model="record.cartons_per_unit"
+                        :min="1"
+                        :precision="0"
+                        style="width: 100%"
+                        @change="updateInboundPackSpec(record)"
+                        @blur="saveInboundRecords"
+                      />
+                      <el-button size="small" type="primary" style="width: 100%" @click="saveInboundRecords">确定</el-button>
+                    </div>
+                  </template>
+                </el-popover>
+              </div>
+              <div class="inbound-cell">
+                <el-input v-model="record.stock_in_quantity" type="number" @blur="saveInboundRecords" />
+              </div>
+              <div class="inbound-cell readonly-cell">{{ calcInboundVolume(record) || '-' }}</div>
+              <div class="inbound-cell">
+                <el-input v-model="record.carton_weight" type="number" @blur="saveInboundRecords" />
+              </div>
+              <div class="inbound-cell readonly-cell row-total-weight">
+                <span>{{ calcInboundTotalWeight(record) ? calcInboundTotalWeight(record) + 'kgs' : '-' }}</span>
+                <el-button
+                  v-if="inboundRecords.length > 1"
+                  link
+                  type="danger"
+                  size="small"
+                  @click="removeInboundRecord(index)"
+                >删除</el-button>
+              </div>
             </div>
-            <div class="form-item">
-              <label>箱数</label>
-              <el-input
-                v-model="form.carton_count"
-                type="number"
-                style="width: 100%"
-                @blur="saveField('carton_count', form.carton_count)"
-              />
+
+            <div class="inbound-add-row">
+              <el-button type="primary" link :icon="Plus" @click="addInboundRecord">添加新记录</el-button>
             </div>
-            <div class="form-item">
-              <label>总重量</label>
-              <el-input
-                v-model="form.total_weight"
-                type="number"
-                style="width: 100%"
-                @blur="saveField('total_weight', form.total_weight)"
-              />
-            </div>
-            <div class="form-item">
-              <label>入库日期</label>
-              <el-date-picker
-                v-model="form.delivery_date"
-                type="date"
-                value-format="YYYY-MM-DD"
-                placeholder="选择日期"
-                style="width: 100%"
-                @change="saveField('delivery_date', form.delivery_date)"
-              />
-            </div>
-            <div class="form-item all">
-              <label>纸箱规格</label>
-              <el-input
-                v-model="form.carton_size"
-                @blur="saveField('carton_size', form.carton_size)"
-              />
-            </div>
+
+            <div class="inbound-summary-cell">汇总</div>
+            <div class="inbound-summary-cell">{{ inboundSummary.carton_count || '-' }}</div>
+            <div class="inbound-summary-cell">\</div>
+            <div class="inbound-summary-cell">{{ inboundSummary.stock_in_quantity || '-' }}</div>
+            <div class="inbound-summary-cell">{{ inboundSummary.volume || '-' }}</div>
+            <div class="inbound-summary-cell">\</div>
+            <div class="inbound-summary-cell">{{ inboundSummary.total_weight ? inboundSummary.total_weight + 'kgs' : '-' }}</div>
           </div>
         </div>
       </div>
@@ -595,6 +638,22 @@ interface ProductCategory {
   code: string
   name: string
   parent_id?: string | null
+}
+
+type PackagingType = '1件/箱' | '多件/箱' | '1件多箱'
+
+type InboundRecord = {
+  id: string
+  length?: number
+  width?: number
+  height?: number
+  carton_count?: number
+  packaging: PackagingType
+  units_per_carton?: number
+  cartons_per_unit?: number
+  pack_spec: string
+  stock_in_quantity?: number
+  carton_weight?: number
 }
 
 const FALLBACK_PARENT_CATEGORIES: ProductCategory[] = [
@@ -682,6 +741,7 @@ const { fieldStates, saveField } = useProductEdit(item as any)
 const categories = ref<ProductCategory[]>([])
 const categoryLevel1 = ref('')
 const categoryLevel2 = ref('')
+const inboundRecords = ref<InboundRecord[]>([])
 
 const form = reactive<ProductEditForm>({
   customer_name: '',
@@ -865,6 +925,42 @@ const estimatedGrossWeight = computed(() => {
     return ((gw / unitsPerCarton) * qty).toFixed(2)
   }
   return (gw * qty).toFixed(2)
+})
+
+function calcInboundVolume(record: InboundRecord): string {
+  const l = Number(record.length || 0)
+  const w = Number(record.width || 0)
+  const h = Number(record.height || 0)
+  const count = Number(record.carton_count || 0)
+  if (!l || !w || !h || !count) return ''
+  return (((l * w * h) / 1000000) * count).toFixed(5)
+}
+
+function calcInboundTotalWeight(record: InboundRecord): string {
+  const cartonWeight = Number(record.carton_weight || 0)
+  const count = Number(record.carton_count || 0)
+  if (!cartonWeight || !count) return ''
+  return (cartonWeight * count).toFixed(2)
+}
+
+const inboundSummary = computed(() => {
+  const summary = inboundRecords.value.reduce(
+    (acc, record) => {
+      acc.carton_count += Number(record.carton_count || 0)
+      acc.stock_in_quantity += Number(record.stock_in_quantity || 0)
+      acc.volume += Number(calcInboundVolume(record) || 0)
+      acc.total_weight += Number(calcInboundTotalWeight(record) || 0)
+      return acc
+    },
+    { carton_count: 0, stock_in_quantity: 0, volume: 0, total_weight: 0 }
+  )
+
+  return {
+    carton_count: summary.carton_count,
+    stock_in_quantity: summary.stock_in_quantity,
+    volume: summary.volume ? summary.volume.toFixed(5) : '',
+    total_weight: summary.total_weight ? summary.total_weight.toFixed(2) : '',
+  }
 })
 
 // 包装方式切换
@@ -1114,6 +1210,83 @@ function onPackSpecBlur() {
   saveField('carton_count', form.carton_count)
 }
 
+function createInboundRecord(record: Partial<InboundRecord> = {}): InboundRecord {
+  const inboundRecord: InboundRecord = {
+    id: record.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    length: record.length,
+    width: record.width,
+    height: record.height,
+    carton_count: record.carton_count,
+    packaging: record.packaging || '1件/箱',
+    units_per_carton: record.units_per_carton,
+    cartons_per_unit: record.cartons_per_unit,
+    pack_spec: record.pack_spec || '',
+    stock_in_quantity: record.stock_in_quantity,
+    carton_weight: record.carton_weight,
+  }
+  updateInboundPackSpec(inboundRecord)
+  return inboundRecord
+}
+
+function updateInboundPackSpec(record: InboundRecord) {
+  if (record.packaging === '多件/箱') {
+    const upc = Number(record.units_per_carton || 0)
+    record.pack_spec = upc > 0 ? `${upc}pcs/1ctn` : ''
+  } else if (record.packaging === '1件多箱') {
+    const cpu = Number(record.cartons_per_unit || 0)
+    record.pack_spec = cpu > 0 ? `1pcs/${cpu}ctn` : ''
+  } else {
+    record.pack_spec = '1pcs/1ctn'
+  }
+}
+
+function onInboundPackagingChange(record: InboundRecord) {
+  if (record.packaging === '多件/箱') {
+    record.units_per_carton = record.units_per_carton || 1
+    record.cartons_per_unit = undefined
+  } else if (record.packaging === '1件多箱') {
+    record.units_per_carton = undefined
+    record.cartons_per_unit = record.cartons_per_unit || 1
+  } else {
+    record.units_per_carton = undefined
+    record.cartons_per_unit = undefined
+  }
+  updateInboundPackSpec(record)
+}
+
+function saveInboundRecords() {
+  inboundRecords.value.forEach(updateInboundPackSpec)
+  saveField('inbound_records', inboundRecords.value.map((record) => ({
+    length: Number(record.length || 0) || undefined,
+    width: Number(record.width || 0) || undefined,
+    height: Number(record.height || 0) || undefined,
+    carton_count: Number(record.carton_count || 0) || undefined,
+    packaging: record.packaging,
+    units_per_carton: Number(record.units_per_carton || 0) || undefined,
+    cartons_per_unit: Number(record.cartons_per_unit || 0) || undefined,
+    pack_spec: record.pack_spec,
+    stock_in_quantity: Number(record.stock_in_quantity || 0) || undefined,
+    carton_weight: Number(record.carton_weight || 0) || undefined,
+    volume: Number(calcInboundVolume(record) || 0) || undefined,
+    total_weight: Number(calcInboundTotalWeight(record) || 0) || undefined,
+  })))
+  saveField('carton_count', inboundSummary.value.carton_count || undefined)
+  saveField('stocked_qty', inboundSummary.value.stock_in_quantity || undefined)
+  saveField('total_weight', Number(inboundSummary.value.total_weight || 0) || undefined)
+}
+
+function addInboundRecord() {
+  inboundRecords.value.push(createInboundRecord())
+}
+
+function removeInboundRecord(index: number) {
+  inboundRecords.value.splice(index, 1)
+  if (inboundRecords.value.length === 0) {
+    inboundRecords.value.push(createInboundRecord())
+  }
+  saveInboundRecords()
+}
+
 // 更新预估体积
 function updateVolume() {
   const l = Number(form.carton_length || 0)
@@ -1311,6 +1484,33 @@ function initFromItem(source: ProductEditItem) {
   form.carton_length = size.l || ((source as any).carton_length ?? undefined)
   form.carton_width = size.w || ((source as any).carton_width ?? undefined)
   form.carton_height = size.h || ((source as any).carton_height ?? undefined)
+  const savedInboundRecords = Array.isArray((source as any).inbound_records) ? (source as any).inbound_records : []
+  inboundRecords.value = savedInboundRecords.length > 0
+    ? savedInboundRecords.map((record: any) => createInboundRecord({
+      id: record.id,
+      length: record.length,
+      width: record.width,
+      height: record.height,
+      carton_count: record.carton_count,
+      packaging: record.packaging,
+      units_per_carton: record.units_per_carton,
+      cartons_per_unit: record.cartons_per_unit,
+      pack_spec: record.pack_spec,
+      stock_in_quantity: record.stock_in_quantity,
+      carton_weight: record.carton_weight,
+    }))
+    : [createInboundRecord({
+      length: form.carton_length,
+      width: form.carton_width,
+      height: form.carton_height,
+      carton_count: form.carton_count,
+      packaging: form.packaging,
+      units_per_carton: form.units_per_carton,
+      cartons_per_unit: form.cartons_per_unit,
+      pack_spec: form.pack_spec,
+      stock_in_quantity: form.stock_in_quantity,
+      carton_weight: form.total_weight,
+    })]
 }
 
 function parsePackSpec(packSpec: string) {
@@ -2156,6 +2356,91 @@ defineExpose({ open, close })
   font-family: 'Times New Roman', 'SimSun', serif;
   color: #000;
   background: transparent;
+}
+
+.inbound-table {
+  display: grid;
+  grid-template-columns: 1.25fr 0.8fr 1fr 1fr 1fr 1fr 1fr;
+  border-top: 1px solid #222;
+  border-left: 1px solid #222;
+  background: #fff;
+}
+
+.inbound-row {
+  display: contents;
+}
+
+.inbound-head,
+.inbound-cell,
+.inbound-summary-cell {
+  min-height: 46px;
+  border-right: 1px solid #222;
+  border-bottom: 1px solid #222;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  box-sizing: border-box;
+  font-family: 'Times New Roman', 'SimSun', serif;
+  color: #000;
+}
+
+.inbound-head {
+  font-weight: 600;
+  font-size: 15px;
+  background: #f7f7f7;
+}
+
+.inbound-cell {
+  font-size: 14px;
+}
+
+.inbound-cell :deep(.el-input__wrapper),
+.inbound-cell :deep(.el-input-number),
+.inbound-cell :deep(.el-input-number .el-input__wrapper) {
+  width: 100%;
+  box-shadow: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.inbound-cell :deep(.el-input__inner) {
+  text-align: center;
+  font-family: 'Times New Roman', 'SimSun', serif;
+  color: #000;
+}
+
+.carton-size-cell {
+  gap: 2px;
+}
+
+.carton-size-cell :deep(.el-input__wrapper) {
+  padding: 0 2px;
+}
+
+.readonly-cell {
+  background: #f8fbff;
+  font-weight: 500;
+}
+
+.row-total-weight {
+  gap: 8px;
+}
+
+.inbound-summary-cell {
+  background: #ffff00;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.inbound-add-row {
+  grid-column: span 7;
+  min-height: 38px;
+  border-right: 1px solid #222;
+  border-bottom: 1px solid #222;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* 销售细节统一表格 */

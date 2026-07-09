@@ -1135,6 +1135,9 @@ def update_pi_item(db: Session, item_id: int, update_data: dict) -> PiProformaIn
         db_item.carton_width_cm = float(update_data['carton_width_cm'])
     if 'carton_height_cm' in update_data and update_data['carton_height_cm'] is not None:
         db_item.carton_height_cm = float(update_data['carton_height_cm'])
+    if 'inbound_records' in update_data:
+        records = update_data.get('inbound_records')
+        db_item.inbound_records = records if isinstance(records, list) else []
 
     # 2026-06-23 派生 carton_size 字符串：三个尺寸都有效时拼出 "LxWxH cm" 写入 pi_item.carton_size
     # 41 列表格 Col 33 读 carton_size 字符串；不派生则 Col 33 永远空

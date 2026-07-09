@@ -107,6 +107,7 @@ class PiProformaInvoiceItem(Base):
     carton_length_cm = Column(DECIMAL(10, 2), nullable=True)         # Col 33 纸箱长度
     carton_width_cm = Column(DECIMAL(10, 2), nullable=True)          # Col 33 纸箱宽度
     carton_height_cm = Column(DECIMAL(10, 2), nullable=True)         # Col 33 纸箱高度
+    inbound_records = Column(JSON, nullable=True)                    # 入库记录 JSON，多纸箱规格回填
 
     pi = relationship("PiProformaInvoice", back_populates="items")
     # product = relationship("PrdCustomerProduct")  # Phase 5 移除：使用 unified_product_lookup
