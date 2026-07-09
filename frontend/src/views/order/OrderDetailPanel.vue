@@ -1,11 +1,11 @@
-﻿﻿﻿﻿﻿﻿<template>
+﻿﻿﻿﻿﻿﻿﻿<template>
   <div class="order-detail-panel" v-loading="store.detailLoading">
     <div class="detail-header">
       <div class="header-left">
         <el-button :icon="ArrowLeft" @click="onBack">返回订单列表</el-button>
         <div class="order-title">
           <span class="order-no">{{ store.currentOrder?.pi_no || '-' }}</span>
-          <span class="order-date" v-if="store.currentOrder?.order_date">{{ store.currentOrder?.order_date }}</span>
+          <span class="order-date" v-if="store.currentOrder?.created_at">{{ formatDate(store.currentOrder?.created_at) }}</span>
           <span class="customer-name">{{ store.currentOrder?.customer_name || '-' }}</span>
         </div>
       </div>

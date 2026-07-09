@@ -8,7 +8,6 @@
 export interface OrderListItem {
   id: number
   pi_no: string
-  order_date?: string
   customer_id: number
   customer_name: string
   customer_country?: string
