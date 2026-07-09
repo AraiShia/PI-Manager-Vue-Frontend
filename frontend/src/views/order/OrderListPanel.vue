@@ -168,6 +168,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Delete } from '@element-plus/icons-vue'
 import { useOrderSummaryStore } from '@/stores/orderSummaryStore'
@@ -180,6 +181,7 @@ import PaymentDialog from '@/components/order/PaymentDialog.vue'
 import PiOperationDialog from '@/components/order/PiOperationDialog.vue'
 
 const store = useOrderSummaryStore()
+const router = useRouter()
 
 const searchKeyword = ref('')
 const statusFilter = ref<number | undefined>(undefined)
@@ -330,9 +332,9 @@ function onEdit(row: OrderListItem) {
   ElMessage.info('订单编辑功能开发中')
 }
 
-// 收款管理（临时入口）
+// 收款管理
 function onPaymentManagement() {
-  ElMessage.info('收款管理页面开发中，请等待功能完善')
+  router.push('/payments')
 }
 
 function onPageChange(page: number) {
