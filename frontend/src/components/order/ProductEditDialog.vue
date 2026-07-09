@@ -1135,8 +1135,12 @@ async function onCustomerModelBlur() {
   if (modelLocked.value) return
   const productId = item.value?.product_id
   if (!productId) {
-    // 无客户产品，直接保存
-    saveField('customer_model', form.customer_model)
+    // 无客户产品，直接保存并锁定
+    await saveField('customer_model', form.customer_model)
+    if (form.customer_model) {
+      modelLocked.value = true
+      if (item.value) item.value.customer_model = form.customer_model
+    }
     return
   }
   try {
@@ -1866,10 +1870,23 @@ defineExpose({ open, close })
   grid-row: 1;
 }
 
-.emphasis-cell :deep(.el-input__inner) {
+.emphasis-cell :deep(.el-input__inner),
+.emphasis-cell :deep(.field-input .el-input__inner) {
+  height: 76px;
   text-align: center;
-  font-size: 42px;
+  font-size: 25px !important;
+  line-height: 76px;
   font-family: 'Times New Roman', 'SimSun', serif;
+}
+
+.emphasis-cell :deep(.el-input.is-disabled .el-input__wrapper) {
+  background: #f2f3f5;
+  cursor: not-allowed;
+}
+
+.emphasis-cell :deep(.el-input.is-disabled .el-input__inner) {
+  color: #606266;
+  -webkit-text-fill-color: #606266;
 }
 
 .own-code-label {
