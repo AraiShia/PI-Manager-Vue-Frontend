@@ -146,6 +146,14 @@ def update_customer_payment_api(payment_id: int, payment_update: CustomerPayment
         raise HTTPException(status_code=404, detail="收款记录不存在")
     return db_payment
 
+@router.delete("/receivables/{payment_id}")
+def delete_customer_payment_api(payment_id: int, db: Session = Depends(get_db)):
+    """删除客户收款记录"""
+    success = delete_customer_payment(db, payment_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="收款记录不存在")
+    return {"deleted": payment_id}
+
 @router.post("/payables", response_model=SupplierPaymentResponse)
 def create_supplier_payment_api(payment: SupplierPaymentCreate, db: Session = Depends(get_db)):
     try:

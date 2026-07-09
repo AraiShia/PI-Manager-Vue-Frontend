@@ -152,6 +152,18 @@ def get_customer_payments(db: Session, skip: int = 0, limit: int = 100, pi_id: i
 def get_customer_payment(db: Session, payment_id: int) -> ArCustomerPayment:
     return db.query(ArCustomerPayment).filter(ArCustomerPayment.id == payment_id).first()
 
+def delete_customer_payment(db: Session, payment_id: int) -> bool:
+    """删除客户收款记录"""
+    db_payment = get_customer_payment(db, payment_id)
+    if not db_payment:
+        return False
+    pi_id = db_payment.pi_id
+    db.delete(db_payment)
+    db.commit()
+    # 重新计算 PI 付款状态
+    update_pi_payment_status(db, pi_id)
+    return True
+
 def create_supplier_payment(db: Session, payment: SupplierPaymentCreate) -> ApSupplierPayment:
     """创建供应商付款（主从表模式）"""
     po = None
