@@ -42,6 +42,7 @@
           批量删除
         </el-button>
         <el-button type="primary" :icon="Plus" @click="onNewOrder">新增订单</el-button>
+        <el-button type="success" @click="onPaymentManagement">收款管理</el-button>
       </div>
     </div>
 
@@ -327,6 +328,11 @@ function onPiSuccess() {
 // 编辑
 function onEdit(row: OrderListItem) {
   ElMessage.info('订单编辑功能开发中')
+}
+
+// 收款管理（临时入口）
+function onPaymentManagement() {
+  ElMessage.info('收款管理页面开发中，请等待功能完善')
 }
 
 function onPageChange(page: number) {
