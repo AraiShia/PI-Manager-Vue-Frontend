@@ -98,6 +98,10 @@ class PiProformaInvoiceItem(Base):
     # 产品英文名（与中文 detail_desc 对应）
     detail_desc_en = Column(String(500), nullable=True)
 
+    # 🔧 2026-07-09 新增：产品简称（中英文）
+    product_short_name = Column(String(200), nullable=True)              # 产品简称（中文）
+    product_short_name_en = Column(String(200), nullable=True)           # 产品简称（英文）
+
     # 🔧 2026-06-22 新增：包装规格细化字段(41列 Col 33, 35)
     carton_count = Column(Integer, nullable=True)                    # Col 35 箱数
     carton_length_cm = Column(DECIMAL(10, 2), nullable=True)         # Col 33 纸箱长度

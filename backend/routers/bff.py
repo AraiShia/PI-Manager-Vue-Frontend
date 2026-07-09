@@ -427,6 +427,8 @@ def _build_order_detail_item(
         remark=_to_str(item.remark),
         product_name=_to_str(item.detail_desc),
         product_name_en=_to_str(item.detail_desc_en),
+        product_short_name=_to_str(item.product_short_name),
+        product_short_name_en=_to_str(item.product_short_name_en),
         image_url=_absolute_url(request, _to_str(item.temp_image)) if request else _to_str(item.temp_image),
         customer_model=_to_str(item.customer_model),
         product_feature=_to_str(item.product_feature),

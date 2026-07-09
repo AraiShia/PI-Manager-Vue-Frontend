@@ -43,7 +43,11 @@
         height="100%"
         highlight-current-row
       >
-        <el-table-column prop="receipt_no" label="收据号" min-width="140" />
+        <el-table-column prop="latest_receipt_no" label="最新收据号" min-width="140">
+          <template #default="{ row }">
+            {{ row.latest_receipt_no || '-' }}
+          </template>
+        </el-table-column>
 
         <el-table-column prop="pi_no" label="PI号" min-width="140">
           <template #default="{ row }">
@@ -57,33 +61,38 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="payment_date" label="付款日期" width="120">
+        <el-table-column prop="total_amount" label="订单金额" width="130" align="right">
           <template #default="{ row }">
-            {{ formatDate(row.payment_date) }}
+            {{ formatAmount(row.total_amount) }}
           </template>
         </el-table-column>
 
-        <el-table-column prop="actual_amount" label="实收金额" width="130" align="right">
+        <el-table-column prop="paid_amount" label="已收金额" width="130" align="right">
           <template #default="{ row }">
-            {{ formatAmount(row.actual_amount) }}
+            {{ formatAmount(row.paid_amount) }}
           </template>
         </el-table-column>
 
-        <el-table-column prop="handling_fee" label="手续费" width="100" align="right">
+        <el-table-column prop="unpaid_amount" label="未收金额" width="130" align="right">
           <template #default="{ row }">
-            {{ formatAmount(row.handling_fee) }}
+            {{ formatAmount(row.unpaid_amount) }}
           </template>
         </el-table-column>
 
-        <el-table-column prop="payment_method" label="付款方式" width="120">
+        <el-table-column label="收款记录" min-width="240">
           <template #default="{ row }">
-            {{ row.payment_method || '-' }}
+            <div class="payment-slots">
+              <el-tag v-for="payment in getPaymentSlots(row)" :key="payment.payment_id" type="success" effect="light">
+                {{ formatAmount(payment.actual_amount) }} / {{ payment.arrival_date || '-' }}
+              </el-tag>
+              <span v-if="getPaymentSlots(row).length === 0">-</span>
+            </div>
           </template>
         </el-table-column>
 
         <el-table-column label="水单状态" width="100" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.water_image" type="success" effect="light">已上传</el-tag>
+            <el-tag v-if="row.latest_water_image" type="success" effect="light">已上传</el-tag>
             <el-tag v-else type="info" effect="light">未上传</el-tag>
           </template>
         </el-table-column>
@@ -124,6 +133,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
 import { apiUrl } from '@/api/base'
@@ -132,19 +142,45 @@ import type { ArCustomerPayment } from '@/types/payment'
 import PaymentRecordDialog from '@/components/payment/PaymentRecordDialog.vue'
 import PaymentDetailDrawer from '@/components/payment/PaymentDetailDrawer.vue'
 
+type PaymentSlot = {
+  payment_id: number
+  actual_amount: number
+  arrival_date?: string
+}
+
+type PaymentListRow = ArCustomerPayment & {
+  pi_id: number
+  total_amount?: number
+  paid_amount?: number
+  unpaid_amount?: number
+  latest_receipt_no?: string
+  latest_water_image?: string
+  payment1?: PaymentSlot | null
+  payment2?: PaymentSlot | null
+  payment3?: PaymentSlot | null
+}
+
 const loading = ref(false)
-const list = ref<ArCustomerPayment[]>([])
+const list = ref<PaymentListRow[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 const searchKeyword = ref('')
+const initialPiNo = ref('')
 const dateRange = ref<string[] | null>(null)
+
+const route = useRoute()
 
 // 子组件 ref
 const paymentRecordDialogRef = ref<InstanceType<typeof PaymentRecordDialog>>()
 const paymentDetailDrawerRef = ref<InstanceType<typeof PaymentDetailDrawer>>()
 
 onMounted(() => {
+  // 从 URL query 读取初始筛选条件
+  if (route.query.pi_no) {
+    initialPiNo.value = String(route.query.pi_no)
+    searchKeyword.value = initialPiNo.value
+  }
   fetchList()
 })
 
@@ -165,13 +201,23 @@ function formatAmount(amount: number | undefined | null): string {
   })
 }
 
+function getPaymentSlots(row: PaymentListRow): PaymentSlot[] {
+  return [row.payment1, row.payment2, row.payment3].filter(Boolean) as PaymentSlot[]
+}
+
 async function fetchList() {
   loading.value = true
   try {
     const params = new URLSearchParams()
     params.append('page', String(page.value))
     params.append('page_size', String(pageSize.value))
-    if (searchKeyword.value) params.append('keyword', searchKeyword.value)
+    if (searchKeyword.value) {
+      if (initialPiNo.value && searchKeyword.value === initialPiNo.value) {
+        params.append('pi_no', searchKeyword.value)
+      } else {
+        params.append('keyword', searchKeyword.value)
+      }
+    }
     if (dateRange.value?.length === 2) {
       params.append('date_from', dateRange.value[0])
       params.append('date_to', dateRange.value[1])
@@ -179,7 +225,7 @@ async function fetchList() {
     const res = await fetch(apiUrl('/api/payments/receivables?' + params.toString()))
     if (res.ok) {
       const data = await res.json()
-      list.value = data.list || []
+      list.value = data.items || data.list || []
       total.value = data.total || 0
     } else {
       ElMessage.error('获取收款列表失败')
@@ -209,8 +255,23 @@ function onAddPayment() {
   paymentRecordDialogRef.value?.open()
 }
 
-function onViewDetail(row: ArCustomerPayment) {
-  paymentDetailDrawerRef.value?.open(row)
+async function onViewDetail(row: PaymentListRow) {
+  if (row.id) {
+    paymentDetailDrawerRef.value?.open(row)
+    return
+  }
+
+  const res = await fetch(apiUrl(`/api/payments/receivables/by-pi/${row.pi_id}`))
+  if (!res.ok) {
+    ElMessage.error('获取收款详情失败')
+    return
+  }
+  const payments = await res.json()
+  if (payments?.length) {
+    paymentDetailDrawerRef.value?.open(payments[0])
+  } else {
+    ElMessage.info('暂无收款记录')
+  }
 }
 
 function onDialogSuccess() {

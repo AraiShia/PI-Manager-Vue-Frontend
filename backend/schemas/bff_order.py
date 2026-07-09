@@ -47,6 +47,8 @@ class OrderDetailItemSchema(BaseModel):
     remark: str = ""
     product_name: str = ""
     product_name_en: str = ""
+    product_short_name: str = ""
+    product_short_name_en: str = ""
     image_url: str = ""
     customer_model: str = ""
     product_feature: str = ""

@@ -26,6 +26,7 @@ def create_customer_payment_api(payment: CustomerPaymentCreate, db: Session = De
 def read_customer_payments(
     customer_id: int = Query(None, description="客户ID过滤"),
     pi_no: str = Query(None, description="PI号模糊查询"),
+    keyword: str = Query(None, description="收据号/PI号/客户名模糊查询"),
     only_unpaid: bool = Query(False, description="仅显示未结清 PI"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=500),
@@ -47,13 +48,24 @@ def read_customer_payments(
         PUT    /api/payments/receivables/{payment_id}    编辑水单
     """
     from models import ArCustomerPayment, PiProformaInvoice
-    from sqlalchemy import func
+    from models.customer import CrmCustomer
+    from sqlalchemy import func, or_
 
     pi_q = db.query(PiProformaInvoice)
     if customer_id is not None:
         pi_q = pi_q.filter(PiProformaInvoice.customer_id == customer_id)
     if pi_no:
         pi_q = pi_q.filter(PiProformaInvoice.pi_no.ilike(f"%{pi_no}%"))
+    if keyword:
+        pi_q = pi_q.outerjoin(CrmCustomer, PiProformaInvoice.customer_id == CrmCustomer.id).filter(
+            or_(
+                PiProformaInvoice.pi_no.ilike(f"%{keyword}%"),
+                CrmCustomer.customer_name.ilike(f"%{keyword}%"),
+                PiProformaInvoice.id.in_(
+                    db.query(ArCustomerPayment.pi_id).filter(ArCustomerPayment.receipt_no.ilike(f"%{keyword}%"))
+                ),
+            )
+        )
 
     pis = pi_q.order_by(PiProformaInvoice.id.desc()).all()
     pi_ids = [p.id for p in pis]

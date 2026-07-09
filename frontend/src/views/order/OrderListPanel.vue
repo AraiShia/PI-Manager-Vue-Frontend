@@ -334,7 +334,17 @@ function onEdit(row: OrderListItem) {
 
 // 收款管理
 function onPaymentManagement() {
-  router.push('/payments')
+  if (currentRow.value) {
+    router.push({
+      path: '/payments',
+      query: {
+        pi_no: currentRow.value.pi_no,
+        customer_name: currentRow.value.customer_name,
+      },
+    })
+  } else {
+    router.push('/payments')
+  }
 }
 
 function onPageChange(page: number) {

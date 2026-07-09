@@ -1097,6 +1097,10 @@ def update_pi_item(db: Session, item_id: int, update_data: dict) -> PiProformaIn
         db_item.detail_desc = update_data['detail_desc']
     if 'detail_desc_en' in update_data:
         db_item.detail_desc_en = update_data['detail_desc_en']
+    if 'product_short_name' in update_data:
+        db_item.product_short_name = update_data['product_short_name']
+    if 'product_short_name_en' in update_data:
+        db_item.product_short_name_en = update_data['product_short_name_en']
     if 'unit_price' in update_data:
         db_item.unit_price = update_data['unit_price']
     if 'quantity' in update_data:

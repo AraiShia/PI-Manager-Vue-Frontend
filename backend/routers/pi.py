@@ -201,8 +201,8 @@ def add_payment(pi_id: int, payload: dict, db: Session = Depends(get_db)):
     - 创建 PiPaymentStage(status=2, paid_date=today)
     - 返回新建的分期 + 累计 paid_amount / unpaid_amount
     """
-    from models import PiPaymentStage, PiProformaInvoice
-    from datetime import date
+    from models import PiPaymentStage, PiProformaInvoice, ArCustomerPayment
+    from datetime import date, datetime
 
     pi = db.query(PiProformaInvoice).filter(PiProformaInvoice.id == pi_id).first()
     if not pi:
@@ -227,17 +227,39 @@ def add_payment(pi_id: int, payload: dict, db: Session = Depends(get_db)):
     )
     db.add(stage)
 
+    from utils.number_generator import NumberGenerator
+    payment_date_value = payload.get("paid_date") or payload.get("payment_date")
+    if payment_date_value:
+        payment_date = datetime.fromisoformat(str(payment_date_value).replace("Z", "+00:00"))
+    else:
+        payment_date = datetime.utcnow()
+
+    customer_payment = ArCustomerPayment(
+        dept_id=pi.dept_id,
+        receipt_no=NumberGenerator.generate_receipt_no(db, pi.dept_id),
+        pi_id=pi_id,
+        customer_id=pi.customer_id,
+        amount=amount,
+        handling_fee=0,
+        actual_amount=amount,
+        is_fully_paid=False,
+        payment_date=payment_date,
+        payment_method=payload.get("payment_method") or "",
+        remark=payload.get("remark") or "",
+    )
+    db.add(customer_payment)
+
     # 更新 PI 的 updated_at
     pi.updated_at = __import__("datetime").datetime.utcnow()
     db.commit()
     db.refresh(stage)
+    db.refresh(customer_payment)
 
     # 2026-06-16 PI 通路修复：写分期后同步 PI 主表 status
     from crud.payment import update_pi_payment_status
     update_pi_payment_status(db, pi_id)
 
     # 计算累计（2026-06-16 PI 通路修复：与 update_pi_payment_status 一致）
-    from models import ArCustomerPayment
     total = float(pi.total_amount or 0)
     payments_for_pi = db.query(ArCustomerPayment).filter(ArCustomerPayment.pi_id == pi_id).all()
     if payments_for_pi:
@@ -260,6 +282,12 @@ def add_payment(pi_id: int, payload: dict, db: Session = Depends(get_db)):
             "amount": float(stage.amount) if stage.amount else 0,
             "status": stage.status,
             "paid_date": stage.paid_date.isoformat() if stage.paid_date else None,
+        },
+        "receipt": {
+            "id": customer_payment.id,
+            "receipt_no": customer_payment.receipt_no,
+            "actual_amount": float(customer_payment.actual_amount or 0),
+            "payment_date": customer_payment.payment_date.isoformat() if customer_payment.payment_date else None,
         },
         "pi_id": pi_id,
         "total_amount": total,
@@ -622,6 +650,8 @@ def update_pi_item_api(item_id: int, update_data: dict, db: Session = Depends(ge
         # ✅ 新增：返回关键字段值供验证
         "debug_fields": {
             "detail_desc": getattr(db_item, 'detail_desc', None),
+            "product_short_name": getattr(db_item, 'product_short_name', None),
+            "product_short_name_en": getattr(db_item, 'product_short_name_en', None),
             "packaging": getattr(db_item, 'packaging', None),
             "purchase_option_name": getattr(db_item, 'purchase_option_name', None),
             "pack_spec": getattr(db_item, 'pack_spec', None),

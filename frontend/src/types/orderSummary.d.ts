@@ -39,6 +39,8 @@ export interface OrderDetailItem {
   detail_desc_en?: string | null
   product_name: string
   product_name_en: string | null
+  product_short_name: string | null
+  product_short_name_en: string | null
   image_url: string | null
   image_url_2: string | null
   customer_model: string | null

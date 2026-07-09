@@ -1,5 +1,6 @@
 <template>
-  <el-dialog
+  <div>
+    <el-dialog
     v-model="visible"
     :title="dialogTitle"
     width="95vw"
@@ -14,16 +15,6 @@
         <div class="section-title" style="background-color: #fde2e2; color: #c45650;">基础信息</div>
         <div class="section-body">
           <div class="basic-info-table">
-            <div class="basic-info-label required">客户<br /><span>Customer</span></div>
-            <div class="basic-info-cell customer-cell">
-              <el-input v-model="form.customer_name" disabled />
-            </div>
-            <div class="basic-info-action">搜索</div>
-            <div class="basic-info-action">新增客户</div>
-            <div class="basic-info-cell country-cell">
-              {{ form.customer_country || '-' }}
-            </div>
-
             <div class="basic-info-image main-image-cell" @contextmenu="onImageContextMenu($event, 'main')" @dblclick="onMainImageDblClick">
               <el-upload
                 class="image-uploader-main"
@@ -32,7 +23,7 @@
                 :on-change="handleImageChange"
               >
                 <img v-if="form.image_url" :src="form.image_url" class="preview-image-main" alt="主图" />
-                <span v-else class="image-placeholder-text"><el-icon><Plus /></el-icon>主图必填</span>
+                <span v-else class="image-placeholder-text"><el-icon><Plus /></el-icon>主图</span>
               </el-upload>
               <span v-if="!form.image_url" class="main-image-required-star">*</span>
             </div>
@@ -54,7 +45,10 @@
                   :show-file-list="false"
                   :on-change="handleExtraImageChange"
                 >
-                  <el-icon class="image-placeholder-icon"><Plus /></el-icon>
+                  <span class="extra-image-placeholder">
+                    <el-icon class="image-placeholder-icon"><Plus /></el-icon>
+                    <span v-if="form.extra_images.length === 0" class="extra-image-placeholder-text">附图</span>
+                  </span>
                 </el-upload>
               </div>
             </div>
@@ -85,8 +79,23 @@
                 @blur="saveField('detail_desc_en', form.product_name_en)"
               />
             </div>
+            <div class="basic-info-label short-name-label">产品简称<br /><span>Short Name</span></div>
+            <div class="basic-info-cell short-name-zh">
+              <FieldInput
+                v-model="form.product_short_name"
+                :status="getFieldStatus('product_short_name')"
+                @blur="saveField('product_short_name', form.product_short_name)"
+              />
+            </div>
+            <div class="basic-info-cell short-name-en">
+              <FieldInput
+                v-model="form.product_short_name_en"
+                :status="getFieldStatus('product_short_name_en')"
+                @blur="saveField('product_short_name_en', form.product_short_name_en)"
+              />
+            </div>
 
-            <div class="basic-info-label">产品需求<br /><span>P-Details</span></div>
+            <div class="basic-info-label details-label">产品需求<br /><span>P-Details</span></div>
             <div class="basic-info-cell details-cell">
               <FieldInput
                 v-model="form.product_acquires"
@@ -94,7 +103,7 @@
                 @blur="saveField('product_acquires', form.product_acquires)"
               />
             </div>
-            <div class="basic-info-label">产品颜色<br /><span>P-color</span></div>
+            <div class="basic-info-label color-label">产品颜色<br /><span>P-color</span></div>
             <div class="basic-info-cell color-cell">
               <FieldInput
                 v-model="form.product_color"
@@ -113,7 +122,7 @@
                 @blur="saveField('oe_number', form.oe_number)"
               />
             </div>
-            <div class="basic-info-label">编号备注</div>
+            <div class="basic-info-label remark-label">编号备注</div>
             <div class="basic-info-cell remark-cell">
               <el-input
                 v-model="form.product_code"
@@ -123,7 +132,7 @@
                 @blur="saveField('customer_code', form.product_code)"
               />
             </div>
-            <div class="basic-info-label">我司产编号<br /><span>S.NO.</span></div>
+            <div class="basic-info-label own-code-label">我司产品编号<br /><span>S.NO.</span></div>
             <div class="basic-info-cell own-code-cell">
               <FieldInput
                 v-model="form.factory_code"
@@ -552,27 +561,27 @@
       </div>
     </div>
 
-    <!-- 图片预览弹窗 -->
-    <ImagePreviewDialog v-model="previewDialog" :src="previewSrc" />
-
-    <!-- 右键菜单 -->
-    <Teleport to="body">
-      <div
-        v-if="imageMenu.visible"
-        class="image-context-menu"
-        :style="{ left: imageMenu.x + 'px', top: imageMenu.y + 'px' }"
-        @click.stop
-      >
-        <div v-if="(imageMenu.type === 'main' && form.image_url) || (imageMenu.type === 'extra' && imageMenu.index !== undefined)" class="menu-item" @click="onMenuPreview">预览</div>
-        <div class="menu-item" @click="onMenuUpload">{{ imageMenu.type === 'main' && form.image_url ? '更新图片' : '上传图片' }}</div>
-        <div v-if="(imageMenu.type === 'main' && form.image_url) || (imageMenu.type === 'extra' && imageMenu.index !== undefined)" class="menu-item" @click="onMenuDelete">删除图片</div>
-      </div>
-    </Teleport>
-
     <template #footer>
       <el-button @click="close">关闭</el-button>
     </template>
   </el-dialog>
+
+  <!-- 以下组件放在 dialog 外面，避免 destroy-on-close 时 vnode=null 报错 -->
+  <!-- 图片预览弹窗 -->
+  <ImagePreviewDialog v-model="previewDialog" :src="previewSrc" />
+
+  <!-- 右键菜单 -->
+  <div
+    v-if="imageMenu.visible"
+    class="image-context-menu"
+    :style="{ left: imageMenu.x + 'px', top: imageMenu.y + 'px' }"
+    @click.stop
+  >
+    <div v-if="(imageMenu.type === 'main' && form.image_url) || (imageMenu.type === 'extra' && imageMenu.index !== undefined)" class="menu-item" @click="onMenuPreview">预览</div>
+    <div class="menu-item" @click="onMenuUpload">{{ imageMenu.type === 'main' && form.image_url ? '更新图片' : '上传图片' }}</div>
+    <div v-if="(imageMenu.type === 'main' && form.image_url) || (imageMenu.type === 'extra' && imageMenu.index !== undefined)" class="menu-item" @click="onMenuDelete">删除图片</div>
+  </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -602,6 +611,8 @@ interface ProductEditForm {
   extra_images: string[]
   product_name: string
   product_name_en: string
+  product_short_name: string
+  product_short_name_en: string
   product_feature: string
   product_acquires: string
   product_color: string
@@ -666,6 +677,8 @@ const form = reactive<ProductEditForm>({
   extra_images: [] as string[],
   product_name: '',
   product_name_en: '',
+  product_short_name: '',
+  product_short_name_en: '',
   product_feature: '',
   product_acquires: '',
   product_color: '',
@@ -732,7 +745,9 @@ const archiveSlots = [
 
 const dialogTitle = computed(() => {
   const name = item.value?.customer_model || item.value?.product_code || ''
-  return `编辑产品 - ${name}`
+  const customer = item.value?.customer_name
+  const customer_country = item.value?.customer_country
+  return `编辑产品 - ${name} - ${customer} - ${customer_country}`
 })
 
 const productCategoryDisplay = computed(() => {
@@ -988,6 +1003,8 @@ function initFromItem(source: ProductEditItem) {
   form.extra_images = (savedExtraImages || (source.image_url_2 ? [source.image_url_2] : [])).map(assetUrl)
   form.product_name = source.product_name || (source as any).detail_desc || ''
   form.product_name_en = source.product_name_en || (source as any).detail_desc_en || ''
+  form.product_short_name = (source as any).product_short_name || ''
+  form.product_short_name_en = (source as any).product_short_name_en || ''
   form.product_feature = source.product_feature || ''
   // 产品需求/产品颜色以换行方式存入 remark 字段；读取时按换行拆出
   const remarkText = source.remark || ''
@@ -1329,7 +1346,7 @@ defineExpose({ open, close })
 .basic-info-table {
   display: grid;
   grid-template-columns: 105px repeat(5, 1fr) 115px 1.2fr;
-  grid-template-rows: 46px 84px 36px 36px 72px 36px 36px;
+  grid-template-rows: 84px 36px 36px 72px 36px 36px;
   border: 1px solid #222;
   background: #fff;
   overflow: hidden;
@@ -1385,42 +1402,16 @@ defineExpose({ open, close })
   font-family: 'Times New Roman', 'SimSun', serif;
 }
 
-.customer-label {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.customer-cell {
-  grid-column: 2 / 6;
-  grid-row: 1;
-}
-
-.basic-info-action:nth-child(3) {
-  grid-column: 6;
-  grid-row: 1;
-}
-
-.basic-info-action:nth-child(4) {
-  grid-column: 7;
-  grid-row: 1;
-}
-
-.country-cell {
-  grid-column: 8;
-  grid-row: 1;
-  border-right: none;
-}
-
 .main-image-cell {
   grid-column: 1;
-  grid-row: 2;
+  grid-row: 1;
   padding: 4px;
   border: 2px solid #f56c6c;
 }
 
 .extra-images-cell {
   grid-column: 2 / 7;
-  grid-row: 2;
+  grid-row: 1;
   padding: 4px 10px;
   justify-content: flex-start;
   border: 2px solid #67c23a;
@@ -1428,105 +1419,121 @@ defineExpose({ open, close })
 
 .category-label {
   grid-column: 7;
-  grid-row: 2;
+  grid-row: 1;
 }
 
 .category-cell {
   grid-column: 8;
-  grid-row: 2;
+  grid-row: 1;
   border-right: none;
 }
 
 .model-label {
   grid-column: 1;
-  grid-row: 3 / 5;
+  grid-row: 2 / 4;
 }
 
 .model-cell {
   grid-column: 2 / 4;
-  grid-row: 3 / 5;
+  grid-row: 2 / 4;
 }
 
 .emphasis-cell :deep(.el-input__inner) {
   text-align: center;
-  font-size: 20px;
+  font-size: 80px;
 }
 
 .pname-label {
   grid-column: 4;
-  grid-row: 3 / 5;
+  grid-row: 2 / 4;
 }
 
 .product-name-zh {
-  grid-column: 5 / 9;
-  grid-row: 3;
+  grid-column: 5 / 7;
+  grid-row: 2;
   justify-content: flex-start;
-  border-right: none;
 }
 
 .product-name-en {
-  grid-column: 5 / 9;
-  grid-row: 4;
+  grid-column: 5 / 7;
+  grid-row: 3;
+  justify-content: flex-start;
+}
+
+.short-name-label {
+  grid-column: 7;
+  grid-row: 2 / 4;
+}
+
+.short-name-zh {
+  grid-column: 8;
+  grid-row: 2;
   justify-content: flex-start;
   border-right: none;
 }
 
-.basic-info-label:nth-of-type(5) {
+.short-name-en {
+  grid-column: 8;
+  grid-row: 3;
+  border-right: none;
+}
+
+.details-label {
   grid-column: 1;
-  grid-row: 5;
+  grid-row: 4;
 }
 
 .details-cell {
   grid-column: 2 / 5;
-  grid-row: 5;
+  grid-row: 4;
   justify-content: flex-start;
   align-items: stretch;
   padding: 4px 8px;
 }
 
-.basic-info-label:nth-of-type(6) {
+.color-label {
   grid-column: 5;
-  grid-row: 5;
+  grid-row: 4;
 }
 
 .color-cell {
   grid-column: 6 / 9;
-  grid-row: 5;
+  grid-row: 4;
   border-right: none;
 }
 
-.basic-info-label:nth-of-type(7) {
+.oe-label {
   grid-column: 1;
-  grid-row: 6 / 8;
+  grid-row: 5 / 7;
 }
 
 .oe-cell {
   grid-column: 2 / 4;
-  grid-row: 6 / 8;
+  grid-row: 5 / 7;
   align-items: stretch;
   padding: 4px 8px;
 }
 
 .remark-label {
   grid-column: 4;
-  grid-row: 6 / 8;
+  grid-row: 5 / 7;
 }
 
 .remark-cell {
   grid-column: 5 / 7;
-  grid-row: 6 / 8;
+  grid-row: 5 / 7;
   align-items: stretch;
   padding: 4px 8px;
 }
 
-.basic-info-label:nth-of-type(9) {
+.own-code-label {
   grid-column: 7;
-  grid-row: 6 / 8;
+  grid-row: 5 / 7;
 }
 
 .own-code-cell {
   grid-column: 8;
-  grid-row: 6 / 8;
+  grid-row: 5 / 7;
   border-right: none;
   color: #f56c6c;
   font-family: 'Times New Roman', 'SimSun', serif;
@@ -1957,7 +1964,7 @@ defineExpose({ open, close })
 
 .name-row-en {
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
 }
@@ -2224,6 +2231,22 @@ defineExpose({ open, close })
 
 .extra-image-uploader:hover {
   color: #409eff;
+}
+
+.extra-image-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+}
+
+.extra-image-placeholder-text {
+  color: #909399;
+  font-size: 12px;
+  line-height: 1;
 }
 
 .image-placeholder-icon {
