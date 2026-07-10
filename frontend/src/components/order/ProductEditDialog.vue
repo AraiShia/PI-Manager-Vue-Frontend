@@ -233,7 +233,9 @@
                 type="number"
                 style="width: 100%"
                 @blur="saveField('unit_price', form.unit_price)"
-              />
+              >
+                <template #prefix>$</template>
+              </el-input>
             </div>
             <div class="sales-detail-cell amount-cell">{{ formatMoney(computedAmount) }}</div>
             <div class="purchase-cost-cell cost-cell" style="color:#303133;font-weight:600;line-height:32px;">
@@ -245,7 +247,9 @@
                   type="number"
                   style="width: 100%"
                   @blur="saveField('purchase_price', form.purchase_price)"
-                />
+                >
+                  <template #prefix>¥</template>
+                </el-input>
               </div>
               <div class="purchase-cost-cell cost-cell">
                 <el-input
@@ -2060,6 +2064,7 @@ defineExpose({ open, close })
 .basic-info-table :deep(.el-input__inner) {
   color: #000;
   font-size: 13px;
+  text-align: center;
   font-family: 'Times New Roman', 'SimSun', serif;
 }
 
@@ -2255,6 +2260,7 @@ defineExpose({ open, close })
 .purchase-cost-cell :deep(.el-input__inner) {
   font-size: 12px;
   font-family: 'Times New Roman', 'SimSun', serif;
+  text-align: center;
   color: #000;
 }
 
@@ -2606,6 +2612,7 @@ defineExpose({ open, close })
 .sales-detail-cell :deep(.el-input__inner) {
   font-size: 13px;
   font-family: 'Times New Roman', 'SimSun', serif;
+  text-align: center;
   color: #000;
 }
 
@@ -2684,7 +2691,7 @@ defineExpose({ open, close })
   font-size: 13px;
   font-family: 'Times New Roman', 'SimSun', serif;
   color: #000;
-  text-align: left;
+  text-align: center;
 }
 
 /* 全局 small 尺寸 */

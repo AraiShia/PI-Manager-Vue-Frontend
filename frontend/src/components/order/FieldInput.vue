@@ -64,6 +64,10 @@ function onBlur() {
   min-width: 0;
 }
 
+.field-input :deep(.el-input__inner) {
+  text-align: center;
+}
+
 .field-status-slot {
   width: 18px;
   height: 18px;
