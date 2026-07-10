@@ -5,7 +5,7 @@
  *
  * 判定优先级：
  *   1) product_id（同一数据库产品）→ product_id:{id}
- *   2) customer_code + oe_number（无 product_id 的临时产品）→ code_oe:{customer_code}|{oe_number}
+ *   2) customer_code/product_code + oe_number（无 product_id 的临时产品）→ code_oe:{code}|{oe_number}
  *   3) detail_desc（产品名称）→ name:{detail_desc}
  */
 
@@ -44,7 +44,7 @@ export function extractDuplicateKey(item: any): { key: string; display: string }
   }
 
   // 2) customer_code + oe_number 兜底
-  const code = normalize(item.customer_code)
+  const code = normalize(item.customer_code ?? item.product_code)
   const oe = normalize(item.oe_number)
   if (code || oe) {
     return {

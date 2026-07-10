@@ -46,6 +46,8 @@
         </el-button>
         <el-button type="primary" :icon="Plus" @click="onNewOrder">新增订单</el-button>
         <el-button type="success" @click="onPaymentManagement">收款管理</el-button>
+        <el-button type="warning" @click="onShipmentCreate">创建出货单</el-button>
+        <el-button @click="onShipmentManagement">出货管理</el-button>
       </div>
     </div>
 
@@ -184,6 +186,7 @@
     <NewOrderDialog ref="newOrderDialogRef" @success="onNewOrderSuccess" />
     <PaymentDialog ref="paymentDialogRef" @success="onPaymentSuccess" />
     <PiOperationDialog ref="piDialogRef" @success="onPiSuccess" />
+    <ShipmentCreateDialog ref="shipmentCreateDialogRef" />
   </div>
 </template>
 
@@ -194,6 +197,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, Plus, Delete, ArrowDown } from '@element-plus/icons-vue'
 import { useOrderSummaryStore } from '@/stores/orderSummaryStore'
 import { orderSummaryApi } from '@/api/orderSummary'
+import ShipmentCreateDialog from '@/components/shipment/ShipmentCreateDialog.vue'
 import type { OrderListItem, OrderListFilter } from '@/types/orderSummary'
 import { ORDER_STATUS } from '@/constants/orderStatus'
 import { format } from 'date-fns'
@@ -204,6 +208,7 @@ import PiOperationDialog from '@/components/order/PiOperationDialog.vue'
 
 const store = useOrderSummaryStore()
 const router = useRouter()
+const shipmentCreateDialogRef = ref()
 
 const searchKeyword = ref('')
 const statusFilter = ref<number | string | undefined>(undefined)
@@ -405,6 +410,14 @@ function onPaymentManagement() {
   } else {
     router.push('/payments')
   }
+}
+
+function onShipmentCreate() {
+  shipmentCreateDialogRef.value?.open()
+}
+
+function onShipmentManagement() {
+  router.push('/shipments')
 }
 
 function onPageChange(page: number) {

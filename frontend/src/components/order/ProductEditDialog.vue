@@ -9,14 +9,14 @@
     destroy-on-close
     @closed="onClosed"
   >
-    <div v-if="item" class="product-edit-dialog" @click="onDocClick">
+    <div v-if="item" ref="dialogBodyRef" class="product-edit-dialog" @click="onDocClick">
       <!-- 基础信息 -->
       <div class="edit-section">
         <div class="section-title" style="background-color: #fde2e2; color: #c45650;">基础信息</div>
         <div class="section-body">
           <div class="basic-info-table">
             <div class="basic-info-label model-label required">客户型号<br /><span>Model</span></div>
-            <div class="basic-info-cell model-cell emphasis-cell">
+            <div class="basic-info-cell model-cell emphasis-cell" data-required-field="customer_model">
               <FieldInput
                 v-model="form.customer_model"
                 :status="getFieldStatus('customer_model')"
@@ -32,7 +32,7 @@
                 @blur="saveField('company_code', form.factory_code)"
               />
             </div>
-            <div class="basic-info-image main-image-cell" @contextmenu="onImageContextMenu($event, 'main')" @dblclick="onMainImageDblClick">
+            <div class="basic-info-image main-image-cell" data-required-field="image_url" @contextmenu="onImageContextMenu($event, 'main')" @dblclick="onMainImageDblClick">
               <el-upload
                 class="image-uploader-main"
                 :auto-upload="false"
@@ -71,7 +71,7 @@
             </div>
 
             <div class="basic-info-label pname-label required">产品名称<br /><span>P-Name</span></div>
-            <div class="basic-info-cell product-name-zh">
+            <div class="basic-info-cell product-name-zh" data-required-field="product_name">
               <el-input
                 v-model="form.product_name"
                 @blur="saveField('detail_desc', form.product_name)"
@@ -137,7 +137,7 @@
               />
             </div>
             <div class="basic-info-label category-label required">产品类别<br /><span>P-Category</span></div>
-            <div class="basic-info-cell category-cell">
+            <div class="basic-info-cell category-cell" data-required-field="category_id">
               <div class="category-select-group">
                 <el-select
                   v-model="categoryLevel1"
@@ -219,7 +219,7 @@
             
             
             <!-- 第3行：字段值 -->
-            <div class="sales-detail-cell">
+            <div class="sales-detail-cell" data-required-field="quantity">
               <el-input
                 v-model="form.quantity"
                 type="number"
@@ -227,7 +227,7 @@
                 @blur="saveField('quantity', form.quantity)"
               />
             </div>
-            <div class="sales-detail-cell">
+            <div class="sales-detail-cell" data-required-field="unit_price">
               <el-input
                 v-model="form.unit_price"
                 type="number"
@@ -237,11 +237,11 @@
                 <template #prefix>$</template>
               </el-input>
             </div>
-            <div class="sales-detail-cell amount-cell">{{ formatMoney(computedAmount) }}</div>
+            <div class="sales-detail-cell amount-cell">${{ formatMoney(computedAmount) }}</div>
             <div class="purchase-cost-cell cost-cell" style="color:#303133;font-weight:600;line-height:32px;">
                 {{ form.estimated_usd_price != null ? '$' + form.estimated_usd_price.toFixed(2) : '-' }}
               </div>
-              <div class="purchase-cost-cell cost-cell">
+              <div class="purchase-cost-cell cost-cell" data-required-field="purchase_price">
                 <el-input
                   v-model="form.purchase_price"
                   type="number"
@@ -257,7 +257,9 @@
                   type="number"
                   style="width: 100%"
                   @blur="saveField('misc_fee', form.misc_fee)"
-                />
+                >
+                  <template #prefix>¥</template>
+                </el-input>
               </div>
               <div class="purchase-cost-cell cost-cell">
                 <el-input
@@ -265,10 +267,12 @@
                   type="number"
                   style="width: 100%"
                   @blur="saveField('shipping_fee', form.shipping_fee)"
-                />
+                >
+                  <template #prefix>¥</template>
+                </el-input>
               </div>
               <div class="purchase-cost-cell cost-cell amount-cell">
-                {{ formatMoney(form.purchase_price * form.quantity + (form.misc_fee || 0) + (form.shipping_fee || 0)) }}
+                ¥{{ formatMoney(form.purchase_price * form.quantity + (form.misc_fee || 0) + (form.shipping_fee || 0)) }}
               </div>
             <div class="sales-detail-cell">
               <FieldInput
@@ -305,7 +309,7 @@
           <div class="purchase-cost-table">
               <!-- 第1行：价格 + 开票情况（沿用原表头） -->
             <div class="purchase-cost-head product-detail-head required">产品特性<br />选项/采购备注</div>
-            <div class="purchase-cost-cell span-2 product-detail-cell detail-right" rowspan="1">
+            <div class="purchase-cost-cell span-2 product-detail-cell detail-right" data-required-field="product_detail" rowspan="1">
               <el-input
                 v-model="form.product_detail"
                 type="textarea"
@@ -322,7 +326,7 @@
 
               <!-- 第3行：供应商 + 产品特性标题 -->
               <div class="purchase-cost-head  required">供应商（HJLK2204）</div>
-              <div class="purchase-cost-cell ">
+              <div class="purchase-cost-cell" data-required-field="supplier_name">
                 <FieldInput
                   v-model="form.supplier_name"
                   :status="getFieldStatus('supplier_name')"
@@ -430,26 +434,26 @@
               <div class="purchase-cost-head packaging-head">预估体积(m³)</div>
               <div class="purchase-cost-head packaging-head">预估毛重(kg)</div>
 
-              <div class="purchase-cost-cell packaging-cell packaging-cell-carton">
+              <div class="purchase-cost-cell packaging-cell packaging-cell-carton" data-required-field="carton_length">
                 <el-input v-model="form.carton_length" placeholder="长" type="number" style="width: 100%" @change="onCartonSizeChange" />
               </div>
-              <div class="purchase-cost-cell packaging-cell packaging-cell-carton">
+              <div class="purchase-cost-cell packaging-cell packaging-cell-carton" data-required-field="carton_width">
                 <el-input v-model="form.carton_width" placeholder="宽" type="number" style="width: 100%" @change="onCartonSizeChange" />
               </div>
-              <div class="purchase-cost-cell packaging-cell packaging-cell-carton">
+              <div class="purchase-cost-cell packaging-cell packaging-cell-carton" data-required-field="carton_height">
                 <el-input v-model="form.carton_height" placeholder="高" type="number" style="width: 100%" @change="onCartonSizeChange" />
               </div>
-              <div class="purchase-cost-cell packaging-cell pack-spec-cell">
-                <el-popover placement="bottom" :width="260" trigger="click">
+              <div class="purchase-cost-cell packaging-cell pack-spec-cell" data-required-field="pack_spec">
+                <el-popover ref="packSpecPopoverRef" placement="bottom" :width="260" trigger="click">
                   <template #reference>
                     <el-input :model-value="form.pack_spec || '1pcs/1ctn'" readonly style="width: 100%" />
                   </template>
                   <template #default>
                     <div class="pack-spec-popover">
                       <el-radio-group v-model="form.packaging" @change="onPackagingChange">
-                        <el-radio value="1件/箱">1pcs/1ctn</el-radio>
-                        <el-radio value="多件/箱">Apcs/1ctn</el-radio>
-                        <el-radio value="1件多箱">1pcs/Bctn</el-radio>
+                        <el-radio value="1件/箱">1件/箱</el-radio>
+                        <el-radio value="多件/箱">多件/箱</el-radio>
+                        <el-radio value="1件多箱">1件多箱</el-radio>
                       </el-radio-group>
                       <el-input-number
                         v-if="form.packaging === '多件/箱'"
@@ -516,7 +520,7 @@
                 <el-input v-model="record.carton_count" type="number" @blur="saveInboundRecords" />
               </div>
               <div class="inbound-cell pack-spec-cell">
-                <el-popover placement="bottom" :width="260" trigger="click">
+                <el-popover :ref="(el: any) => { inboundPopoverRefs[index] = el }" placement="bottom" :width="260" trigger="click" @show="currentEditingInboundIndex = index">
                   <template #reference>
                     <el-input :model-value="record.pack_spec || '1pcs/1ctn'" readonly />
                   </template>
@@ -611,6 +615,7 @@
 
     <template #footer>
       <el-button @click="close">关闭</el-button>
+      <el-button type="primary" :loading="saving" @click="onSaveClick">保存</el-button>
     </template>
   </el-dialog>
 
@@ -1231,6 +1236,7 @@ function onPackSpecBlur() {
   saveField('cartons_per_unit', form.cartons_per_unit)
   saveField('pack_spec', form.pack_spec)
   saveField('carton_count', form.carton_count)
+  packSpecPopoverRef.value?.hide()
 }
 
 function createInboundRecord(record: Partial<InboundRecord> = {}): InboundRecord {
@@ -1296,6 +1302,11 @@ function saveInboundRecords() {
   saveField('carton_count', inboundSummary.value.carton_count || undefined)
   saveField('stocked_qty', inboundSummary.value.stock_in_quantity || undefined)
   saveField('total_weight', Number(inboundSummary.value.total_weight || 0) || undefined)
+  const idx = currentEditingInboundIndex.value
+  if (idx >= 0 && inboundPopoverRefs.value[idx]) {
+    inboundPopoverRefs.value[idx].hide()
+    currentEditingInboundIndex.value = -1
+  }
 }
 
 function addInboundRecord() {
@@ -1663,6 +1674,11 @@ const imageMenu = ref<{ visible: boolean; x: number; y: number; type: 'main' | '
 const previewDialog = ref(false)
 const previewSrc = ref('')
 const previewWrapperRef = ref<HTMLElement>()
+const dialogBodyRef = ref<HTMLElement>()
+const packSpecPopoverRef = ref()
+const inboundPopoverRefs = ref<(any | undefined)[]>([])
+const currentEditingInboundIndex = ref(-1)
+const saving = ref(false)
 
 function openPreview(src: string) {
   previewSrc.value = src
@@ -1774,6 +1790,76 @@ function saveExtraImages() {
 
 function createArchiveHandler(key: string) {
   return (file: any) => handleArchiveChange(key, file)
+}
+
+// 手动保存：校验必填，未填则跳转并标红
+async function onSaveClick() {
+  const requiredFields: Array<{ key: string; label: string; getVal: () => unknown; positive?: boolean }> = [
+    { key: 'customer_model', label: '客户型号', getVal: () => form.customer_model },
+    { key: 'image_url', label: '主图', getVal: () => form.image_url },
+    { key: 'product_name', label: '产品名称', getVal: () => form.product_name },
+    { key: 'category_id', label: '产品类别', getVal: () => categoryLevel2.value || item.value?.category_id },
+    { key: 'quantity', label: '采购数量', getVal: () => form.quantity, positive: true },
+    { key: 'unit_price', label: '报价', getVal: () => form.unit_price, positive: true },
+    { key: 'purchase_price', label: '人民币采购价', getVal: () => form.purchase_price, positive: true },
+    { key: 'product_detail', label: '产品特性', getVal: () => form.product_detail },
+    { key: 'supplier_name', label: '供应商', getVal: () => form.supplier_name },
+    { key: 'carton_length', label: '纸箱长度', getVal: () => form.carton_length, positive: true },
+    { key: 'carton_width', label: '纸箱宽度', getVal: () => form.carton_width, positive: true },
+    { key: 'carton_height', label: '纸箱高度', getVal: () => form.carton_height, positive: true },
+    { key: 'pack_spec', label: '打包规格', getVal: () => form.pack_spec },
+  ]
+  const invalidField = requiredFields.find((field) => {
+    const value = field.getVal()
+    return value === undefined || value === null || value === '' || (field.positive && Number(value) <= 0)
+  })
+  if (invalidField) {
+    const el = dialogBodyRef.value?.querySelector<HTMLElement>(`[data-required-field="${invalidField.key}"]`)
+    if (el) {
+      const container = dialogBodyRef.value
+      if (container) {
+        const targetTop = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 20
+        container.scrollTo({ top: Math.max(targetTop, 0), behavior: 'smooth' })
+      } else {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+      el.classList.add('required-highlight')
+      el.querySelector<HTMLElement>('input, textarea, [tabindex]')?.focus()
+      setTimeout(() => el.classList.remove('required-highlight'), 2000)
+    }
+    ElMessage.warning(`请填写：${invalidField.label}`)
+    return
+  }
+
+  saving.value = true
+  try {
+    const fieldsToSave: Array<[string, unknown]> = [
+      ['customer_model', form.customer_model],
+      ['detail_desc', form.product_name],
+      ['quantity', form.quantity],
+      ['unit_price', form.unit_price],
+      ['purchase_price', form.purchase_price],
+      ['product_detail', form.product_detail],
+      ['supplier_name', form.supplier_name],
+      ['carton_length_cm', form.carton_length],
+      ['carton_width_cm', form.carton_width],
+      ['carton_height_cm', form.carton_height],
+      ['carton_size', form.carton_size],
+      ['packaging', form.packaging],
+      ['units_per_carton', form.units_per_carton],
+      ['cartons_per_unit', form.cartons_per_unit],
+      ['pack_spec', form.pack_spec],
+    ]
+    await Promise.all(fieldsToSave.map(([field, value]) => saveField(field, value)))
+    const failedField = fieldsToSave.find(([field]) => fieldStates.value[field]?.status === 'error')
+    if (failedField) {
+      ElMessage.error('部分字段保存失败，请检查标红字段')
+      return
+    }
+    ElMessage.success('保存成功')
+  } finally {
+    saving.value = false
+  }
 }
 
 async function handleArchiveChange(key: string, file: any) {
@@ -2068,6 +2154,17 @@ defineExpose({ open, close })
   font-family: 'Times New Roman', 'SimSun', serif;
 }
 
+.basic-info-table :deep(.el-input__prefix) {
+  color: #000;
+}
+
+.basic-info-table :deep(.el-input__wrapper:focus-within),
+.basic-info-table :deep(.el-textarea:focus-within) {
+  background-color: #fffbe6;
+  outline: 2px solid #e6a23c;
+  border-radius: 3px;
+}
+
 .basic-info-table :deep(.el-textarea),
 .basic-info-table :deep(.el-textarea__inner) {
   width: 100%;
@@ -2264,6 +2361,16 @@ defineExpose({ open, close })
   color: #000;
 }
 
+.purchase-cost-cell :deep(.el-input__prefix) {
+  color: #000;
+}
+
+.purchase-cost-cell :deep(.el-input__wrapper:focus-within) {
+  background-color: #fffbe6;
+  outline: 2px solid #e6a23c;
+  border-radius: 3px;
+}
+
 .amount-cell {
   font-size: 16px;
   color: #000;
@@ -2396,6 +2503,18 @@ defineExpose({ open, close })
   background: transparent;
 }
 
+.product-detail-cell :deep(.el-textarea:focus-within) {
+  background-color: #fffbe6;
+  outline: 2px solid #e6a23c;
+  border-radius: 3px;
+}
+
+.invoice-type-cell :deep(.el-select:focus-within),
+.invoice-type-cell :deep(.el-select.is-focused) {
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px #e6a23c !important;
+}
+
 .inbound-table {
   display: grid;
   grid-template-columns: 1.25fr 0.8fr 1fr 1fr 1fr 1fr 1fr;
@@ -2446,6 +2565,14 @@ defineExpose({ open, close })
   text-align: center;
   font-family: 'Times New Roman', 'SimSun', serif;
   color: #000;
+}
+
+.inbound-cell :deep(.el-input__wrapper:focus-within),
+.inbound-cell :deep(.el-input-number:focus-within),
+.inbound-cell :deep(.el-input-number .el-input__wrapper:focus-within) {
+  background-color: #fffbe6;
+  outline: 2px solid #e6a23c;
+  border-radius: 3px;
 }
 
 .carton-size-cell {
@@ -2614,6 +2741,16 @@ defineExpose({ open, close })
   font-family: 'Times New Roman', 'SimSun', serif;
   text-align: center;
   color: #000;
+}
+
+.sales-detail-cell :deep(.el-input__prefix) {
+  color: #000;
+}
+
+.sales-detail-cell :deep(.el-input__wrapper:focus-within) {
+  background-color: #fffbe6;
+  outline: 2px solid #e6a23c;
+  border-radius: 3px;
 }
 
 /* 产品名称（中英文两行表格布局） */
@@ -2937,5 +3074,14 @@ defineExpose({ open, close })
   font-size: 12px;
   color: #606266;
   word-break: break-all;
+}
+
+/* 必填校验高亮 */
+.required-highlight {
+  animation: required-flash 0.5s ease-in-out 3;
+}
+@keyframes required-flash {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: #fef0f0 !important; }
 }
 </style>

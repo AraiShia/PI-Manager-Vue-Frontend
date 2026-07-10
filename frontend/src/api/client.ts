@@ -35,7 +35,11 @@ client.interceptors.response.use(
     return response
   },
   error => {
-    const message = error.response?.data?.message || error.message || '网络错误'
+    const detail = error.response?.data?.detail
+    const message = error.response?.data?.message
+      || (typeof detail === 'string' ? detail : undefined)
+      || error.message
+      || '网络错误'
     ElMessage.error(message)
     return Promise.reject(error)
   }

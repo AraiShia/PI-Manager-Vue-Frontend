@@ -800,14 +800,15 @@ def save_formal(pi_id: int, db: Session = Depends(get_db)):
     pi = db.query(PiProformaInvoice).filter(PiProformaInvoice.id == pi_id).first()
     if not pi:
         raise HTTPException(status_code=404, detail="PI 不存在")
-    # 改保存正式 PI 时同步把 status 1→2
-    if pi.status == 1:
-        pi.status = 2
-        db.commit()
     try:
         path = save_formal_record(db, pi_id)
+        # 正式纪录文件写入成功后，再提交数据库正式状态，避免半成功。
+        if pi.status == 1:
+            pi.status = 2
+            db.commit()
         return {"success": True, "file_path": path}
     except ValueError as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/{pi_id}/formal-record")
@@ -823,9 +824,9 @@ def get_formal(pi_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{pi_id}/formal-record/exists")
 def formal_exists(pi_id: int, db: Session = Depends(get_db)):
-    """检查正式纪录是否存在"""
+    """检查正式纪录是否存在；数据库正式状态是跨节点的权威来源。"""
     pi = get_pi_invoice(db, pi_id)
     if not pi:
         return {"exists": False}
-    return {"exists": formal_record_exists(pi.pi_no)}
+    return {"exists": pi.status == 2 or formal_record_exists(pi.pi_no)}
 

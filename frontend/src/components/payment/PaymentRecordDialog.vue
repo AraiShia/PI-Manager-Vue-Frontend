@@ -94,6 +94,8 @@ import { ref, reactive, computed } from 'vue'
 import { ElMessage, FormInstance, FormRules } from 'element-plus'
 import type { ArCustomerPayment } from '@/types/payment'
 import { apiUrl } from '@/api/base'
+import { orderSummaryApi } from '@/api/orderSummary'
+import { isFormalOrderStatus } from '@/utils/formalRecord'
 import WaterBillUploader from './WaterBillUploader.vue'
 
 interface PiListItem {
@@ -154,13 +156,22 @@ async function searchPi(query: string) {
   searchPiTimer = setTimeout(async () => {
     piLoading.value = true
     try {
-      const res = await fetch(apiUrl(`/api/pi?search=${encodeURIComponent(query)}&page_size=20`))
-      if (res.ok) {
-        const data = await res.json()
-        piList.value = data.list || data.data?.list || []
-      }
+      const res = await orderSummaryApi.getOrders({
+        page: 1,
+        page_size: 100,
+        search: query,
+      })
+      piList.value = (res.data.code === 200 ? res.data.data.list : [])
+        .filter(item => isFormalOrderStatus(item.status))
+        .map(item => ({
+          id: item.id,
+          pi_no: item.pi_no,
+          customer_id: item.customer_id,
+          customer_name: item.customer_name,
+          total_amount: item.total_amount,
+        }))
     } catch {
-      ElMessage.error('查询PI单失败')
+      ElMessage.error('查询正式PI单失败')
     } finally {
       piLoading.value = false
     }

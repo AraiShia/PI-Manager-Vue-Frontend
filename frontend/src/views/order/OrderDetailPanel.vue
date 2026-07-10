@@ -1,4 +1,4 @@
-﻿﻿<template>
+﻿﻿﻿<template>
   <div class="order-detail-panel" v-loading="store.detailLoading">
     <div class="detail-header">
       <div class="header-left">
@@ -1092,7 +1092,7 @@ watch(
     // 清空选中（避免引用失效的行）
     selectedRows.value = []
   },
-  { deep: false, immediate: false }
+  { deep: false, immediate: true }
 )
 
 function onBatchInbound() {

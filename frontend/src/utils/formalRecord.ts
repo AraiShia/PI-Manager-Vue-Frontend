@@ -6,6 +6,12 @@ export const FORMAL_RECORD_REQUIRED_ACTIONS: readonly FormalRecordAction[] = [
   'stockIn',
 ]
 
+export const FORMAL_ORDER_STATUSES = [2, 3, 4] as const
+
+export function isFormalOrderStatus(status?: number | null): boolean {
+  return FORMAL_ORDER_STATUSES.includes(status as 2 | 3 | 4)
+}
+
 export function isFormalRecordRequiredAction(action: string): action is FormalRecordAction {
   return (FORMAL_RECORD_REQUIRED_ACTIONS as readonly string[]).includes(action)
 }
