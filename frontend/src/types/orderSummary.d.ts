@@ -16,6 +16,9 @@ export interface OrderListItem {
   total_amount: number
   status: number
   status_label: string
+  order_stage: string
+  order_stage_label: string
+  order_stage_tag_type: string
   paid_amount: number
   unpaid_amount: number
   payment_progress: number
@@ -73,6 +76,7 @@ export interface OrderDetailItem {
   supplier_name?: string | null
   shop_url?: string | null
   delivery_date: string | null
+  purchase_date: string | null   // 采购日期（来自最早 1688 记录）
   storage_status: string
   factory_deposit: number | null
   factory_balance: number | null
@@ -120,6 +124,7 @@ export interface OrderDetailItem {
 export interface OrderListFilter {
   search?: string
   status?: number
+  order_stage?: string
   customer_id?: number
   date_from?: string
   date_to?: string

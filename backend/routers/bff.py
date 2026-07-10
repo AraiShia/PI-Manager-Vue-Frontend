@@ -14,6 +14,7 @@ from models.customer_product import PrdCustomerProduct
 from models.product_category import PrdProductCategory
 from models.pi import PiProformaInvoice, PiProformaInvoiceItem, PiPaymentStage
 from models.purchase import Po1688Purchase
+from models.shipment import ShShipmentItem
 from schemas.bff_order import (
     OrderListItemSchema,
     OrderDetailItemSchema,
@@ -121,6 +122,45 @@ def _calc_storage_status(items: List[PiProformaInvoiceItem]) -> str:
     return "部分入库"
 
 
+def _calc_order_stage_final(
+    order: PiProformaInvoice,
+    items: List[PiProformaInvoiceItem],
+    payment_progress: float,
+    shipped_qty: float = 0.0,
+) -> tuple:
+    """最终状态计算（带付款进度和出货数据）。"""
+    base = 1 if order.status is None else order.status
+    if base == 0:
+        return ("cancelled", "已废弃", "info")
+    if base == 1:
+        return ("draft", "草稿", "warning")
+
+    if not items:
+        return ("processing", "进行中", "primary")
+
+    total_qty = sum(_to_float(it.quantity) for it in items)
+    stocked_qty = sum(_to_float(it.stocked_qty) for it in items)
+    stock_remaining = max(total_qty - stocked_qty, 0.0)
+
+    # 订单完结优先判断
+    if payment_progress >= 100 and stock_remaining <= 0:
+        return ("completed", "订单完结", "success")
+
+    # 已装柜（有出货记录且库存出清）
+    if shipped_qty > 0 and stock_remaining <= 0:
+        return ("shipped", "已装柜", "success")
+
+    # 待出货（全部入库但未出货）
+    if stocked_qty >= total_qty and total_qty > 0:
+        return ("pending_shipment", "待出货", "primary")
+
+    # 待入库（有采购但未入库）
+    if stocked_qty > 0:
+        return ("pending_inbound", "待入库", "warning")
+
+    return ("processing", "进行中", "primary")
+
+
 def _parse_date(date_str: Optional[str], end_of_day: bool = False) -> Optional[datetime]:
     """解析 ISO 格式日期字符串，可选设置为当天结束时间。"""
     if not date_str:
@@ -164,6 +204,8 @@ def _build_order_list_item(
     total_qty: float,
     stocked_qty: float,
     storage_status: str,
+    items: List[PiProformaInvoiceItem] = None,
+    shipped_qty: float = 0.0,
 ) -> OrderListItemSchema:
     total_amount = _to_float(order.total_amount)
     unpaid_amount = max(total_amount - paid_amount, 0.0)
@@ -171,6 +213,11 @@ def _build_order_list_item(
     payment_progress = min(payment_progress, 100.0)
     payment_status = _calc_payment_status(payment_progress)
     stock_remaining = max(total_qty - stocked_qty, 0.0)
+
+    # 自动状态机
+    stage_key, stage_label, tag_type = _calc_order_stage_final(
+        order, items or [], payment_progress, shipped_qty
+    )
 
     return OrderListItemSchema(
         id=order.id or 0,
@@ -181,8 +228,11 @@ def _build_order_list_item(
         created_at=_datetime_to_iso(order.created_at),
         item_count=item_count,
         total_amount=total_amount,
-        status=order.status or 1,
+        status=1 if order.status is None else order.status,
         status_label=_status_label(order.status),
+        order_stage=stage_key,
+        order_stage_label=stage_label,
+        order_stage_tag_type=tag_type,
         paid_amount=round(paid_amount, 2),
         unpaid_amount=round(unpaid_amount, 2),
         payment_progress=round(payment_progress, 2),
@@ -259,6 +309,7 @@ def get_orders_bff(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     status: Optional[int] = None,
+    order_stage: Optional[str] = Query(None, description="订单阶段筛选"),
     customer_id: Optional[int] = None,
     search: Optional[str] = Query(None, description="搜索PI号/客户名"),
     date_from: Optional[str] = None,
@@ -280,82 +331,110 @@ def get_orders_bff(
             (PiProformaInvoice.pi_no.like(like)) | (CrmCustomer.customer_name.like(like))
         )
 
-    total = query.count()
-    orders = (
+    # 先取全部以计算派生状态，过滤在内存中进行
+    all_orders = (
         query.order_by(PiProformaInvoice.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
         .all()
     )
 
-    order_ids = [o.id for o in orders if o.id]
-    customer_ids = [o.customer_id for o in orders if o.customer_id]
+    # 构建所有订单项（带派生状态）
+    all_order_ids = [o.id for o in all_orders if o.id]
+    all_customer_ids = [o.customer_id for o in all_orders if o.customer_id]
 
-    customer_map: Dict[int, str] = {}
-    customer_country_map: Dict[int, str] = {}
-    if customer_ids:
-        customers = db.query(CrmCustomer).filter(CrmCustomer.id.in_(customer_ids)).all()
-        customer_map = {c.id: c.customer_name for c in customers if c.id}
-        customer_country_map = {c.id: (c.country or "") for c in customers if c.id}
+    all_customer_map: Dict[int, str] = {}
+    all_customer_country_map: Dict[int, str] = {}
+    if all_customer_ids:
+        customers = db.query(CrmCustomer).filter(CrmCustomer.id.in_(all_customer_ids)).all()
+        all_customer_map = {c.id: c.customer_name for c in customers if c.id}
+        all_customer_country_map = {c.id: (c.country or "") for c in customers if c.id}
 
-    item_count_map: Dict[int, int] = {}
-    paid_amount_map: Dict[int, float] = {}
-    items_map: Dict[int, List[PiProformaInvoiceItem]] = {}
+    all_item_count_map: Dict[int, int] = {}
+    all_paid_amount_map: Dict[int, float] = {}
+    all_items_map: Dict[int, List[PiProformaInvoiceItem]] = {}
 
-    if order_ids:
+    if all_order_ids:
         item_counts = db.query(
             PiProformaInvoiceItem.pi_id,
             func.count(PiProformaInvoiceItem.id)
         ).filter(
-            PiProformaInvoiceItem.pi_id.in_(order_ids),
+            PiProformaInvoiceItem.pi_id.in_(all_order_ids),
             PiProformaInvoiceItem.is_deleted == False,
         ).group_by(PiProformaInvoiceItem.pi_id).all()
         for pi_id, count in item_counts:
-            item_count_map[pi_id] = count
+            all_item_count_map[pi_id] = count
 
         paid_amounts = db.query(
             PiPaymentStage.pi_id,
             func.sum(PiPaymentStage.amount)
         ).filter(
-            PiPaymentStage.pi_id.in_(order_ids),
+            PiPaymentStage.pi_id.in_(all_order_ids),
             PiPaymentStage.status == 2,
         ).group_by(PiPaymentStage.pi_id).all()
         for pi_id, amount in paid_amounts:
-            paid_amount_map[pi_id] = _to_float(amount)
+            all_paid_amount_map[pi_id] = _to_float(amount)
 
         all_items = db.query(PiProformaInvoiceItem).filter(
-            PiProformaInvoiceItem.pi_id.in_(order_ids),
+            PiProformaInvoiceItem.pi_id.in_(all_order_ids),
             PiProformaInvoiceItem.is_deleted == False,
         ).all()
         for item in all_items:
-            if item.pi_id not in items_map:
-                items_map[item.pi_id] = []
-            items_map[item.pi_id].append(item)
+            if item.pi_id not in all_items_map:
+                all_items_map[item.pi_id] = []
+            all_items_map[item.pi_id].append(item)
 
-    result = []
-    for o in orders:
+    # 出货数量：ShShipmentItem → pi_item_id → 汇总到各订单
+    all_shipped_map: Dict[int, float] = {}
+    if all_order_ids:
+        # 建立 item_id → pi_id 映射
+        item_to_pi: Dict[int, int] = {}
+        for pi_id, items in all_items_map.items():
+            for it in items:
+                if it.id:
+                    item_to_pi[it.id] = pi_id
+
+        item_ids = list(item_to_pi.keys())
+        if item_ids:
+            shipped_rows = db.query(
+                ShShipmentItem.pi_item_id,
+                func.sum(ShShipmentItem.shipment_quantity)
+            ).filter(
+                ShShipmentItem.pi_item_id.in_(item_ids),
+            ).group_by(ShShipmentItem.pi_item_id).all()
+
+            for pi_item_id, sqty in shipped_rows:
+                pid = item_to_pi.get(pi_item_id)
+                if pid:
+                    all_shipped_map[pid] = all_shipped_map.get(pid, 0.0) + _to_float(sqty)
+
+    all_result = []
+    for o in all_orders:
         oid = o.id or 0
-        items = items_map.get(oid, [])
-
-        total_qty = 0.0
-        stocked_qty = 0.0
-        for item in items:
-            total_qty += _to_float(item.quantity)
-            stocked_qty += _to_float(item.stocked_qty)
-
+        items = all_items_map.get(oid, [])
+        total_qty = sum(_to_float(it.quantity) for it in items)
+        stocked_qty = sum(_to_float(it.stocked_qty) for it in items)
         storage_status = _calc_storage_status(items)
-
         order_item = _build_order_list_item(
             order=o,
-            customer_name=customer_map.get(o.customer_id or 0, ""),
-            customer_country=customer_country_map.get(o.customer_id or 0, ""),
-            item_count=item_count_map.get(oid, 0),
-            paid_amount=paid_amount_map.get(oid, 0.0),
+            customer_name=all_customer_map.get(o.customer_id or 0, ""),
+            customer_country=all_customer_country_map.get(o.customer_id or 0, ""),
+            item_count=all_item_count_map.get(oid, 0),
+            paid_amount=all_paid_amount_map.get(oid, 0.0),
             total_qty=total_qty,
             stocked_qty=stocked_qty,
             storage_status=storage_status,
+            items=items,
+            shipped_qty=all_shipped_map.get(oid, 0.0),
         )
-        result.append(order_item)
+        all_result.append(order_item)
+
+    # 按 order_stage 筛选（内存过滤）
+    if order_stage:
+        all_result = [r for r in all_result if r.order_stage == order_stage]
+
+    total = len(all_result)
+    start_idx = (page - 1) * page_size
+    end_idx = page * page_size
+    result = all_result[start_idx:end_idx]
 
     response_data = OrderListResponseSchema(
         list=result,
@@ -376,6 +455,7 @@ def _build_order_detail_item(
     pi_no: str,
     order_date: Optional[str],
     latest_1688: Any = None,
+    purchase_date: Optional[str] = None,
     request: Optional[Request] = None,
     customer_product_map: Optional[Dict[int, PrdCustomerProduct]] = None,
     category_map: Optional[Dict[str, PrdProductCategory]] = None,
@@ -490,6 +570,7 @@ def _build_order_detail_item(
         factory_name=_to_str(item.supplier_name),
         shop_url=_to_str(item.shop_url),
         delivery_date=_datetime_to_iso(item.delivery_date),
+        purchase_date=purchase_date,
         storage_status=_to_str(item.storage_status),
         factory_deposit=_to_float(item.factory_deposit),
         factory_balance=_to_float(item.factory_balance),
@@ -596,6 +677,19 @@ def get_order_full_detail(
         )
         latest_1688_map = {r.product_id: r for r in latest_records}
 
+    # 最早采购日期：按 product_id 匹配 1688 记录的 min(created_at)
+    purchase_date_map: Dict[int, str] = {}
+    if product_ids:
+        earliest_rows = db.query(
+            Po1688Purchase.product_id,
+            func.min(Po1688Purchase.created_at).label("earliest"),
+        ).filter(
+            Po1688Purchase.product_id.in_(product_ids),
+        ).group_by(Po1688Purchase.product_id).all()
+        for product_id, earliest_dt in earliest_rows:
+            if earliest_dt:
+                purchase_date_map[product_id] = _datetime_to_iso(earliest_dt)
+
     customer_product_map: Dict[int, PrdCustomerProduct] = {}
     category_map: Dict[str, PrdProductCategory] = {}
     if product_ids:
@@ -615,6 +709,7 @@ def get_order_full_detail(
         _build_order_detail_item(
             item, pi_no, order_date,
             latest_1688=latest_1688_map.get(item.product_id),
+            purchase_date=purchase_date_map.get(item.product_id),
             request=request,
             customer_product_map=customer_product_map,
             category_map=category_map,

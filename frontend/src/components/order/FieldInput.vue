@@ -3,6 +3,7 @@
     <el-input
       :model-value="displayValue"
       :class="['field-input', statusClass]"
+      :disabled="props.disabled"
       @update:model-value="onInput"
       @blur="onBlur"
     >
@@ -26,6 +27,7 @@ import type { FieldStatus } from '@/composables/useProductEdit'
 const props = defineProps<{
   modelValue: string | number | null | undefined
   status?: FieldStatus
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{

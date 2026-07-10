@@ -175,32 +175,49 @@
 
       <!-- 销售细节 -->
       <div class="edit-section">
-        <div class="section-title" style="background-color: #fef0f0; color: #b88230;">销售细节</div>
+        <div class="section-title" style="background-color: #fde2d8; color: #b85c38;">销售细节</div>
         <div class="section-body">
           <div class="sales-detail-table">
             <!-- 第1行：综合毛利额 + 预估毛利率 + 价格变动 -->
+             
+             
+             
+             
             <div class="sales-summary-head">综合毛利额:</div>
-            <div class="sales-summary-cell span-2">{{ formatMoney(estimatedProfit) }}</div>
+            <div class="sales-summary-cell">{{ formatMoney(estimatedProfit) }}</div>
             <div class="sales-summary-head">预估毛利率:</div>
             <div class="sales-summary-cell">{{ estimatedMarginRate }}</div>
             <div class="sales-summary-head">价格变动:</div>
-            <div class="sales-summary-cell">
+            <div class="sales-summary-cell ">
               <FieldInput
                 v-model="form.price_change"
                 :status="getFieldStatus('price_change')"
                 @blur="onUnmappedBlur('price_change')"
               />
             </div>
-
+            <div class="sales-detail-head span-2">报价备注<br />Q.Notes</div>
+            <div class="sales-detail-cell span-3">
+              <FieldInput
+                v-model="form.quote_remark"
+                :status="getFieldStatus('quote_remark')"
+                @blur="onUnmappedBlur('quote_remark')"
+              />
+            </div>
             <!-- 第2行：字段标题 -->
             <div class="sales-detail-head required">采购数量<br />QTY</div>
             <div class="sales-detail-head required">报价<br />PRICE/USD</div>
-            <div class="sales-detail-head">金额<br />TOTAL</div>
+            <div class="sales-detail-head">金额(USD)<br />TOTAL</div>
+            <div class="purchase-cost-head cost-head">预估美金价<br /><span style="font-size:11px;color:#606266">={{ form.purchase_price }}×{{ (1 + form.profit_margin/100).toFixed(2) }}/{{ form.exchange_rate }}</span></div>              
+            <div class="purchase-cost-head cost-head required">人民币采购价</div>
+            <div class="purchase-cost-head cost-head">贴标费</div>
+            <div class="purchase-cost-head cost-head">运费</div>
+            <div class="purchase-cost-head cost-head">金额(RMB)</div>
             <div class="sales-detail-head">客户需求<br />Comments</div>
             <div class="sales-detail-head">答复<br />reply</div>
             <div class="sales-detail-head">确定信息<br />confirmation</div>
-            <div class="sales-detail-head">报价备注<br />Q.Notes</div>
-
+            
+            
+            
             <!-- 第3行：字段值 -->
             <div class="sales-detail-cell">
               <el-input
@@ -219,53 +236,7 @@
               />
             </div>
             <div class="sales-detail-cell amount-cell">{{ formatMoney(computedAmount) }}</div>
-            <div class="sales-detail-cell">
-              <FieldInput
-                v-model="form.customer_demand"
-                :status="getFieldStatus('customer_demand')"
-                @blur="onUnmappedBlur('customer_demand')"
-              />
-            </div>
-            <div class="sales-detail-cell">
-              <FieldInput
-                v-model="form.reply"
-                :status="getFieldStatus('reply')"
-                @blur="onUnmappedBlur('reply')"
-              />
-            </div>
-            <div class="sales-detail-cell">
-              <FieldInput
-                v-model="form.confirm_info"
-                :status="getFieldStatus('confirm_info')"
-                @blur="onUnmappedBlur('confirm_info')"
-              />
-            </div>
-            <div class="sales-detail-cell">
-              <FieldInput
-                v-model="form.quote_remark"
-                :status="getFieldStatus('quote_remark')"
-                @blur="onUnmappedBlur('quote_remark')"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 采购基础信息 -->
-      <div class="edit-section">
-        <div class="section-title" style="background-color: #e1f3d8; color: #5daf34;">采购基础信息</div>
-        <div class="section-body">
-          <div class="purchase-cost-table">
-              <!-- 第1行：价格 + 开票情况（沿用原表头） -->
-              
-              <div class="purchase-cost-head cost-head">预估美金价<br /><span style="font-size:10px;color:#909399">={{ form.purchase_price }}×{{ (1 + form.profit_margin/100).toFixed(2) }}/{{ form.exchange_rate }}</span></div>              
-              <div class="purchase-cost-head cost-head required">人民币采购价</div>
-              <div class="purchase-cost-head cost-head">贴标费</div>
-              <div class="purchase-cost-head cost-head">运费</div>
-              <div class="purchase-cost-head cost-head">金额</div>
-              <div class="purchase-cost-head invoice-group-head">开票情况</div>
-
-              <div class="purchase-cost-cell cost-cell" style="color:#303133;font-weight:600;line-height:32px;">
+            <div class="purchase-cost-cell cost-cell" style="color:#303133;font-weight:600;line-height:32px;">
                 {{ form.estimated_usd_price != null ? '$' + form.estimated_usd_price.toFixed(2) : '-' }}
               </div>
               <div class="purchase-cost-cell cost-cell">
@@ -295,6 +266,76 @@
               <div class="purchase-cost-cell cost-cell amount-cell">
                 {{ formatMoney(form.purchase_price * form.quantity + (form.misc_fee || 0) + (form.shipping_fee || 0)) }}
               </div>
+            <div class="sales-detail-cell">
+              <FieldInput
+                v-model="form.customer_demand"
+                :status="getFieldStatus('customer_demand')"
+                @blur="onUnmappedBlur('customer_demand')"
+              />
+            </div>
+            <div class="sales-detail-cell">
+              <FieldInput
+                v-model="form.reply"
+                :status="getFieldStatus('reply')"
+                @blur="onUnmappedBlur('reply')"
+              />
+            </div>
+            <div class="sales-detail-cell">
+              <FieldInput
+                v-model="form.confirm_info"
+                :status="getFieldStatus('confirm_info')"
+                @blur="onUnmappedBlur('confirm_info')"
+              />
+            </div>
+            
+            
+              
+          </div>
+        </div>
+      </div>
+
+      <!-- 采购基础信息 -->
+      <div class="edit-section">
+        <div class="section-title" style="background-color: #e1f3d8; color: #5daf34;">采购基础信息</div>
+        <div class="section-body">
+          <div class="purchase-cost-table">
+              <!-- 第1行：价格 + 开票情况（沿用原表头） -->
+            <div class="purchase-cost-head product-detail-head required">产品特性<br />选项/采购备注</div>
+            <div class="purchase-cost-cell span-2 product-detail-cell detail-right" rowspan="1">
+              <el-input
+                v-model="form.product_detail"
+                type="textarea"
+                :rows="3"
+                resize="none"
+                @blur="saveField('product_detail', form.product_detail)"
+              />
+            </div>
+              
+              
+
+              
+              
+
+              <!-- 第3行：供应商 + 产品特性标题 -->
+              <div class="purchase-cost-head  required">供应商（HJLK2204）</div>
+              <div class="purchase-cost-cell ">
+                <FieldInput
+                  v-model="form.supplier_name"
+                  :status="getFieldStatus('supplier_name')"
+                  @blur="saveField('supplier_name', form.supplier_name)"
+                />
+              </div>
+              
+              <div class="purchase-cost-head invoice-group-head">开票情况</div>
+              <!-- 第4行：供应商链接 + 产品特性内容 -->
+              <div class="purchase-cost-head ">供应商链接</div>
+              <div class="purchase-cost-cell link-cell">
+                <FieldInput
+                  v-model="form.shop_url"
+                  :status="getFieldStatus('shop_url')"
+                  @blur="saveField('shop_url', form.shop_url)"
+                />
+              </div>
               <div class="purchase-cost-cell invoice-type-cell">
                 <el-select
                   v-model="form.invoice_type"
@@ -314,36 +355,6 @@
                   size="small"
                   placeholder="备注"
                   @blur="saveField('invoice_rate', form.invoice_rate)"
-                />
-              </div>
-
-              <!-- 第3行：供应商 + 产品特性标题 -->
-              <div class="purchase-cost-head span-2 required">供应商（HJLK2204）</div>
-              <div class="purchase-cost-cell span-2">
-                <FieldInput
-                  v-model="form.supplier_name"
-                  :status="getFieldStatus('supplier_name')"
-                  @blur="saveField('supplier_name', form.supplier_name)"
-                />
-              </div>
-              <div class="purchase-cost-head product-detail-head required">产品特性<br />选项/采购备注</div>
-              <div class="purchase-cost-cell span-2 product-detail-cell detail-right" rowspan="2">
-                <el-input
-                  v-model="form.product_detail"
-                  type="textarea"
-                  :rows="3"
-                  resize="none"
-                  @blur="saveField('product_detail', form.product_detail)"
-                />
-              </div>
-
-              <!-- 第4行：供应商链接 + 产品特性内容 -->
-              <div class="purchase-cost-head span-2">供应商链接</div>
-              <div class="purchase-cost-cell span-2 link-cell">
-                <FieldInput
-                  v-model="form.shop_url"
-                  :status="getFieldStatus('shop_url')"
-                  @blur="saveField('shop_url', form.shop_url)"
                 />
               </div>
 
@@ -374,7 +385,8 @@
                 <FieldInput
                   v-model="form.factory_invoice_name"
                   :status="getFieldStatus('factory_invoice_name')"
-                  @blur="onUnmappedBlur('factory_invoice_name')"
+                  :disabled="!invoiceFactoryEnabled"
+                  @blur="invoiceFactoryEnabled && onUnmappedBlur('factory_invoice_name')"
                 />
               </div>
               <div class="purchase-cost-head">货源地</div>
@@ -467,7 +479,7 @@
               <div class="purchase-cost-cell packaging-cell">
                 <el-input :model-value="estimatedGrossWeight" readonly />
               </div>
-            </div>
+          </div>
         </div>
       </div>
 
@@ -480,9 +492,9 @@
             <div class="inbound-head">箱数 CTN</div>
             <div class="inbound-head">打包规格</div>
             <div class="inbound-head">入库数量</div>
-            <div class="inbound-head">入库体积</div>
-            <div class="inbound-head">单箱重量</div>
-            <div class="inbound-head">总重量</div>
+            <div class="inbound-head">入库体积(m³)</div>
+            <div class="inbound-head">单箱重量(kg)</div>
+            <div class="inbound-head">总重量(kg)</div>
 
             <div
               v-for="(record, index) in inboundRecords"
@@ -507,9 +519,9 @@
                   <template #default>
                     <div class="pack-spec-popover">
                       <el-radio-group v-model="record.packaging" @change="onInboundPackagingChange(record)">
-                        <el-radio value="1件/箱">1pcs/1ctn</el-radio>
-                        <el-radio value="多件/箱">Apcs/1ctn</el-radio>
-                        <el-radio value="1件多箱">1pcs/Bctn</el-radio>
+                        <el-radio value="1件/箱">1件/箱</el-radio>
+                        <el-radio value="多件/箱">多件/箱</el-radio>
+                        <el-radio value="1件多箱">1件多箱</el-radio>
                       </el-radio-group>
                       <el-input-number
                         v-if="record.packaging === '多件/箱'"
@@ -842,6 +854,8 @@ const childCategoryOptions = computed(() => {
 const categoryLocked = computed(() => Boolean(item.value?.category_id))
 
 const modelLocked = ref(false)
+
+const invoiceFactoryEnabled = computed(() => form.invoice_type === '增票' || form.invoice_type === '普票')
 
 const computedAmount = computed(() => {
   const qty = Number(form.quantity || 0)
@@ -2162,7 +2176,7 @@ defineExpose({ open, close })
   grid-column: span 6;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  grid-template-rows: repeat(8, 42px);
+  grid-template-rows: repeat(6, 42px);
   border: 1px solid #222;
   border-radius: 0;
   overflow: hidden;
@@ -2465,7 +2479,7 @@ defineExpose({ open, close })
 .sales-detail-table {
   grid-column: span 6;
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(11, 1fr);
   grid-template-rows: 48px 68px 56px;
   border: 1px solid #222;
   border-radius: 0;
@@ -2478,7 +2492,7 @@ defineExpose({ open, close })
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #efb4bd;
+  background: #f4b8a6;
   border-right: 1px solid #222;
   border-bottom: 1px solid #222;
   font-size: 15px;
@@ -2509,7 +2523,7 @@ defineExpose({ open, close })
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f7dada;
+  background: #fbe0d6;
   border-right: 1px solid #222;
   border-bottom: 1px solid #222;
   font-size: 13px;
@@ -2517,9 +2531,12 @@ defineExpose({ open, close })
   font-weight: 600;
   text-align: center;
   line-height: 1.3;
+  
   padding: 0 4px;
 }
-
+.sales-detail-head.span-2 {
+  grid-column: span 2;
+}
 .sales-detail-head:last-of-type {
   border-right: none;
 }
@@ -2550,7 +2567,12 @@ defineExpose({ open, close })
   border-right: 1px solid #222;
   border-bottom: 1px solid #222;
   min-width: 0;
-  background: #f7dada;
+  background: #fdf0eb;
+}
+
+.sales-detail-table .cost-head,
+.sales-detail-table .cost-cell {
+  background: #f7c7a7;
 }
 
 .sales-detail-cell:last-child {
@@ -2561,6 +2583,9 @@ defineExpose({ open, close })
   grid-column: span 2;
 }
 
+.sales-detail-cell.span-3 {
+  grid-column: span 3;
+}
 .sales-detail-cell.span-6 {
   grid-column: span 6;
 }

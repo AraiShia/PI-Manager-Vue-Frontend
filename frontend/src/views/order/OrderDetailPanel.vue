@@ -108,7 +108,7 @@
         <el-table-column prop="import_seq" label="导入序号" width="80" align="center" show-overflow-tooltip />
 
         <!-- 锁定列：永不隐藏 -->
-        <el-table-column prop="pi_no" label="PI号" width="140" show-overflow-tooltip v-if="colVisible['pi_no']" />
+        <el-table-column prop="purchase_date" label="采购日期" width="140" show-overflow-tooltip v-if="colVisible['purchase_date']" />
         <el-table-column prop="product_code" label="编号备注" width="130" show-overflow-tooltip />
         <el-table-column prop="oe_number" label="OE号" width="120" show-overflow-tooltip v-if="colVisible['oe_number']" />
         <el-table-column prop="product_acquires" label="客户需求/产品备注" width="150" v-if="colVisible['remark']">
@@ -154,16 +154,6 @@
           </template>
         </el-table-column>
         <el-table-column prop="latest_customer_reply" label="最新客户回复" width="140" show-overflow-tooltip v-if="colVisible['latest_customer_reply']" />
-        <el-table-column prop="customer_prepayment" label="客户预付款" width="110" align="right" v-if="colVisible['customer_prepayment']">
-          <template #default="{ row }">
-            {{ formatAmount(row.customer_prepayment) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="remaining_payment" label="待收尾款" width="110" align="right" v-if="colVisible['remaining_payment']">
-          <template #default="{ row }">
-            {{ formatAmount(row.remaining_payment) }}
-          </template>
-        </el-table-column>
         <el-table-column prop="estimated_usd_price" label="预估美金报价" width="120" align="right" v-if="colVisible['estimated_usd_price']">
           <template #default="{ row }">
             {{ formatAmount(row.estimated_usd_price) }}
@@ -503,7 +493,7 @@ const formalRecordSaving = ref(false)
 
 // 列筛选状态：每个列独立开关
 const colVisible = reactive<Record<string, boolean>>({
-  pi_no: true,
+  purchase_date: true,
   product_code: true,
   oe_number: true,
   remark: true,
@@ -515,7 +505,6 @@ const colVisible = reactive<Record<string, boolean>>({
   unit_price: true,
   total_amount: true,
   latest_customer_reply: true,
-  customer_prepayment: true,
   remaining_payment: true,
   estimated_usd_price: true,
   estimated_margin: true,
@@ -554,7 +543,7 @@ type ColumnVisibilityOption = {
 }
 
 const columnVisibilityOptions: ColumnVisibilityOption[] = [
-  { key: 'pi_no', label: 'PI号' },
+  { key: 'purchase_date', label: '采购日期' },
   { key: 'product_code', label: '客户产品编号', locked: true },
   { key: 'oe_number', label: 'OE号' },
   { key: 'remark', label: '客户需求/产品备注' },
@@ -566,8 +555,6 @@ const columnVisibilityOptions: ColumnVisibilityOption[] = [
   { key: 'unit_price', label: '报价', locked: true },
   { key: 'total_amount', label: '合计金额', locked: true },
   { key: 'latest_customer_reply', label: '最新客户回复' },
-  { key: 'customer_prepayment', label: '客户预付款' },
-  { key: 'remaining_payment', label: '待收尾款' },
   { key: 'estimated_usd_price', label: '预估美金报价' },
   { key: 'estimated_margin', label: '预估毛利率' },
   { key: 'purchase_price', label: '采购价格', locked: true },
@@ -936,7 +923,7 @@ async function onExportExcel() {
   try {
     const exportData = store.detailItems.map((item) => ({
       订单日期: item.order_date,
-      PI号: item.pi_no,
+      采购日期: item.purchase_date,
       客户产品编号: item.product_code,
       OE号: item.oe_number,
       客户需求产品备注: item.remark,
@@ -947,8 +934,6 @@ async function onExportExcel() {
       报价: item.unit_price,
       合计金额: item.total_amount,
       最新客户回复: item.latest_customer_reply,
-      客户预付款: item.customer_prepayment,
-      待收尾款: item.remaining_payment,
       预估美金报价: item.estimated_usd_price,
       预估毛利率: item.estimated_margin,
       采购价格: item.purchase_price,

@@ -49,6 +49,12 @@ export const orderSummaryApi = {
   saveFormalRecord: (orderId: number) =>
     client.post(`/api/pi/${orderId}/formal-record`),
 
+  updatePiStatus: (piId: number, payload: { status: number }) =>
+    client.put(`/api/pi/${piId}/status`, payload),
+
+  deletePi: (piId: number) =>
+    client.delete(`/api/pi/${piId}`),
+
   uploadProductImage: async (file: File): Promise<AxiosResponse<ApiResponse<{ url: string }>>> => {
     const formData = new FormData()
     formData.append('file', file)

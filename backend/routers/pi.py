@@ -494,10 +494,10 @@ def update_pi_api(pi_id: int, pi_update: PIInvoiceUpdate, db: Session = Depends(
 
 @router.put("/{pi_id}/status")
 def update_pi_status_api(pi_id: int, status_data: dict, db: Session = Depends(get_db)):
-    """更新PI单状态（草稿1→已确认2→已发货3→已完成4）"""
+    """更新PI单状态（0=已废弃，1=草稿，2=进行中，3=已发货，4=已完成）"""
     try:
         status = status_data.get('status')
-        if status not in [1, 2, 3, 4]:
+        if status not in [0, 1, 2, 3, 4]:
             raise HTTPException(status_code=400, detail="无效的状态值")
         db_pi = update_pi_status(db, pi_id, status)
         return {
@@ -796,6 +796,14 @@ def save_version(pi_id: int, body: SaveSnapshotRequest, db: Session = Depends(ge
 @router.post("/{pi_id}/formal-record")
 def save_formal(pi_id: int, db: Session = Depends(get_db)):
     """保存正式纪录（JSON 文件）"""
+    from models.pi import PiProformaInvoice
+    pi = db.query(PiProformaInvoice).filter(PiProformaInvoice.id == pi_id).first()
+    if not pi:
+        raise HTTPException(status_code=404, detail="PI 不存在")
+    # 改保存正式 PI 时同步把 status 1→2
+    if pi.status == 1:
+        pi.status = 2
+        db.commit()
     try:
         path = save_formal_record(db, pi_id)
         return {"success": True, "file_path": path}

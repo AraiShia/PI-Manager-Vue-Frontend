@@ -17,10 +17,13 @@
 
         <el-select v-model="statusFilter" placeholder="全部状态" style="width: 130px" @change="onStatusChange">
           <el-option label="全部" :value="undefined" />
-          <el-option label="待处理" :value="ORDER_STATUS.PENDING" />
-          <el-option label="处理中" :value="ORDER_STATUS.PROCESSING" />
-          <el-option label="已完成" :value="ORDER_STATUS.COMPLETED" />
-          <el-option label="已取消" :value="ORDER_STATUS.CANCELLED" />
+          <el-option label="草稿" :value="ORDER_STATUS.PENDING" />
+          <el-option label="进行中" :value="ORDER_STATUS.PROCESSING" />
+          <el-option label="待入库" value="pending_inbound"/>
+          <el-option label="待出货" value="pending_shipment"/>
+          <el-option label="已装柜" value="shipped"/>
+          <el-option label="订单完结" value="completed"/>
+          <el-option label="已废弃" :value="ORDER_STATUS.CANCELLED" />
         </el-select>
 
         <el-date-picker
@@ -78,10 +81,10 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="status_label" label="状态" width="100">
+        <el-table-column prop="order_stage_label" label="状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="statusTagType(row.status)" effect="light">
-              {{ row.status_label }}
+            <el-tag :type="row.order_stage_tag_type || 'primary'" effect="light">
+              {{ row.order_stage_label }}
             </el-tag>
           </template>
         </el-table-column>
@@ -132,11 +135,29 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="编辑" width="80" align="center">
+        <el-table-column label="管理" width="120" align="center">
           <template #default="{ row }">
-            <el-button size="small" type="primary" link @click.stop="onEdit(row)">
-              编辑
-            </el-button>
+            <el-dropdown trigger="click" @command="(cmd: string) => onManageCommand(cmd, row)">
+              <el-button size="small" type="primary" link>
+                管理 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="edit">编辑订单</el-dropdown-item>
+                  <el-dropdown-item
+                    v-if="row.status !== 0"
+                    command="cancel"
+                    divided
+                    style="color: #e6a23c"
+                  >废弃订单</el-dropdown-item>
+                  <el-dropdown-item
+                    v-if="row.status !== 0"
+                    command="delete"
+                    style="color: #f56c6c"
+                  >删除订单</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
 
@@ -170,8 +191,9 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, Plus, Delete } from '@element-plus/icons-vue'
+import { Search, Refresh, Plus, Delete, ArrowDown } from '@element-plus/icons-vue'
 import { useOrderSummaryStore } from '@/stores/orderSummaryStore'
+import { orderSummaryApi } from '@/api/orderSummary'
 import type { OrderListItem, OrderListFilter } from '@/types/orderSummary'
 import { ORDER_STATUS } from '@/constants/orderStatus'
 import { format } from 'date-fns'
@@ -184,7 +206,7 @@ const store = useOrderSummaryStore()
 const router = useRouter()
 
 const searchKeyword = ref('')
-const statusFilter = ref<number | undefined>(undefined)
+const statusFilter = ref<number | string | undefined>(undefined)
 const dateRange = ref<string[] | null>(null)
 const currentRow = ref<OrderListItem | null>(null)
 
@@ -254,7 +276,12 @@ function onSearch() {
 }
 
 function onStatusChange() {
-  applyFilter({ status: statusFilter.value })
+  const val = statusFilter.value
+  if (typeof val === 'number') {
+    applyFilter({ status: val, order_stage: undefined })
+  } else {
+    applyFilter({ status: undefined, order_stage: val })
+  }
 }
 
 function onDateRangeChange(val: string[] | null) {
@@ -325,6 +352,39 @@ function onPIOperation(row: OrderListItem) {
 
 function onPiSuccess() {
   store.fetchOrders()
+}
+
+// 订单管理下拉操作
+async function onManageCommand(cmd: string, row: OrderListItem) {
+  if (cmd === 'edit') {
+    onEdit(row)
+  } else if (cmd === 'cancel') {
+    try {
+      await ElMessageBox.confirm(
+        `确定废弃订单「${row.pi_no}」？废弃后订单将无法进行采购/入库操作。`,
+        '废弃订单',
+        { type: 'warning', confirmButtonText: '废弃', cancelButtonText: '取消' }
+      )
+      await orderSummaryApi.updatePiStatus(row.id, { status: 0 })
+      ElMessage.success('订单已废弃')
+      store.fetchOrders()
+    } catch {
+      // 用户取消
+    }
+  } else if (cmd === 'delete') {
+    try {
+      await ElMessageBox.confirm(
+        `确定删除订单「${row.pi_no}」？此操作不可恢复！`,
+        '删除订单',
+        { type: 'error', confirmButtonText: '删除', cancelButtonText: '取消' }
+      )
+      await orderSummaryApi.deletePi(row.id)
+      ElMessage.success('订单已删除')
+      store.fetchOrders()
+    } catch {
+      // 用户取消
+    }
+  }
 }
 
 // 编辑

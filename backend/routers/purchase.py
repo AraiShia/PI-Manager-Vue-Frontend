@@ -11,6 +11,7 @@ from schemas.purchase import (
     PurchaseOrderCreate, PurchaseOrderResponse, PurchaseOrderDetailResponse, PurchaseOrderUpdate,
     Po1688PurchaseItem, Po1688PurchaseBatchCreate
 )
+from models.purchase import Po1688Purchase
 router = APIRouter(prefix="/api/purchase-orders", tags=["采购管理"])
 @router.post("/", response_model=PurchaseOrderResponse)
 def create_purchase_order_api(purchase: PurchaseOrderCreate, db: Session = Depends(get_db)):
@@ -156,6 +157,28 @@ def create_1688_purchase_api(purchase_data: PurchaseOrderCreate, db: Session = D
         "purchase_orders": purchase_orders,
         "records": created_records,
     }
+
+@router.get("/1688/recent-urls")
+def read_recent_1688_urls(product_id: int, limit: int = 5, db: Session = Depends(get_db)):
+    rows = (
+        db.query(Po1688Purchase.product_url)
+        .filter(Po1688Purchase.product_id == product_id)
+        .filter(Po1688Purchase.product_url.isnot(None))
+        .filter(Po1688Purchase.product_url != "")
+        .order_by(Po1688Purchase.created_at.desc(), Po1688Purchase.id.desc())
+        .limit(max(limit * 3, limit))
+        .all()
+    )
+    urls = []
+    seen = set()
+    for (url,) in rows:
+        if url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+        if len(urls) >= limit:
+            break
+    return {"code": 200, "message": "success", "data": {"urls": urls}}
 
 @router.get("/1688")
 def read_1688_purchases(pi_id: int = None, product_id: int = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):

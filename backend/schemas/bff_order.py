@@ -24,6 +24,9 @@ class OrderListItemSchema(BaseModel):
     total_amount: float = 0
     status: int = 1
     status_label: str = ""
+    order_stage: str = "processing"
+    order_stage_label: str = "进行中"
+    order_stage_tag_type: str = "primary"
     paid_amount: float = 0
     unpaid_amount: float = 0
     payment_progress: float = 0
@@ -81,6 +84,7 @@ class OrderDetailItemSchema(BaseModel):
     factory_name: str = ""
     shop_url: str = ""
     delivery_date: Optional[str] = None
+    purchase_date: Optional[str] = None
     storage_status: str = ""
     factory_deposit: float = 0
     factory_balance: float = 0
