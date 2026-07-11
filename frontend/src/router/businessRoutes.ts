@@ -1,3 +1,8 @@
+import { defineAsyncComponent } from 'vue'
+
+const CustomerManagement = defineAsyncComponent(() => import('@/views/customer/CustomerManagement.vue'))
+const SupplierManagement = defineAsyncComponent(() => import('@/views/supplier/SupplierManagement.vue'))
+
 export interface BusinessRouteMeta {
   key: string
   path: string
@@ -9,8 +14,8 @@ export interface BusinessRouteMeta {
 
 export const BUSINESS_ROUTES: readonly BusinessRouteMeta[] = [
   { key: 'products', path: '/products', title: '产品管理', source: 'Web 产品管理', owner: '产品模块', implemented: true },
-  { key: 'customers', path: '/customers', title: '客户管理', source: '原 PyQt 客户管理', owner: '客户模块', implemented: false },
-  { key: 'suppliers', path: '/suppliers', title: '供应商管理', source: '原 PyQt 供应商管理', owner: '供应商模块', implemented: false },
+  { key: 'customers', path: '/customers', title: '客户管理', source: '原 PyQt 客户管理', owner: '客户模块', implemented: true },
+  { key: 'suppliers', path: '/suppliers', title: '供应商管理', source: '原 PyQt 供应商管理', owner: '供应商模块', implemented: true },
   { key: 'quotes', path: '/quotes', title: '报价管理', source: '原 PyQt 报价管理', owner: '报价模块', implemented: false },
   { key: 'pi', path: '/pi', title: 'PI 管理', source: '原 PyQt PI 管理', owner: 'PI 模块', implemented: false },
   { key: 'purchase', path: '/purchases', title: '采购管理', source: '原 PyQt 采购管理', owner: '采购模块', implemented: false },
