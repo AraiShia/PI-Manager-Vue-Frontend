@@ -33,9 +33,14 @@ export const API_BASE_URL = RAW_BASE
 
 export function assetUrl(path: string | null | undefined): string {
   if (!path) return ''
-  if (/^https?:\/\//i.test(path) || path.startsWith('data:') || path.startsWith('blob:')) return path
-  if (!ASSET_BASE) return path
+  const value = path.trim()
+  if (!value) return ''
+  if (value.startsWith('data:') || value.startsWith('blob:')) return value
+  if (/^https?:\/\//i.test(value)) {
+    return value.replace(/^http:\/\/(piapi\.wakabashia\.tj\.cn)/i, 'https://$1')
+  }
+  if (!ASSET_BASE) return value
   const left = ASSET_BASE.replace(/\/+$/, '')
-  const right = path.replace(/^\/+/, '')
+  const right = value.replace(/^\/+/, '')
   return `${left}/${right}`
 }
