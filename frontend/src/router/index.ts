@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { BUSINESS_ROUTES } from './businessRoutes'
 
 const implementedRoutes: RouteRecordRaw[] = [
+  { path: '/products', name: 'Products', component: () => import('@/views/product/ProductManagement.vue') },
   { path: '/orders', name: 'OrderSummary', component: () => import('@/views/order/OrderSummary.vue') },
   { path: '/orders/:id', name: 'OrderSummaryDetail', component: () => import('@/views/order/OrderSummary.vue') },
   { path: '/orders/:id/import', name: 'OrderImport', component: () => import('@/views/order/OrderImport.vue') },
