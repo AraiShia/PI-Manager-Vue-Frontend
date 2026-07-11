@@ -1,5 +1,4 @@
-﻿﻿﻿﻿﻿<template>
-  <div class="order-detail-panel" v-loading="store.detailLoading">
+﻿﻿<template>  <div class="order-detail-panel" v-loading="store.detailLoading">
     <div class="detail-header">
       <div class="header-left">
         <el-button :icon="ArrowLeft" @click="onBack">返回订单列表</el-button>
@@ -104,8 +103,11 @@
         @cell-dblclick="onCellDblClick"
       >
         <el-table-column type="selection" width="44" />
-        <el-table-column type="index" label="#" width="50" align="center" />
-        <el-table-column prop="import_seq" label="导入序号" width="80" align="center" show-overflow-tooltip />
+        <el-table-column label="导入序号" width="80" align="center" show-overflow-tooltip>
+          <template #default="{ row, $index }">
+            {{ displayImportSeq(row, $index) }}
+          </template>
+        </el-table-column>
 
         <!-- 锁定列：永不隐藏 -->
         <el-table-column prop="purchase_date" label="采购日期" width="140" show-overflow-tooltip v-if="colVisible['purchase_date']" />
@@ -666,15 +668,25 @@ function isContextMenuItemDisabled(action: string) {
   return isFormalRecordRequiredActionInView(action) && !hasFormalRecord.value
 }
 
+function getImportSeq(row: OrderDetailItem): number | null {
+  const raw = (row as any).import_seq
+  const seq = Number(raw)
+  return Number.isFinite(seq) && seq > 0 ? seq : null
+}
+
+function displayImportSeq(row: OrderDetailItem, index: number) {
+  return getImportSeq(row) ?? index + 1
+}
+
 function onRestoreImportOrder() {
-  // 按 import_seq 恢复原始导入顺序（seq > 0 才排序）
-  if (!store.detailItems.some((i) => (i as any).import_seq > 0)) {
+  // 仅当存在有效导入序号时，按原始导入顺序恢复；无效序号保留在后面
+  if (!store.detailItems.some(item => getImportSeq(item) !== null)) {
     ElMessage.info('当前数据没有导入序号，无需恢复顺序')
     return
   }
   const sorted = [...store.detailItems].sort((a, b) => {
-    const seqA = (a as any).import_seq || 0
-    const seqB = (b as any).import_seq || 0
+    const seqA = getImportSeq(a) ?? Number.MAX_SAFE_INTEGER
+    const seqB = getImportSeq(b) ?? Number.MAX_SAFE_INTEGER
     return seqA - seqB
   })
   store.$patch((state) => {
