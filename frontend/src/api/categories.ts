@@ -13,7 +13,7 @@ export interface ProductCategory {
 
 export interface CategoryFormPayload {
   name: string
-  parent_id?: number | null
+  parent_id?: string | null
 }
 
 export const categoriesApi = {

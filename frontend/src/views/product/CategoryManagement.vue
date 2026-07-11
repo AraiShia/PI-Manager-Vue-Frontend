@@ -61,9 +61,9 @@
             <el-option label="（顶级类别）" :value="null" />
             <el-option
               v-for="item in topLevelCategories"
-              :key="item.id"
+              :key="item.code || item.id"
               :label="item.name"
-              :value="item.id"
+              :value="item.code ?? ''"
             />
           </el-select>
         </el-form-item>
@@ -93,10 +93,9 @@ const saving = ref(false)
 const allCategories = ref<ProductCategory[]>([])
 const dialogVisible = ref(false)
 const editingCategory = ref<ProductCategory | null>(null)
-const parentCategoryId = ref<number | null>(null)
 const formRef = ref<FormInstance>()
 
-const emptyForm = () => ({ name: '', parent_id: null as number | null, status: 1 })
+const emptyForm = () => ({ name: '', parent_id: null as string | null, status: 1 })
 const form = reactive(emptyForm())
 const rules: FormRules = {
   name: [{ required: true, message: '请输入类别名称', trigger: 'blur' }],
@@ -110,14 +109,14 @@ const displayCategories = computed(() => {
     ...parent,
     _isParent: true,
     children: allCategories.value
-      .filter(child => child.parent_id === parent.id)
+      .filter(child => child.parent_id === parent.code)
       .map(child => ({ ...child, _isParent: false })),
   }))
 })
 
 function parentName(row: ProductCategory & { _isParent?: boolean }) {
   if (!row.parent_id) return '-'
-  const parent = allCategories.value.find(item => item.id === row.parent_id)
+  const parent = allCategories.value.find(item => item.code === row.parent_id)
   return parent?.name || '-'
 }
 
@@ -133,14 +132,12 @@ async function loadCategories() {
 
 function openCreate(parent: ProductCategory | null) {
   editingCategory.value = null
-  parentCategoryId.value = parent?.id ?? null
-  Object.assign(form, emptyForm(), { parent_id: parent?.id ?? null })
+  Object.assign(form, emptyForm(), { parent_id: parent?.code ?? null })
   dialogVisible.value = true
 }
 
 function openEdit(row: ProductCategory) {
   editingCategory.value = row
-  parentCategoryId.value = null
   Object.assign(form, emptyForm(), {
     name: row.name,
     parent_id: row.parent_id ?? null,
@@ -174,7 +171,7 @@ async function saveCategory() {
 }
 
 async function removeCategory(row: ProductCategory) {
-  const hasChildren = allCategories.value.some(item => item.parent_id === row.id)
+  const hasChildren = allCategories.value.some(item => item.parent_id === row.code)
   if (hasChildren) {
     ElMessage.warning('请先删除或移动子类别')
     return
