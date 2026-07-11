@@ -1,4 +1,4 @@
-﻿﻿﻿<template>
+﻿﻿﻿﻿﻿<template>
   <div class="order-detail-panel" v-loading="store.detailLoading">
     <div class="detail-header">
       <div class="header-left">
@@ -131,8 +131,8 @@
           <template #default="{ row }">
             <el-image
               v-if="row.image_url"
-              :src="row.image_url"
-              :preview-src-list="[row.image_url]"
+              :src="assetUrl(row.image_url)"
+              :preview-src-list="[assetUrl(row.image_url)]"
               :preview-teleported="true"
               fit="cover"
               style="width: 60px; height: 40px; border-radius: 2px; cursor: pointer"
@@ -407,6 +407,7 @@ import {
 import { useOrderSummaryStore } from '@/stores/orderSummaryStore'
 import { orderSummaryApi } from '@/api/orderSummary'
 import { nativeBridge } from '@/api/nativeBridge'
+import { assetUrl } from '@/api/base'
 import type { OrderDetailItem } from '@/types/orderSummary'
 import {
   findDuplicates,
