@@ -12,7 +12,7 @@ import type {
 export const shipmentsApi = {
   /** 出货单列表（后端返回数组，无 total） */
   getShipments: (params?: ShipmentListParams) =>
-    client.get<Shipment[]>('/api/shipments', { params }),
+    client.get<Shipment[]>('/api/shipments/', { params }),
 
   /** 出货单详情（下一轮） */
   getShipment: (id: number) =>
