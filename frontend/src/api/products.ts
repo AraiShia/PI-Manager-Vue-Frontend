@@ -96,5 +96,5 @@ export const productsApi = {
   update: (id: number, payload: Partial<ProductFormPayload>) => client.put<CustomerProduct>(`/api/customer-products/${id}`, payload),
   remove: (id: number) => client.delete(`/api/customer-products/${id}`),
   customers: () => client.get<CustomerOption[]>('/api/customers/', { params: { limit: 1000 } }),
-  categories: () => client.get<CategoryOption[]>('/product-categories/', { params: { status: 1 } }),
+  categories: () => client.get<CategoryOption[]>('/api/product-categories/', { params: { status: 1 } }),
 }
