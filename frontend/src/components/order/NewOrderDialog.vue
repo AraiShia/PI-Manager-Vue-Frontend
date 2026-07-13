@@ -982,7 +982,7 @@ async function onSubmitExcel() {
     const fd = new FormData()
     fd.append('file', file)
 
-    let query = `?auto_match=true`
+    let query = `auto_match=true`
     if (form.customer_id) query += `&customer_id=${form.customer_id}`
     query += `&profit_margin=${presetProfitMargin.value}&exchange_rate=${presetExchangeRate.value}`
 
