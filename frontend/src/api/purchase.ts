@@ -24,6 +24,24 @@ export interface PurchaseItem {
   remark?: string
 }
 
+export interface PurchaseListResponse {
+  data: PurchaseOrderSummary[]
+  total: number
+}
+
+export interface PurchaseOrderSummary {
+  id: number
+  po_no: string
+  pi_id: number
+  pi_no: string
+  supplier_id: number
+  supplier_name: string
+  total_amount: number
+  currency: string
+  status: number
+  created_at: string
+}
+
 export interface PurchasePayload {
   dept_id: string
   pi_id: number
@@ -86,6 +104,36 @@ export const purchaseApi = {
    */
   updatePiItemLink: (piItemId: number, link: string) =>
     client.put<ApiResponse<any>>(`/api/pi/items/${piItemId}`, { shop_url: link }),
+
+  /**
+   * 采购订单列表
+   */
+  list: (params: { page?: number; page_size?: number; keyword?: string; status?: number }) =>
+    client.get<ApiResponse<PurchaseListResponse>>('/api/purchase-orders', { params }),
+
+  /**
+   * 确认采购订单
+   */
+  confirm: (id: number) =>
+    client.post<ApiResponse<void>>(`/api/purchase-orders/${id}/confirm`),
+
+  /**
+   * 采购订单入库
+   */
+  inbound: (id: number) =>
+    client.post<ApiResponse<void>>(`/api/purchase-orders/${id}/inbound`),
+
+  /**
+   * 导出采购合同
+   */
+  exportContract: (id: number) =>
+    client.get(`/api/export/purchase/${id}/contract`, { responseType: 'blob' }),
+
+  /**
+   * 获取发票 URL
+   */
+  getInvoiceUrl: (id: number) =>
+    client.get<ApiResponse<{ url?: string }>>(`/api/purchase-orders/${id}/invoice`),
 
   /**
    * 单品入库
