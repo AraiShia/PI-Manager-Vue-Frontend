@@ -10,6 +10,7 @@ const implementedRoutes: RouteRecordRaw[] = [
   { path: '/orders/:id', name: 'OrderSummaryDetail', component: () => import('@/views/order/OrderSummary.vue') },
   { path: '/orders/:id/import', name: 'OrderImport', component: () => import('@/views/order/OrderImport.vue') },
   { path: '/shipments', name: 'Shipments', component: () => import('@/views/shipment/ShipmentsPage.vue') },
+  { path: '/purchases', name: 'Purchases', component: () => import('@/views/purchase/PurchaseManagement.vue') },
   { path: '/payments', redirect: '/payments/customer' },
   { path: '/payments/customer', name: 'CustomerPayments', component: () => import('@/views/payment/PaymentListPage.vue') },
 ]
