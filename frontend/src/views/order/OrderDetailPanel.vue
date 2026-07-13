@@ -738,9 +738,8 @@ const totalStockInQuantity = computed(() => {
 onMounted(() => {
   loadColumnVisibility()
   loadFormalRecordStatus()
+  // 用 click 关闭菜单，避免 contextmenu 监听器与菜单打开冲突
   document.addEventListener('click', hideContextMenu)
-  // 仅在捕获阶段外监听左键关闭；右键关闭由 hideContextMenu 内部 guard 保护
-  document.addEventListener('contextmenu', hideContextMenu)
 })
 
 watch(
@@ -762,7 +761,6 @@ watch(
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', hideContextMenu)
-  document.removeEventListener('contextmenu', hideContextMenu)
   if (contextMenuGuardTimer !== null) {
     window.clearTimeout(contextMenuGuardTimer)
     contextMenuGuardTimer = null
@@ -1162,8 +1160,9 @@ function onRowContextMenu(row: OrderDetailItem, _column: any, event: MouseEvent)
     return
   }
   event.preventDefault()
-  // 阻止冒泡到 document，避免 onMounted 里的 contextmenu 监听器立刻关闭菜单
-  event.stopPropagation()
+  // 不调用 stopPropagation()：Element Plus 在同一元素上以冒泡阶段监听，
+  // stopPropagation() 会阻止它收到事件，导致浏览器原生菜单弹出。
+  // 菜单关闭由 contextMenuJustOpened guard 保护。
   currentContextRow.value = row
   contextMenuPosition.value = { x: event.clientX, y: event.clientY }
   contextMenuVisible.value = true
