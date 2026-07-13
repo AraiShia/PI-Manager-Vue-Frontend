@@ -1695,6 +1695,8 @@ function resetPreviewPosition() {
 
 function onImageContextMenu(e: MouseEvent, type: 'main' | 'extra', index?: number) {
   e.preventDefault()
+  // 阻止冒泡，避免外层 click/contextmenu 关闭逻辑立刻把菜单关掉
+  e.stopPropagation()
   imageMenu.value = { visible: true, x: e.clientX, y: e.clientY, type, index }
 }
 

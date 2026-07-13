@@ -1,4 +1,4 @@
-﻿﻿<template>  <div class="order-detail-panel" v-loading="store.detailLoading">
+﻿<template>  <div class="order-detail-panel" v-loading="store.detailLoading">
     <div class="detail-header">
       <div class="header-left">
         <el-button :icon="ArrowLeft" @click="onBack">返回订单列表</el-button>
@@ -1154,6 +1154,8 @@ function onRowContextMenu(row: OrderDetailItem, _column: any, event: MouseEvent)
     return
   }
   event.preventDefault()
+  // 阻止冒泡到 document，避免 onMounted 里的 contextmenu 监听器立刻关闭菜单
+  event.stopPropagation()
   currentContextRow.value = row
   contextMenuPosition.value = { x: event.clientX, y: event.clientY }
   contextMenuVisible.value = true
