@@ -1,4 +1,4 @@
-﻿<template>  <div class="order-detail-panel" v-loading="store.detailLoading">
+<template>  <div class="order-detail-panel" v-loading="store.detailLoading">
     <div class="detail-header">
       <div class="header-left">
         <el-button :icon="ArrowLeft" @click="onBack">返回订单列表</el-button>
@@ -471,6 +471,9 @@ const contextMenuItems: ContextMenuItem[] = [
 const contextMenuVisible = ref(false)
 const contextMenuPosition = ref({ x: 0, y: 0 })
 const currentContextRow = ref<OrderDetailItem | null>(null)
+// 打开菜单后短时间内忽略关闭，避免同一次右键冒泡/全局监听立刻把菜单关掉
+const contextMenuJustOpened = ref(false)
+let contextMenuGuardTimer: number | null = null
 
 const importDialogVisible = ref(false)
 const importLoading = ref(false)
@@ -736,6 +739,7 @@ onMounted(() => {
   loadColumnVisibility()
   loadFormalRecordStatus()
   document.addEventListener('click', hideContextMenu)
+  // 仅在捕获阶段外监听左键关闭；右键关闭由 hideContextMenu 内部 guard 保护
   document.addEventListener('contextmenu', hideContextMenu)
 })
 
@@ -759,6 +763,10 @@ watch(
 onBeforeUnmount(() => {
   document.removeEventListener('click', hideContextMenu)
   document.removeEventListener('contextmenu', hideContextMenu)
+  if (contextMenuGuardTimer !== null) {
+    window.clearTimeout(contextMenuGuardTimer)
+    contextMenuGuardTimer = null
+  }
 })
 
 function formatDate(dateStr: string): string {
@@ -1159,19 +1167,30 @@ function onRowContextMenu(row: OrderDetailItem, _column: any, event: MouseEvent)
   currentContextRow.value = row
   contextMenuPosition.value = { x: event.clientX, y: event.clientY }
   contextMenuVisible.value = true
+  contextMenuJustOpened.value = true
+  if (contextMenuGuardTimer !== null) {
+    window.clearTimeout(contextMenuGuardTimer)
+  }
+  contextMenuGuardTimer = window.setTimeout(() => {
+    contextMenuJustOpened.value = false
+    contextMenuGuardTimer = null
+  }, 0)
 }
 
 function hideContextMenu() {
+  // 同一次右键事件触发的关闭请求忽略，确保菜单能显示出来
+  if (contextMenuJustOpened.value) {
+    return
+  }
   contextMenuVisible.value = false
   currentContextRow.value = null
 }
 
 async function handleContextMenuAction(action: string) {
-  hideContextMenu()
-  if (!currentContextRow.value) return
-  if (isFormalRecordRequiredActionInView(action) && !ensureFormalRecord(action === 'stockIn' ? '入库' : '采购')) return
-  
   const item = currentContextRow.value
+  if (!item) return
+  hideContextMenu()
+  if (isFormalRecordRequiredActionInView(action) && !ensureFormalRecord(action === 'stockIn' ? '入库' : '采购')) return
   
   switch (action) {
     case 'purchase':
