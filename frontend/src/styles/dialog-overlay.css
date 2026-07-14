@@ -1,16 +1,9 @@
 /* ============================================================
-   修复 PyQt WebEngine 弹窗背景变黑的问题
+   PyQt WebEngine 背景色处理
    ============================================================ */
 
 html,
 body,
 #app {
   background-color: #f5f7fa !important;
-  background: #f5f7fa !important;
-}
-
-/* overlay 蒙层：全屏不透明白色（覆盖 PyQt 黑色底） */
-.el-overlay {
-  background-color: #d8d8d8 !important;
-  background: #d8d8d8 !important;
 }
