@@ -114,35 +114,6 @@
               style="cursor: pointer"
               @click="onShowPaymentDetail(row)"
             />
-            <el-dialog
-              v-model="paymentDetailVisible"
-              :title="`收款详情 - ${paymentDetailRow?.pi_no || ''}`"
-              width="640px"
-              :modal="true"
-              append-to-body
-              :close-on-click-modal="true"
-            >
-              <div v-if="paymentDetailLoading" v-loading="true" style="height: 80px"></div>
-              <div v-else class="payment-slots">
-                <el-tag
-                  v-for="payment in paymentDetailSlots"
-                  :key="payment.id"
-                  type="success"
-                  effect="light"
-                  style="cursor: pointer; margin: 4px"
-                  @click="goPaymentList(paymentDetailRow)"
-                >
-                  {{ formatAmount(payment.actual_amount) }} / {{ payment.payment_date || '-' }}
-                </el-tag>
-                <span v-if="paymentDetailSlots.length === 0" class="muted">暂无收款记录</span>
-              </div>
-              <template #footer>
-                <el-button @click="paymentDetailVisible = false">关闭</el-button>
-                <el-button type="primary" :disabled="!paymentDetailRow" @click="goPaymentList(paymentDetailRow)">
-                  前往收款管理
-                </el-button>
-              </template>
-            </el-dialog>
           </template>
         </el-table-column>
 
@@ -218,6 +189,35 @@
     <PaymentDialog ref="paymentDialogRef" @success="onPaymentSuccess" />
     <PiOperationDialog ref="piDialogRef" @success="onPiSuccess" />
     <ShipmentCreateDialog ref="shipmentCreateDialogRef" />
+
+    <!-- 收款详情弹窗 -->
+    <el-dialog
+      v-model="paymentDetailVisible"
+      :title="`收款详情 - ${paymentDetailRow?.pi_no || ''}`"
+      width="640px"
+      :close-on-click-modal="true"
+    >
+      <div v-if="paymentDetailLoading" v-loading="true" style="height: 80px"></div>
+      <div v-else class="payment-slots">
+        <el-tag
+          v-for="payment in paymentDetailSlots"
+          :key="payment.id"
+          type="success"
+          effect="light"
+          style="cursor: pointer; margin: 4px"
+          @click="goPaymentList(paymentDetailRow)"
+        >
+          {{ formatAmount(payment.actual_amount) }} / {{ payment.payment_date || '-' }}
+        </el-tag>
+        <span v-if="paymentDetailSlots.length === 0" class="muted">暂无收款记录</span>
+      </div>
+      <template #footer>
+        <el-button @click="paymentDetailVisible = false">关闭</el-button>
+        <el-button type="primary" :disabled="!paymentDetailRow" @click="goPaymentList(paymentDetailRow)">
+          前往收款管理
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
