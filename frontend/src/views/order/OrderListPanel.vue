@@ -124,13 +124,13 @@
               <div v-else class="payment-slots">
                 <el-tag
                   v-for="payment in paymentDetailSlots"
-                  :key="payment.payment_id"
+                  :key="payment.id"
                   type="success"
                   effect="light"
                   style="cursor: pointer; margin: 4px"
                   @click="goPaymentList(paymentDetailRow)"
                 >
-                  {{ formatAmount(payment.actual_amount) }} / {{ payment.arrival_date || '-' }}
+                  {{ formatAmount(payment.actual_amount) }} / {{ payment.payment_date || '-' }}
                 </el-tag>
                 <span v-if="paymentDetailSlots.length === 0" class="muted">暂无收款记录</span>
               </div>
