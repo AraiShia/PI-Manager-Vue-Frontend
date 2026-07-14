@@ -325,13 +325,46 @@
               
 
               <!-- 第3行：供应商 + 产品特性标题 -->
-              <div class="purchase-cost-head  required">供应商（HJLK2204）</div>
+              <div class="purchase-cost-head  required">供应商</div>
               <div class="purchase-cost-cell" data-required-field="supplier_name">
-                <FieldInput
+                <el-select
                   v-model="form.supplier_name"
-                  :status="getFieldStatus('supplier_name')"
-                  @blur="saveField('supplier_name', form.supplier_name)"
-                />
+                  filterable
+                  remote
+                  :remote-method="searchSuppliers"
+                  :loading="supplierLoading"
+                  placeholder="搜索或选择供应商"
+                  style="width: 100%"
+                  :reserve-keyword="false"
+                  @change="onSupplierChange"
+                >
+                  <el-option
+                    v-for="s in suppliers"
+                    :key="s.id"
+                    :label="s.supplier_name"
+                    :value="s.supplier_name"
+                  >
+                    <div class="supplier-option">
+                      <span class="supplier-name">{{ s.supplier_name }}</span>
+                      <span v-if="s.supplier_code" class="supplier-code">[{{ s.supplier_code }}]</span>
+                    </div>
+                  </el-option>
+                  <template #empty>
+                    <div class="supplier-empty">
+                      <div v-if="supplierSearchQuery">未找到供应商「{{ supplierSearchQuery }}」</div>
+                      <div v-else>暂无供应商数据</div>
+                      <el-button
+                        v-if="supplierSearchQuery"
+                        type="primary"
+                        size="small"
+                        link
+                        @click="openNewSupplierDialog"
+                      >
+                        + 新建供应商
+                      </el-button>
+                    </div>
+                  </template>
+                </el-select>
               </div>
               
               <div class="purchase-cost-head invoice-group-head">开票情况</div>
@@ -634,6 +667,34 @@
     <div class="menu-item" @click="onMenuUpload">{{ imageMenu.type === 'main' && form.image_url ? '更新图片' : '上传图片' }}</div>
     <div v-if="(imageMenu.type === 'main' && form.image_url) || (imageMenu.type === 'extra' && imageMenu.index !== undefined)" class="menu-item" @click="onMenuDelete">删除图片</div>
   </div>
+
+  <!-- 新建供应商弹窗 -->
+  <el-dialog
+    v-model="newSupplierDialogVisible"
+    title="新建供应商"
+    width="500px"
+    :close-on-click-modal="false"
+    append-to-body
+  >
+    <el-form ref="newSupplierFormRef" :model="newSupplier" :rules="newSupplierRules" label-width="100px">
+      <el-form-item label="供应商编号">
+        <el-input v-model="newSupplier.supplier_code" placeholder="可选，系统可自动生成" />
+      </el-form-item>
+      <el-form-item label="供应商名称 *" prop="supplier_name">
+        <el-input v-model="newSupplier.supplier_name" placeholder="请输入供应商名称" />
+      </el-form-item>
+      <el-form-item label="省份">
+        <el-input v-model="newSupplier.province" placeholder="可选" />
+      </el-form-item>
+      <el-form-item label="城市">
+        <el-input v-model="newSupplier.city" placeholder="可选" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="newSupplierDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="creatingSupplier" @click="submitNewSupplier">确定新建</el-button>
+    </template>
+  </el-dialog>
   </div>
 </template>
 
@@ -643,6 +704,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
 import { orderSummaryApi } from '@/api/orderSummary'
+import { suppliersApi, type Supplier } from '@/api/suppliers'
 import { apiUrl, assetUrl } from '@/api/base'
 import type { OrderDetailItem } from '@/types/orderSummary'
 import FieldInput from './FieldInput.vue'
@@ -762,6 +824,23 @@ const categories = ref<ProductCategory[]>([])
 const categoryLevel1 = ref('')
 const categoryLevel2 = ref('')
 const inboundRecords = ref<InboundRecord[]>([])
+
+// 供应商下拉状态
+const suppliers = ref<Supplier[]>([])
+const supplierLoading = ref(false)
+const supplierSearchQuery = ref('')
+const newSupplierDialogVisible = ref(false)
+const newSupplierFormRef = ref()
+const creatingSupplier = ref(false)
+const newSupplier = reactive({
+  supplier_code: '',
+  supplier_name: '',
+  province: null as string | null,
+  city: null as string | null,
+})
+const newSupplierRules = {
+  supplier_name: [{ required: true, message: '请输入供应商名称', trigger: 'blur' }],
+}
 
 const form = reactive<ProductEditForm>({
   customer_name: '',
@@ -1867,6 +1946,72 @@ async function onSaveClick() {
 async function handleArchiveChange(key: string, file: any) {
   archiveFileNames[key] = file.name || ''
   ElMessage.info(`${key} 已选择: ${file.name}`)
+}
+
+// 供应商搜索
+let supplierSearchTimer: ReturnType<typeof setTimeout> | null = null
+async function searchSuppliers(query: string) {
+  supplierSearchQuery.value = query
+  if (supplierSearchTimer) clearTimeout(supplierSearchTimer)
+  if (!query) {
+    suppliers.value = []
+    return
+  }
+  supplierSearchTimer = setTimeout(async () => {
+    supplierLoading.value = true
+    try {
+      const res = await suppliersApi.list({ skip: 0, limit: 200 })
+      const all = res.data || []
+      suppliers.value = query
+        ? all.filter((s: Supplier) =>
+            s.supplier_name.toLowerCase().includes(query.toLowerCase()) ||
+            (s.supplier_code && s.supplier_code.toLowerCase().includes(query.toLowerCase()))
+          )
+        : all.slice(0, 100)
+    } catch {
+      suppliers.value = []
+    } finally {
+      supplierLoading.value = false
+    }
+  }, 300)
+}
+
+function onSupplierChange(val: string) {
+  saveField('supplier_name', val)
+}
+
+function openNewSupplierDialog() {
+  newSupplier.supplier_code = ''
+  newSupplier.supplier_name = supplierSearchQuery.value
+  newSupplier.province = null
+  newSupplier.city = null
+  newSupplierDialogVisible.value = true
+}
+
+async function submitNewSupplier() {
+  if (!newSupplier.supplier_name.trim()) {
+    ElMessage.warning('请输入供应商名称')
+    return
+  }
+  creatingSupplier.value = true
+  try {
+    const res = await suppliersApi.create({
+      supplier_code: newSupplier.supplier_code,
+      supplier_name: newSupplier.supplier_name.trim(),
+      province: newSupplier.province,
+      city: newSupplier.city,
+    })
+    const created: Supplier = res.data
+    form.supplier_name = created.supplier_name
+    saveField('supplier_name', created.supplier_name)
+    newSupplierDialogVisible.value = false
+    ElMessage.success('供应商创建成功')
+    await searchSuppliers(created.supplier_name)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '创建供应商失败')
+  } finally {
+    creatingSupplier.value = false
+  }
 }
 
 defineExpose({ open, close })
