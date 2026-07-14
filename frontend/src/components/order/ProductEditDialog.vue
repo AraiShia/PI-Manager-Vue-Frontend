@@ -699,7 +699,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, toRaw } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
@@ -1654,10 +1654,10 @@ function parsePackSpec(packSpec: string) {
 
 function createFormSnapshot() {
   return JSON.stringify({
-    form: { ...form, extra_images: [...form.extra_images] },
+    form: toRaw(form),
     categoryLevel1: categoryLevel1.value,
     categoryLevel2: categoryLevel2.value,
-    inboundRecords: inboundRecords.value,
+    inboundRecords: inboundRecords.value.map((r) => toRaw(r)),
   })
 }
 
@@ -1682,6 +1682,12 @@ function close() {
 }
 
 async function requestClose(done?: () => void) {
+  console.debug('[ProductEdit] requestClose visible=%s hasUnsaved=%s snapshot=%s current=%s',
+    visible.value,
+    hasUnsavedChanges.value,
+    initialFormSnapshot.value.slice(0, 80),
+    createFormSnapshot().slice(0, 80),
+  )
   if (!hasUnsavedChanges.value) {
     if (typeof done === 'function') done()
     else close()
