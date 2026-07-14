@@ -99,7 +99,7 @@
         :cell-style="{ padding: '4px 0' }"
         :row-class-name="rowClassName"
         @selection-change="onSelectionChange"
-        @row-contextmenu="onRowContextMenu"
+        @contextmenu.capture.prevent="onTableContextMenu"
         @cell-dblclick="onCellDblClick"
       >
         <el-table-column type="selection" width="44" />
@@ -1154,15 +1154,7 @@ function onPurchaseComplete(payload: { factory_name: string; shop_url: string; w
   }
 }
 
-function onRowContextMenu(row: OrderDetailItem, _column: any, event: MouseEvent) {
-  // el-table row-contextmenu 事件签名: (row, column, event)
-  if (!event || typeof event.preventDefault !== 'function') {
-    return
-  }
-  event.preventDefault()
-  // 不调用 stopPropagation()：Element Plus 在同一元素上以冒泡阶段监听，
-  // stopPropagation() 会阻止它收到事件，导致浏览器原生菜单弹出。
-  // 菜单关闭由 contextMenuJustOpened guard 保护。
+function openContextMenu(row: OrderDetailItem, event: MouseEvent) {
   currentContextRow.value = row
   contextMenuPosition.value = { x: event.clientX, y: event.clientY }
   contextMenuVisible.value = true
@@ -1174,6 +1166,22 @@ function onRowContextMenu(row: OrderDetailItem, _column: any, event: MouseEvent)
     contextMenuJustOpened.value = false
     contextMenuGuardTimer = null
   }, 0)
+}
+
+function onTableContextMenu(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  const rowEl = target?.closest?.('tr.el-table__row') as HTMLTableRowElement | null
+  if (!rowEl) return
+
+  const body = rowEl.parentElement
+  if (!body) return
+
+  const rows = Array.from(body.querySelectorAll('tr.el-table__row'))
+  const rowIndex = rows.indexOf(rowEl)
+  const row = rowIndex >= 0 ? store.detailItems[rowIndex] : null
+  if (!row) return
+
+  openContextMenu(row, event)
 }
 
 function hideContextMenu() {
