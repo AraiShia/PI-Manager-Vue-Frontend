@@ -111,7 +111,36 @@
               :percentage="Math.round(row.payment_progress)"
               :status="progressStatus(row.payment_progress)"
               :stroke-width="10"
+              style="cursor: pointer"
+              @click="onShowPaymentDetail(row)"
             />
+            <el-dialog
+              v-model="paymentDetailVisible"
+              :title="`收款详情 - ${paymentDetailRow?.pi_no || ''}`"
+              width="640px"
+              append-to-body
+            >
+              <div v-if="paymentDetailLoading" v-loading="true" style="height: 80px"></div>
+              <div v-else class="payment-slots">
+                <el-tag
+                  v-for="payment in paymentDetailSlots"
+                  :key="payment.payment_id"
+                  type="success"
+                  effect="light"
+                  style="cursor: pointer; margin: 4px"
+                  @click="goPaymentList(paymentDetailRow)"
+                >
+                  {{ formatAmount(payment.actual_amount) }} / {{ payment.arrival_date || '-' }}
+                </el-tag>
+                <span v-if="paymentDetailSlots.length === 0" class="muted">暂无收款记录</span>
+              </div>
+              <template #footer>
+                <el-button @click="paymentDetailVisible = false">关闭</el-button>
+                <el-button type="primary" :disabled="!paymentDetailRow" @click="goPaymentList(paymentDetailRow)">
+                  前往收款管理
+                </el-button>
+              </template>
+            </el-dialog>
           </template>
         </el-table-column>
 
@@ -256,6 +285,38 @@ function progressStatus(progress: number): '' | 'success' | 'warning' | 'excepti
   if (progress >= 30) return ''
   if (progress > 0) return 'warning'
   return 'exception'
+}
+
+// ===== 收款详情弹窗 =====
+const paymentDetailVisible = ref(false)
+const paymentDetailLoading = ref(false)
+const paymentDetailRow = ref<OrderListItem | null>(null)
+const paymentDetailSlots = ref<any[]>([])
+
+async function onShowPaymentDetail(row: OrderListItem) {
+  paymentDetailRow.value = row
+  paymentDetailVisible.value = true
+  paymentDetailLoading.value = true
+  paymentDetailSlots.value = []
+  try {
+    const { apiUrl } = await import('@/api/base')
+    const res = await fetch(apiUrl(`/api/payments/receivables?pi_id=${row.id}&page=1&page_size=50`))
+    if (res.ok) {
+      const data = await res.json()
+      paymentDetailSlots.value = data.items || data.list || []
+    }
+  } catch (e) {
+    console.error('[OrderListPanel] 加载收款详情失败', e)
+    ElMessage.error('加载收款详情失败')
+  } finally {
+    paymentDetailLoading.value = false
+  }
+}
+
+function goPaymentList(row: OrderListItem | null) {
+  if (!row) return
+  paymentDetailVisible.value = false
+  router.push({ path: '/payments', query: { pi_id: String(row.id) } })
 }
 
 function applyFilter(filterUpdate: Partial<OrderListFilter>) {
