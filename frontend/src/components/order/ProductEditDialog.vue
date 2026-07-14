@@ -1960,14 +1960,8 @@ async function searchSuppliers(query: string) {
   supplierSearchTimer = setTimeout(async () => {
     supplierLoading.value = true
     try {
-      const res = await suppliersApi.list({ skip: 0, limit: 200 })
-      const all = res.data || []
-      suppliers.value = query
-        ? all.filter((s: Supplier) =>
-            s.supplier_name.toLowerCase().includes(query.toLowerCase()) ||
-            (s.supplier_code && s.supplier_code.toLowerCase().includes(query.toLowerCase()))
-          )
-        : all.slice(0, 100)
+      const res = await suppliersApi.list({ skip: 0, limit: 20, keyword: query })
+      suppliers.value = res.data || []
     } catch {
       suppliers.value = []
     } finally {

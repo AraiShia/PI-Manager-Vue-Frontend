@@ -75,8 +75,8 @@ def create_supplier_api(supplier: SupplierCreate, dept_id: str = "S", db: Sessio
     return create_supplier(db, supplier, dept_id)
 
 @router.get("/", response_model=list[SupplierResponse])
-def read_suppliers(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return get_suppliers(db, skip=skip, limit=limit)
+def read_suppliers(skip: int = 0, limit: int = 100, keyword: Optional[str] = None, db: Session = Depends(get_db)):
+    return get_suppliers(db, skip=skip, limit=limit, keyword=keyword)
 
 @router.get("/provinces")
 def get_provinces():

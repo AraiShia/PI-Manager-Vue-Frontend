@@ -105,10 +105,17 @@ def find_or_create_supplier_by_name(
     )
     return create_supplier(db, create_payload, dept_id)
 
-def get_suppliers(db: Session, skip: int = 0, limit: int = 100):
-    suppliers = db.query(SupSupplier).options(
+def get_suppliers(db: Session, skip: int = 0, limit: int = 100, keyword: str | None = None):
+    query = db.query(SupSupplier).options(
         joinedload(SupSupplier.contacts)
-    ).offset(skip).limit(limit).all()
+    )
+    if keyword and keyword.strip():
+        pattern = f"%{keyword.strip()}%"
+        query = query.filter(
+            (SupSupplier.supplier_name.ilike(pattern)) |
+            (SupSupplier.supplier_code.ilike(pattern))
+        )
+    suppliers = query.offset(skip).limit(limit).all()
 
     result = []
     for s in suppliers:

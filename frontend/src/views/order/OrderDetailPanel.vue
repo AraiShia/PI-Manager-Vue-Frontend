@@ -99,7 +99,6 @@
         :cell-style="{ padding: '4px 0' }"
         :row-class-name="rowClassName"
         @selection-change="onSelectionChange"
-        @contextmenu.capture.prevent="onTableContextMenu"
         @cell-dblclick="onCellDblClick"
       >
         <el-table-column type="selection" width="44" />
@@ -740,6 +739,8 @@ onMounted(() => {
   loadFormalRecordStatus()
   // 用 click 关闭菜单，避免 contextmenu 监听器与菜单打开冲突
   document.addEventListener('click', hideContextMenu)
+  // 升级到 document 层级捕获：组件 unmount/dialog 关闭时监听器仍生效
+  document.addEventListener('contextmenu', onTableContextMenu, true)
 })
 
 watch(
@@ -761,6 +762,7 @@ watch(
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', hideContextMenu)
+  document.removeEventListener('contextmenu', onTableContextMenu, true)
   if (contextMenuGuardTimer !== null) {
     window.clearTimeout(contextMenuGuardTimer)
     contextMenuGuardTimer = null
@@ -1181,6 +1183,7 @@ function onTableContextMenu(event: MouseEvent) {
   const row = rowIndex >= 0 ? store.detailItems[rowIndex] : null
   if (!row) return
 
+  event.preventDefault()
   openContextMenu(row, event)
 }
 
