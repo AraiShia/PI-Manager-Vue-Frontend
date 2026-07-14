@@ -30,6 +30,7 @@ from routers.purchase_package import router as purchase_package_router
 from routers.order_import import router as order_import_router, product_router as order_product_router
 from routers.export import router as export_router
 from routers.bff import router as bff_router
+from migrations.sync_pi_item_images_to_customer_products import router as migration_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -88,6 +89,7 @@ app.include_router(order_file_router)
 app.include_router(purchase_package_router)
 app.include_router(export_router)
 app.include_router(bff_router, prefix="/api")
+app.include_router(migration_router)
 
 static_dir = os.path.join(base_dir, "static")
 if os.path.exists(static_dir):
