@@ -3,6 +3,8 @@
     v-model="visible"
     :title="`PI 操作 - ${order?.pi_no || ''}`"
     width="500px"
+    :modal="true"
+    append-to-body
     :close-on-click-modal="false"
     @close="onClose"
   >

@@ -118,7 +118,9 @@
               v-model="paymentDetailVisible"
               :title="`收款详情 - ${paymentDetailRow?.pi_no || ''}`"
               width="640px"
+              :modal="true"
               append-to-body
+              :close-on-click-modal="true"
             >
               <div v-if="paymentDetailLoading" v-loading="true" style="height: 80px"></div>
               <div v-else class="payment-slots">

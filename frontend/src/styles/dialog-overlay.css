@@ -1,30 +1,16 @@
 /* ============================================================
-   修复 PyQt WebEngine 弹窗打开瞬间背景变黑的问题
-   - 强制 body / html 浅色背景
-   - 强制 el-overlay 蒙层浅色透明
+   修复 PyQt WebEngine 弹窗背景变黑的问题
    ============================================================ */
 
-html, body {
-  background-color: #f5f7fa !important;
-  color-scheme: light !important;
-}
-
+html,
+body,
 #app {
   background-color: #f5f7fa !important;
-  min-height: 100vh;
+  background: #f5f7fa !important;
 }
 
-/* Element Plus 弹窗蒙层：强制浅色半透明背景 */
-.el-overlay,
-.el-overlay-dialog {
-  background-color: rgba(0, 0, 0, 0.5) !important;
-}
-
-/* PyQt WebEngine 偶发不绘制蒙层：用伪元素补一层浅色 */
-.el-overlay::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  z-index: -1;
+/* overlay 蒙层：全屏不透明白色（覆盖 PyQt 黑色底） */
+.el-overlay {
+  background-color: #d8d8d8 !important;
+  background: #d8d8d8 !important;
 }
