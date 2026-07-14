@@ -1,6 +1,7 @@
 import { ref, computed, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { orderSummaryApi } from '@/api/orderSummary'
+import { productsApi } from '@/api/products'
 import type { OrderDetailItem } from '@/types/orderSummary'
 
 export type FieldStatus = 'idle' | 'saving' | 'success' | 'error'
@@ -55,6 +56,21 @@ export function useProductEdit(itemRef: Ref<OrderDetailItem | null>) {
         }
         if (field === 'supplier_name') {
           ;(item as any).factory_name = value
+        }
+        // 图片字段同步写入客户产品表
+        if (field === 'image_url' || field === 'extra_images') {
+          const productId = (item as any).product_id
+          if (productId) {
+            try {
+              const payload: any = {}
+              if (field === 'image_url') payload.image_url = value
+              if (field === 'extra_images') payload.sub_images = value
+              await productsApi.update(productId, payload)
+            } catch {
+              // 图片写客户产品表失败不影响主流程，仅记录
+              console.warn(`[saveField] 同步图片到客户产品 product_id=${productId} 失败`)
+            }
+          }
         }
         dirtyFields.value.delete(field)
       } else {
