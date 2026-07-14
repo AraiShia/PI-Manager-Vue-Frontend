@@ -647,7 +647,7 @@
     </div>
 
     <template #footer>
-      <el-button @click="close">关闭</el-button>
+      <el-button @click="requestClose()">关闭</el-button>
       <el-button type="primary" :loading="saving" @click="onSaveClick">保存</el-button>
     </template>
   </el-dialog>
@@ -699,7 +699,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
@@ -819,7 +819,7 @@ interface ProductEditForm {
 
 const visible = ref(false)
 const item = ref<ProductEditItem | null>(null)
-const { fieldStates, saveField } = useProductEdit(item as any)
+const { fieldStates, dirtyFields, saveField } = useProductEdit(item as any)
 const categories = ref<ProductCategory[]>([])
 const categoryLevel1 = ref('')
 const categoryLevel2 = ref('')
@@ -1491,6 +1491,11 @@ onMounted(() => {
   updatePackSpec()
   updateVolume()
   loadCategories()
+  window.addEventListener('beforeunload', onBeforeUnload)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', onBeforeUnload)
 })
 
 const emit = defineEmits<{
@@ -1647,6 +1652,15 @@ function parsePackSpec(packSpec: string) {
   }
 }
 
+function createFormSnapshot() {
+  return JSON.stringify({
+    form: { ...form, extra_images: [...form.extra_images] },
+    categoryLevel1: categoryLevel1.value,
+    categoryLevel2: categoryLevel2.value,
+    inboundRecords: inboundRecords.value,
+  })
+}
+
 function open(source: OrderDetailItem, customerName?: string, customerCountry?: string) {
   const editItem = source as ProductEditItem
   editItem.customer_name = customerName || ''
@@ -1659,6 +1673,7 @@ function open(source: OrderDetailItem, customerName?: string, customerCountry?: 
   if (!editItem.id) {
     form.factory_code = form.customer_model
   }
+  initialFormSnapshot.value = createFormSnapshot()
   visible.value = true
 }
 
@@ -1666,9 +1681,42 @@ function close() {
   visible.value = false
 }
 
+async function requestClose(done?: () => void) {
+  if (!hasUnsavedChanges.value) {
+    if (typeof done === 'function') done()
+    else close()
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '当前产品编辑内容还有未保存的改动，关闭后这些改动可能丢失。是否继续关闭？',
+      '未保存提示',
+      { confirmButtonText: '继续关闭', cancelButtonText: '返回编辑', type: 'warning' }
+    )
+    await ElMessageBox.confirm(
+      '请再次确认：仍然关闭并放弃未保存改动吗？',
+      '二次确认',
+      { confirmButtonText: '确认关闭', cancelButtonText: '返回编辑', type: 'warning' }
+    )
+    initialFormSnapshot.value = createFormSnapshot()
+    if (typeof done === 'function') done()
+    else close()
+  } catch {
+    // 用户取消关闭，保留当前编辑状态
+  }
+}
+
 function onClosed() {
   modelLocked.value = false
+  initialFormSnapshot.value = ''
   emit('closed')
+}
+
+function onBeforeUnload(event: BeforeUnloadEvent) {
+  if (!hasUnsavedChanges.value) return
+  event.preventDefault()
+  event.returnValue = ''
 }
 
 function onUnmappedBlur(field: string) {
@@ -1758,6 +1806,13 @@ const packSpecPopoverRef = ref()
 const inboundPopoverRefs = ref<(any | undefined)[]>([])
 const currentEditingInboundIndex = ref(-1)
 const saving = ref(false)
+const initialFormSnapshot = ref('')
+const hasUnsavedChanges = computed(() => {
+  if (!visible.value) return false
+  if (dirtyFields.value.size > 0) return true
+  const hasFailedOrSavingField = Object.values(fieldStates.value).some((state) => state.status === 'saving' || state.status === 'error')
+  return hasFailedOrSavingField || createFormSnapshot() !== initialFormSnapshot.value
+})
 
 function openPreview(src: string) {
   previewSrc.value = src
@@ -1937,6 +1992,7 @@ async function onSaveClick() {
       ElMessage.error('部分字段保存失败，请检查标红字段')
       return
     }
+    initialFormSnapshot.value = createFormSnapshot()
     ElMessage.success('保存成功')
   } finally {
     saving.value = false
