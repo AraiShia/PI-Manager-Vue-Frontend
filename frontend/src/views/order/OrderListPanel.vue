@@ -190,34 +190,47 @@
     <PiOperationDialog ref="piDialogRef" @success="onPiSuccess" />
     <ShipmentCreateDialog ref="shipmentCreateDialogRef" />
 
-    <!-- 收款详情弹窗 -->
-    <el-dialog
+    <!-- 收款详情抽屉 -->
+    <el-drawer
       v-model="paymentDetailVisible"
       :title="`收款详情 - ${paymentDetailRow?.pi_no || ''}`"
-      width="640px"
-      :close-on-click-modal="true"
+      direction="rtl"
+      size="420px"
     >
-      <div v-if="paymentDetailLoading" v-loading="true" style="height: 80px"></div>
-      <div v-else class="payment-slots">
-        <el-tag
+      <div v-if="paymentDetailLoading" v-loading="true" style="height: 120px"></div>
+      <div v-else-if="paymentDetailSlots.length === 0" class="muted" style="text-align: center; padding: 40px 0">
+        暂无收款记录
+      </div>
+      <div v-else class="payment-drawer-list">
+        <div
           v-for="payment in paymentDetailSlots"
           :key="payment.id"
-          type="success"
-          effect="light"
-          style="cursor: pointer; margin: 4px"
-          @click="goPaymentList(paymentDetailRow)"
+          class="payment-drawer-item"
         >
-          {{ formatAmount(payment.actual_amount) }} / {{ payment.payment_date || '-' }}
-        </el-tag>
-        <span v-if="paymentDetailSlots.length === 0" class="muted">暂无收款记录</span>
+          <div class="payment-drawer-row">
+            <span class="payment-label">实收金额</span>
+            <span class="payment-value">{{ formatAmount(payment.actual_amount) }}</span>
+          </div>
+          <div class="payment-drawer-row">
+            <span class="payment-label">付款日期</span>
+            <span class="payment-value">{{ payment.payment_date ? formatDate(payment.payment_date) : '-' }}</span>
+          </div>
+          <div class="payment-drawer-row">
+            <span class="payment-label">水单编号</span>
+            <span class="payment-value">{{ payment.receipt_no || '-' }}</span>
+          </div>
+          <div class="payment-drawer-row">
+            <span class="payment-label">备注</span>
+            <span class="payment-value muted">{{ payment.remark || '-' }}</span>
+          </div>
+        </div>
+        <div class="payment-drawer-footer">
+          <el-button type="primary" @click="goPaymentList(paymentDetailRow)">
+            前往收款管理
+          </el-button>
+        </div>
       </div>
-      <template #footer>
-        <el-button @click="paymentDetailVisible = false">关闭</el-button>
-        <el-button type="primary" :disabled="!paymentDetailRow" @click="goPaymentList(paymentDetailRow)">
-          前往收款管理
-        </el-button>
-      </template>
-    </el-dialog>
+    </el-drawer>
   </div>
 </template>
 
@@ -533,5 +546,44 @@ function onSizeChange(size: number) {
 
 .text-success {
   color: #67c23a;
+}
+
+/* 收款抽屉 */
+.payment-drawer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.payment-drawer-item {
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.payment-drawer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.payment-label {
+  color: #909399;
+  flex-shrink: 0;
+}
+
+.payment-value {
+  color: #303133;
+  text-align: right;
+  word-break: break-all;
+  max-width: 200px;
+}
+
+.payment-drawer-footer {
+  margin-top: 16px;
+  text-align: center;
 }
 </style>
