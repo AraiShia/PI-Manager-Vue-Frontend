@@ -306,7 +306,7 @@ function progressStatus(progress: number): '' | 'success' | 'warning' | 'excepti
 const paymentDetailVisible = ref(false)
 const paymentDetailLoading = ref(false)
 const paymentDetailRow = ref<OrderListItem | null>(null)
-const paymentDetailSlots = ref<any[]>([])
+const paymentDetailSlots = shallowRef<any[]>([])
 
 async function onShowPaymentDetail(row: OrderListItem) {
   paymentDetailRow.value = row
@@ -315,13 +315,9 @@ async function onShowPaymentDetail(row: OrderListItem) {
   paymentDetailSlots.value = []
   try {
     const { apiUrl } = await import('@/api/base')
-    const url = apiUrl(`/api/payments/receivables/by-pi/${row.id}`)
-    console.log('[PaymentDetail] row.id=', row.id, 'row.pi_no=', row.pi_no, 'URL=', url)
-    const res = await fetch(url)
+    const res = await fetch(apiUrl(`/api/payments/receivables/by-pi/${row.id}`))
     const data = await res.json()
-    console.log('[PaymentDetail] raw response:', JSON.stringify(data, null, 2))
     paymentDetailSlots.value = Array.isArray(data) ? data : []
-    console.log('[PaymentDetail] slots=', paymentDetailSlots.value.length, paymentDetailSlots.value[0])
   } catch (e) {
     console.error('[OrderListPanel] 加载收款详情失败', e)
     ElMessage.error('加载收款详情失败')
