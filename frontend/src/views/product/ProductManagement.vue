@@ -154,12 +154,13 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import { assetUrl } from '@/api/base'
 import { productsApi, type CategoryOption, type CustomerOption, type CustomerProduct, type ProductFormPayload } from '@/api/products'
+import { FALLBACK_PARENT_CATEGORIES, FALLBACK_CHILD_CATEGORIES } from '@/constants/productCategories'
 
 const loading = ref(false)
 const saving = ref(false)
 const products = ref<CustomerProduct[]>([])
 const customers = ref<CustomerOption[]>([])
-const categories = ref<CategoryOption[]>([])
+const categories = ref<any[]>([])
 const selectedRows = ref<CustomerProduct[]>([])
 const page = ref(1)
 const pageSize = ref(100)
@@ -235,7 +236,11 @@ async function loadOptions() {
     productsApi.categories(),
   ])
   customers.value = customerRes.data || []
-  categories.value = categoryRes.data || []
+  const cats = categoryRes.data || []
+  categories.value = cats.length ? cats : [
+    ...FALLBACK_PARENT_CATEGORIES,
+    ...FALLBACK_CHILD_CATEGORIES,
+  ]
 }
 
 async function loadProducts(nextPage = page.value) {

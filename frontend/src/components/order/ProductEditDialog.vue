@@ -700,6 +700,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, toRaw } from 'vue'
+import { FALLBACK_PARENT_CATEGORIES, FALLBACK_CHILD_CATEGORIES } from '@/constants/productCategories'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
@@ -737,23 +738,6 @@ type InboundRecord = {
   stock_in_quantity?: number
   carton_weight?: number
 }
-
-const FALLBACK_PARENT_CATEGORIES: ProductCategory[] = [
-  { code: 'C', name: '汽配件' },
-  { code: 'F', name: '办公家具' },
-  { code: 'B', name: '百货类' },
-]
-
-const FALLBACK_CHILD_CATEGORIES: ProductCategory[] = [
-  { code: 'C01', name: '发动机', parent_id: 'C' },
-  { code: 'C02', name: '曲轴', parent_id: 'C' },
-  { code: 'C03', name: '刹车片', parent_id: 'C' },
-  { code: 'C09', name: '杂项', parent_id: 'C' },
-  { code: 'F01', name: '椅子类', parent_id: 'F' },
-  { code: 'F02', name: '桌子类', parent_id: 'F' },
-  { code: 'F88', name: '工程定制', parent_id: 'F' },
-  { code: 'B00', name: '百货类', parent_id: 'B' },
-]
 
 interface ProductEditForm {
   customer_name: string
