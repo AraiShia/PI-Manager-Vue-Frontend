@@ -10,6 +10,20 @@
 
 export const API_HOST = 'https://piapi.wakabashia.tj.cn' as const
 
+/**
+ * 把 base URL 标准化：
+ *  - 空值 → API_HOST 兜底
+ *  - 显式 http:// 强制升级 https://，避免浏览器 Mixed Content 拦截
+ *  - 已是 https:// 或相对路径 → 原样返回
+ */
+export function normalizeApiBase(raw: string | undefined | null): string {
+  const trimmed = (raw || '').trim() || API_HOST
+  if (raw && /^http:\/\//i.test(trimmed)) {
+    return trimmed.replace(/^http:\/\//i, 'https://')
+  }
+  return trimmed
+}
+
 // ----- 认证 -----
 export const AUTH = {
   login: '/api/auth/login',

@@ -5,7 +5,7 @@
 // 端点常量请见 ./endpoints.ts
 // ============================================================
 
-import { API_HOST } from './endpoints'
+import { normalizeApiBase } from './endpoints'
 
 /**
  * 后端 API 基础地址
@@ -13,15 +13,12 @@ import { API_HOST } from './endpoints'
  *  - 部署/PyQt：设置 VITE_API_BASE_URL 指向真实后端
  *
  * 默认值取自 ./endpoints.ts 中的 API_HOST，避免多处硬编码域名
+ *
+ * 注意：若误将 VITE_API_BASE_URL 配置为 http://，会被强制升级为 https://，
+ * 避免浏览器 Mixed Content 拦截。
  */
-const RAW_BASE = (
-  import.meta.env.VITE_API_BASE_URL?.trim() ||
-  API_HOST
-)
-const ASSET_BASE = (
-  import.meta.env.VITE_ASSET_BASE_URL?.trim() ||
-  RAW_BASE
-)
+const RAW_BASE = normalizeApiBase(import.meta.env.VITE_API_BASE_URL || '')
+const ASSET_BASE = normalizeApiBase(import.meta.env.VITE_ASSET_BASE_URL || RAW_BASE)
 
 /**
  * 拼接一个完整的 API URL
@@ -32,17 +29,23 @@ const ASSET_BASE = (
  */
 export function apiUrl(path: string): string {
   if (!path) return RAW_BASE || '/'
+  let url: string
   // 如果 path 已是完整 URL，直接返回（不再拼接 base）
   if (/^https?:\/\//i.test(path)) {
-    // 仅当 base 为相对路径（如 vite proxy）时透传绝对 URL；否则强制走 base
-    if (/^https?:\/\//i.test(RAW_BASE)) return path
+    url = path
+  } else if (!RAW_BASE) {
     return path
+  } else {
+    // 避免双斜杠
+    const left = RAW_BASE.replace(/\/+$/, '')
+    const right = path.replace(/^\/+/, '')
+    url = `${left}/${right}`
   }
-  if (!RAW_BASE) return path
-  // 避免双斜杠
-  const left = RAW_BASE.replace(/\/+$/, '')
-  const right = path.replace(/^\/+/, '')
-  return `${left}/${right}`
+  // 防御：RAW_BASE 是 https 时强制把输出升级为 https，避免 Mixed Content
+  if (/^https?:\/\//i.test(RAW_BASE) && /^http:\/\//i.test(url)) {
+    url = url.replace(/^http:\/\//i, 'https://')
+  }
+  return url
 }
 
 /**
