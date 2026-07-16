@@ -9,6 +9,12 @@ const client = axios.create({
 
 client.interceptors.request.use(
   config => {
+    if (config.baseURL) {
+      config.baseURL = normalizeApiBase(config.baseURL)
+    }
+    if (config.url && /^http:\/\//i.test(config.url)) {
+      config.url = normalizeApiBase(config.url)
+    }
     const token = localStorage.getItem('access_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
