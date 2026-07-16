@@ -13,6 +13,30 @@ from schemas.customer_product import (
     CustomerProductOECreate
 )
 
+FALLBACK_CATEGORY_CHILDREN = {
+    "C": ["C01", "C02", "C03", "C09"],
+    "F": ["F01", "F02", "F03", "F88"],
+    "B": ["B00"],
+}
+
+
+def _resolve_category_filter_codes(db: Session, category_code: str) -> List[str]:
+    codes = [category_code]
+    child_codes = [
+        code for (code,) in db.query(PrdProductCategory.code)
+        .filter(PrdProductCategory.parent_id == category_code)
+        .all()
+    ]
+
+    if not child_codes:
+        child_codes = FALLBACK_CATEGORY_CHILDREN.get(category_code, [])
+
+    for code in child_codes:
+        if code not in codes:
+            codes.append(code)
+
+    return codes
+
 
 def _generate_system_code(db: Session, customer_id: int, category_id: str = None, dept_code: str = 'S') -> str:
     """
@@ -269,8 +293,9 @@ def get_customer_products(
         logger.info(f"[CP查询-DEBUG] 添加筛选: customer_id={customer_id}")
 
     if category_code:
-        query = query.filter(PrdCustomerProduct.category_id == category_code)
-        logger.info(f"[CP查询-DEBUG] 添加筛选: category_code={category_code}")
+        category_codes = _resolve_category_filter_codes(db, category_code)
+        query = query.filter(PrdCustomerProduct.category_id.in_(category_codes))
+        logger.info(f"[CP查询-DEBUG] 添加筛选: category_code={category_code}, expanded={category_codes}")
 
     if search:
         # 搜索产品名称、客户型号、编号、OE号
