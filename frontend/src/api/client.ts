@@ -3,6 +3,10 @@ import { ElMessage } from 'element-plus'
 import { normalizeApiBase } from './endpoints'
 
 function runtimeApiBase() {
+  // HTTPS 页面下：直接使用 window.location.origin，避免任何环境变量配错导致 Mixed Content
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    return window.location.origin
+  }
   const base = normalizeApiBase(import.meta.env.VITE_API_BASE_URL || '')
   if (
     typeof window !== 'undefined'

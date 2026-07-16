@@ -18,6 +18,10 @@ import { normalizeApiBase } from './endpoints'
  * 避免浏览器 Mixed Content 拦截。
  */
 function runtimeApiBase(raw: string) {
+  // HTTPS 页面下：直接使用 window.location.origin，避免任何环境变量配错导致 Mixed Content
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    return window.location.origin
+  }
   const base = normalizeApiBase(raw)
   if (
     typeof window !== 'undefined'
