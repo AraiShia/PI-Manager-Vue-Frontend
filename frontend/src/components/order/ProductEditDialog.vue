@@ -330,7 +330,9 @@
                   placeholder="搜索或选择供应商"
                   style="width: 100%"
                   :reserve-keyword="false"
+                  :no-data-text="supplierLoading ? '加载中…' : '暂无供应商数据'"
                   @change="onSupplierChange"
+                  @focus="onSupplierFocus"
                 >
                   <el-option
                     v-for="s in suppliers"
@@ -2001,6 +2003,13 @@ function onSupplierChange(s: Supplier) {
   form.supplier_name = s.supplier_name
   form.supplier = s
   saveField('supplier_name', s.supplier_name)
+}
+
+function onSupplierFocus() {
+  // 首次聚焦时若列表为空，先加载首屏数据
+  if (suppliers.value.length === 0 && !supplierLoading.value) {
+    searchSuppliers(form.supplier_name || '')
+  }
 }
 
 function openNewSupplierDialog() {
