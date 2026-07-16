@@ -43,18 +43,14 @@ client.interceptors.request.use(
 client.interceptors.response.use(
   response => {
     const payload = response.data
-    // 兼容三种情况：
-    //   1. {code:200, data:...}       -> 成功
-    //   2. {success:true, ...}        -> 成功（PUT /api/pi/items/{id} 等）
-    //   3. 没有 code/success 标记的   -> 默认视为成功，避免误报（很多 DELETE/204 后是空 payload）
-    const codeOk = payload && Object.prototype.hasOwnProperty.call(payload, 'code') && payload.code === 200
-    const successOk = payload && Object.prototype.hasOwnProperty.call(payload, 'success') && payload.success === true
-    const noMark = payload && !Object.prototype.hasOwnProperty.call(payload, 'code') && !Object.prototype.hasOwnProperty.call(payload, 'success')
-    if (payload && !codeOk && !successOk && !noMark) {
-      ElMessage.error(payload.message || '请求失败')
-      return Promise.reject(new Error(payload.message))
+    // 失败标记：code != 200 或 success === false
+    const codeIsError = payload && payload.code !== undefined && payload.code !== 200
+    const successIsFalse = payload && payload.success === false
+    if (codeIsError || successIsFalse) {
+      ElMessage.error(payload?.message || '请求失败')
+      return Promise.reject(new Error(payload?.message || '请求失败'))
     }
-    // 保持 axios 原始 response 结构，调用方统一通过 res.data 读取
+    // 其他所有情况（{code:200} / {success:true} / 无标记 / 空 payload）均视为成功
     return response
   },
   error => {
