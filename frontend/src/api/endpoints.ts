@@ -143,6 +143,25 @@ export const PAYMENTS = {
   receivableDetail: (id: number) => `/api/payments/receivables/${id}`,
 } as const
 
+// ----- 库存 -----
+export const INVENTORY = {
+  list: '/api/inventory/',
+  detail: (id: number) => `/api/inventory/${id}`,
+  create: '/api/inventory/',
+  update: (id: number) => `/api/inventory/${id}`,
+  remove: (id: number) => `/api/inventory/${id}`,
+  transfer: '/api/inventory/transfer',
+  inbound: '/api/inventory/inbound',
+  inboundBatch: '/api/inventory/inbound-batch',
+  inboundBatchDetail: (batchId: number) => `/api/inventory/inbound-batch/${batchId}`,
+  inboundBatchConfirm: (batchId: number) => `/api/inventory/inbound-batch/${batchId}/confirm`,
+  logs: '/api/inventory/logs',
+  aging: '/api/inventory/aging',
+  dashboard: '/api/inventory/dashboard',
+  productLogs: '/api/inventory/product-logs',
+  transition: (id: number) => `/api/inventory/${id}/transition`,
+} as const
+
 // ----- 图片 -----
 export const IMAGES = {
   upload: '/api/images/upload',

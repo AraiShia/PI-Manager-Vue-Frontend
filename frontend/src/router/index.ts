@@ -13,6 +13,7 @@ const implementedRoutes: RouteRecordRaw[] = [
   { path: '/purchases', name: 'Purchases', component: () => import('@/views/purchase/PurchaseManagement.vue') },
   { path: '/payments', redirect: '/payments/customer' },
   { path: '/payments/customer', name: 'CustomerPayments', component: () => import('@/views/payment/PaymentListPage.vue') },
+  { path: '/inventory', name: 'Inventory', component: () => import('@/views/inventory/InventoryManagement.vue') },
 ]
 
 const placeholderRoutes: RouteRecordRaw[] = BUSINESS_ROUTES
