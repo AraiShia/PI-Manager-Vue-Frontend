@@ -224,9 +224,9 @@
         <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
           <el-form-item label="搜索模式">
             <el-radio-group v-model="searchMode">
-              <el-radio label="both">OE号 + 名称</el-radio>
-              <el-radio label="oe">仅OE号</el-radio>
-              <el-radio label="name">仅名称</el-radio>
+              <el-radio value="both">OE号 + 名称</el-radio>
+              <el-radio value="oe">仅OE号</el-radio>
+              <el-radio value="name">仅名称</el-radio>
             </el-radio-group>
           </el-form-item>
 

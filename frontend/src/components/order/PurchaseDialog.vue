@@ -10,8 +10,8 @@
     <div class="currency-bar">
       <span class="currency-label">采购币种:</span>
       <el-radio-group v-model="currency" @change="onCurrencyChange">
-        <el-radio label="USD">美元 (USD)</el-radio>
-        <el-radio label="RMB">人民币 (RMB)</el-radio>
+        <el-radio value="USD">美元 (USD)</el-radio>
+        <el-radio value="RMB">人民币 (RMB)</el-radio>
       </el-radio-group>
       <span v-if="currency === 'RMB'" class="rate-input">
         汇率 (1 USD = <el-input-number v-model="exchangeRate" :min="0.01" :max="50" :step="0.1" :precision="4" size="small" /> RMB)
@@ -71,8 +71,8 @@
           <!-- 平台选择 -->
           <div class="platform-section">
             <el-radio-group v-model="platform" @change="onPlatformChange">
-              <el-radio label="1688">1688</el-radio>
-              <el-radio label="wechat">微信</el-radio>
+              <el-radio value="1688">1688</el-radio>
+              <el-radio value="wechat">微信</el-radio>
             </el-radio-group>
           </div>
 
