@@ -3,6 +3,27 @@ from models import SupSupplier, SupSupplierContact
 from schemas import SupplierCreate, SupplierUpdate
 from region_data import get_city_code
 
+
+def split_region(region: str | None) -> tuple[str | None, str | None]:
+    if not region:
+        return None, None
+    parts = [part.strip() for part in str(region).split() if part.strip()]
+    if len(parts) >= 2:
+        return parts[0], parts[1]
+    if len(parts) == 1:
+        return parts[0], None
+    return None, None
+
+
+def enrich_supplier(supplier: SupSupplier | None) -> SupSupplier | None:
+    if not supplier:
+        return None
+    province, city = split_region(supplier.region)
+    setattr(supplier, "province", province)
+    setattr(supplier, "city", city)
+    setattr(supplier, "city_code", get_city_code(province, city) if province and city else None)
+    return supplier
+
 def int_to_base32(n):
     chars = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
     return chars[n]
@@ -56,10 +77,10 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
         db.add(contact)
         db.commit()
 
-    return db_supplier
+    return enrich_supplier(db_supplier)
 
 def get_supplier(db: Session, supplier_id: int) -> SupSupplier:
-    return db.query(SupSupplier).filter(SupSupplier.id == supplier_id).first()
+    return enrich_supplier(db.query(SupSupplier).filter(SupSupplier.id == supplier_id).first())
 
 def get_supplier_by_code(db: Session, supplier_code: str) -> SupSupplier:
     return db.query(SupSupplier).filter(SupSupplier.supplier_code == supplier_code).first()
@@ -119,11 +140,14 @@ def get_suppliers(db: Session, skip: int = 0, limit: int = 100, keyword: str | N
 
     result = []
     for s in suppliers:
+        province, city = split_region(s.region)
         supplier_dict = {
             "id": s.id,
             "supplier_code": s.supplier_code,
             "supplier_name": s.supplier_name,
             "region": s.region,
+            "province": province,
+            "city": city,
             "dept_id": s.dept_id,
             "status": s.status,
             "created_at": s.created_at
@@ -143,12 +167,19 @@ def update_supplier(db: Session, supplier_id: int, supplier_update: SupplierUpda
         return None
 
     update_data = supplier_update.dict(exclude_unset=True)
+    province = update_data.pop("province", None)
+    city = update_data.pop("city", None)
+    update_data.pop("city_code", None)
+
+    if province is not None or city is not None:
+        db_supplier.region = f"{province or ''} {city or ''}".strip()
+
     for key, value in update_data.items():
         setattr(db_supplier, key, value)
 
     db.commit()
     db.refresh(db_supplier)
-    return db_supplier
+    return enrich_supplier(db_supplier)
 
 def delete_supplier(db: Session, supplier_id: int) -> bool:
     db_supplier = get_supplier(db, supplier_id)

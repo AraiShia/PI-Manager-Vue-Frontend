@@ -7,6 +7,9 @@ class SupplierBase(BaseModel):
     supplier_code: str
     supplier_name: str
     region: Optional[str] = None
+    province: Optional[str] = None
+    city: Optional[str] = None
+    city_code: Optional[str] = None
 
 class SupplierCreate(BaseModel):
     supplier_name: str
