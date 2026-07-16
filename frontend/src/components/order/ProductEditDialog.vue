@@ -328,7 +328,7 @@
               <div class="purchase-cost-head  required">供应商</div>
               <div class="purchase-cost-cell" data-required-field="supplier_name">
                 <el-select
-                  v-model="form.supplier_name"
+                  v-model="form.supplier"
                   filterable
                   remote
                   :remote-method="searchSuppliers"
@@ -342,7 +342,7 @@
                     v-for="s in suppliers"
                     :key="s.id"
                     :label="s.supplier_name"
-                    :value="s.supplier_name"
+                    :value="s"
                   >
                     <div class="supplier-option">
                       <span class="supplier-name">{{ s.supplier_name }}</span>
@@ -776,6 +776,7 @@ interface ProductEditForm {
   invoice_type: string
   invoice_rate: string
   supplier_name: string
+  supplier: Supplier | null
   shop_url: string
   product_detail: string
   purchase_option_name: string
@@ -863,6 +864,7 @@ const form = reactive<ProductEditForm>({
   invoice_type: '',
   invoice_rate: '',
   supplier_name: '',
+  supplier: null as Supplier | null,
   shop_url: '',
   product_detail: '',
   purchase_option_name: '',
@@ -1557,6 +1559,7 @@ function initFromItem(source: ProductEditItem) {
   form.invoice_type = (source as any).invoice_type || ''
   form.invoice_rate = (source as any).invoice_rate || ''
   form.supplier_name = (source as any).supplier_name ?? (source as any).factory_name ?? ''
+  form.supplier = null
   form.shop_url = (source as any).shop_url ?? ''
   form.product_detail = source.product_detail || ''
   form.purchase_option_name = source.purchase_option_name || ''
@@ -1930,7 +1933,7 @@ async function onSaveClick() {
     { key: 'unit_price', label: '报价', getVal: () => form.unit_price, positive: true },
     { key: 'purchase_price', label: '人民币采购价', getVal: () => form.purchase_price, positive: true },
     { key: 'product_detail', label: '产品特性', getVal: () => form.product_detail },
-    { key: 'supplier_name', label: '供应商', getVal: () => form.supplier_name },
+    { key: 'supplier_name', label: '供应商', getVal: () => form.supplier_name || form.supplier?.supplier_name || '' },
     { key: 'carton_length', label: '纸箱长度', getVal: () => form.carton_length, positive: true },
     { key: 'carton_width', label: '纸箱宽度', getVal: () => form.carton_width, positive: true },
     { key: 'carton_height', label: '纸箱高度', getVal: () => form.carton_height, positive: true },
@@ -1967,7 +1970,7 @@ async function onSaveClick() {
       ['unit_price', form.unit_price],
       ['purchase_price', form.purchase_price],
       ['product_detail', form.product_detail],
-      ['supplier_name', form.supplier_name],
+      ['supplier_name', form.supplier_name || form.supplier?.supplier_name || ''],
       ['carton_length_cm', form.carton_length],
       ['carton_width_cm', form.carton_width],
       ['carton_height_cm', form.carton_height],
@@ -2017,15 +2020,17 @@ async function searchSuppliers(query: string) {
   }, 300)
 }
 
-function onSupplierChange(val: string) {
-  saveField('supplier_name', val)
+function onSupplierChange(s: Supplier) {
+  form.supplier_name = s.supplier_name
+  form.supplier = s
+  saveField('supplier_name', s.supplier_name)
 }
 
 function openNewSupplierDialog() {
   newSupplier.supplier_code = ''
-  newSupplier.supplier_name = supplierSearchQuery.value
-  newSupplier.province = null
-  newSupplier.city = null
+  newSupplier.supplier_name = supplierSearchQuery.value || form.supplier?.supplier_name || ''
+  newSupplier.province = form.supplier?.province ?? null
+  newSupplier.city = form.supplier?.city ?? null
   newSupplierDialogVisible.value = true
 }
 
@@ -2044,6 +2049,7 @@ async function submitNewSupplier() {
     })
     const created: Supplier = res.data
     form.supplier_name = created.supplier_name
+    form.supplier = created
     saveField('supplier_name', created.supplier_name)
     newSupplierDialogVisible.value = false
     ElMessage.success('供应商创建成功')
