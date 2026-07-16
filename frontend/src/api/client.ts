@@ -2,8 +2,20 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { normalizeApiBase } from './endpoints'
 
+function runtimeApiBase() {
+  const base = normalizeApiBase(import.meta.env.VITE_API_BASE_URL || '')
+  if (
+    typeof window !== 'undefined'
+    && window.location.protocol === 'https:'
+    && /^https?:\/\/piapi\.wakabashia\.tj\.cn/i.test(base)
+  ) {
+    return window.location.origin
+  }
+  return base
+}
+
 const client = axios.create({
-  baseURL: normalizeApiBase(import.meta.env.VITE_API_BASE_URL || ''),
+  baseURL: runtimeApiBase(),
   timeout: 30000,
 })
 

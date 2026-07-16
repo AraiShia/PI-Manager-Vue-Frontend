@@ -17,7 +17,19 @@ import { normalizeApiBase } from './endpoints'
  * 注意：若误将 VITE_API_BASE_URL 配置为 http://，会被强制升级为 https://，
  * 避免浏览器 Mixed Content 拦截。
  */
-const RAW_BASE = normalizeApiBase(import.meta.env.VITE_API_BASE_URL || '')
+function runtimeApiBase(raw: string) {
+  const base = normalizeApiBase(raw)
+  if (
+    typeof window !== 'undefined'
+    && window.location.protocol === 'https:'
+    && /^https?:\/\/piapi\.wakabashia\.tj\.cn/i.test(base)
+  ) {
+    return window.location.origin
+  }
+  return base
+}
+
+const RAW_BASE = runtimeApiBase(import.meta.env.VITE_API_BASE_URL || '')
 const ASSET_BASE = normalizeApiBase(import.meta.env.VITE_ASSET_BASE_URL || RAW_BASE)
 
 /**
