@@ -318,12 +318,6 @@
                 @blur="saveField('product_detail', form.product_detail)"
               />
             </div>
-              
-              
-
-              
-              
-
               <!-- 第3行：供应商 + 产品特性标题 -->
               <div class="purchase-cost-head  required">供应商</div>
               <div class="purchase-cost-cell" data-required-field="supplier_name">
@@ -1630,6 +1624,10 @@ function open(source: OrderDetailItem, customerName?: string, customerCountry?: 
   if (!editItem.id) {
     form.factory_code = form.customer_model
   }
+  // 如果有供应商名称但没有 supplier 对象，自动搜索并匹配
+  if (form.supplier_name && !form.supplier) {
+    searchSuppliers(form.supplier_name)
+  }
   initialFormSnapshot.value = createFormSnapshot()
   visible.value = true
 }
@@ -1981,6 +1979,16 @@ async function searchSuppliers(query: string) {
     try {
       const res = await suppliersApi.list({ skip: 0, limit: 20, keyword: query })
       suppliers.value = res.data || []
+      // 如果有 supplier_name 但尚未匹配到 supplier，自动选中第一个匹配的
+      if (!form.supplier && form.supplier_name && suppliers.value.length > 0) {
+        const matched = suppliers.value.find(s => s.supplier_name === form.supplier_name)
+        if (matched) {
+          form.supplier = matched
+        } else {
+          // 模糊匹配第一个
+          form.supplier = suppliers.value[0]
+        }
+      }
     } catch {
       suppliers.value = []
     } finally {
