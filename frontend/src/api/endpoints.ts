@@ -115,8 +115,10 @@ export const PI_ITEMS = {
 // ----- 采购 -----
 export const PURCHASE = {
   createOnline: '/api/purchase-orders/1688',
-  createOffline: '/api/purchase-orders',
-  list: '/api/purchase-orders',
+  // 后端集合路由以 / 结尾。保持一致可避免 FastAPI 307 重定向在
+  // HTTPS 反向代理后错误生成 http:// Location，触发 Mixed Content。
+  createOffline: '/api/purchase-orders/',
+  list: '/api/purchase-orders/',
   confirm: (id: number) => `/api/purchase-orders/${id}/confirm`,
   inbound: (id: number) => `/api/purchase-orders/${id}/inbound`,
   invoice: (id: number) => `/api/purchase-orders/${id}/invoice`,

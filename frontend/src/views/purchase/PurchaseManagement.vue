@@ -93,7 +93,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { purchaseApi, type PurchaseOrderSummary } from '@/api/purchase'
+import {
+  normalizePurchaseListPayload,
+  purchaseApi,
+  type PurchaseOrderSummary,
+} from '@/api/purchase'
 
 const loading = ref(false)
 const list = ref<PurchaseOrderSummary[]>([])
@@ -120,14 +124,14 @@ async function loadData() {
       keyword: keyword.value || undefined,
       status: status.value,
     })
-    const result = res.data?.data
-    list.value = (result?.data || []).map((item: PurchaseOrderSummary) => ({
+    const result = normalizePurchaseListPayload(res.data)
+    list.value = result.data.map((item: PurchaseOrderSummary) => ({
       ...item,
       _confirming: false,
       _inbounding: false,
       _exporting: false,
     }))
-    total.value = result?.total || 0
+    total.value = result.total
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '加载失败')
   } finally {

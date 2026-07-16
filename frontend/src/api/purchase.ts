@@ -30,6 +30,21 @@ export interface PurchaseListResponse {
   total: number
 }
 
+export type PurchaseListPayload = ApiResponse<PurchaseListResponse> | PurchaseOrderSummary[]
+
+/**
+ * 兼容采购接口目前返回的裸数组，以及未来/代理层返回的标准 ApiResponse。
+ */
+export function normalizePurchaseListPayload(payload: PurchaseListPayload): PurchaseListResponse {
+  if (Array.isArray(payload)) {
+    return { data: payload, total: payload.length }
+  }
+  return {
+    data: payload?.data?.data || [],
+    total: payload?.data?.total || 0,
+  }
+}
+
 export interface PurchaseOrderSummary {
   id: number
   po_no: string
@@ -109,8 +124,18 @@ export const purchaseApi = {
   /**
    * 采购订单列表
    */
-  list: (params: { page?: number; page_size?: number; keyword?: string; status?: number }) =>
-    client.get<ApiResponse<PurchaseListResponse>>(PURCHASE.list, { params }),
+  list: (params: { page?: number; page_size?: number; keyword?: string; status?: number }) => {
+    const page = params.page || 1
+    const pageSize = params.page_size || 20
+    return client.get<PurchaseListPayload>(PURCHASE.list, {
+      params: {
+        ...params,
+        // 当前后端使用 skip/limit；同时保留 page/page_size 以兼容新接口。
+        skip: (page - 1) * pageSize,
+        limit: pageSize,
+      },
+    })
+  },
 
   /**
    * 确认采购订单

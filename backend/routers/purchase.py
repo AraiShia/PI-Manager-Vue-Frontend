@@ -13,6 +13,7 @@ from schemas.purchase import (
 )
 from models.purchase import Po1688Purchase
 router = APIRouter(prefix="/api/purchase-orders", tags=["采购管理"])
+@router.post("", response_model=PurchaseOrderResponse, include_in_schema=False)
 @router.post("/", response_model=PurchaseOrderResponse)
 def create_purchase_order_api(purchase: PurchaseOrderCreate, db: Session = Depends(get_db)):
     try:
@@ -20,6 +21,7 @@ def create_purchase_order_api(purchase: PurchaseOrderCreate, db: Session = Depen
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.get("", response_model=list[PurchaseOrderResponse], include_in_schema=False)
 @router.get("/", response_model=list[PurchaseOrderResponse])
 def read_purchase_orders(skip: int = 0, limit: int = 100, status: int = None, pi_id: int = None, db: Session = Depends(get_db)):
     """[2026-06-23 修复] 列表中手动 join PI 与供应商，把 pi_no / supplier_name 填进响应，
