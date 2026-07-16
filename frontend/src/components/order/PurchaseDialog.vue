@@ -6,18 +6,6 @@
     :close-on-click-modal="false"
     @close="onClose"
   >
-    <!-- 采购币种选择 -->
-    <div class="currency-bar">
-      <span class="currency-label">采购币种:</span>
-      <el-radio-group v-model="currency" @change="onCurrencyChange">
-        <el-radio value="USD">美元 (USD)</el-radio>
-        <el-radio value="RMB">人民币 (RMB)</el-radio>
-      </el-radio-group>
-      <span v-if="currency === 'RMB'" class="rate-input">
-        汇率 (1 USD = <el-input-number v-model="exchangeRate" :min="0.01" :max="50" :step="0.1" :precision="4" size="small" /> RMB)
-      </span>
-    </div>
-
     <!-- 产品信息表格（放在采购 Tabs 之前） -->
     <div class="product-table-section">
       <div class="section-title">产品信息 ({{ items.length }} 个)</div>
@@ -257,8 +245,6 @@ const purchaseType = ref<'online' | 'offline'>('online')
 const platform = ref<'1688' | 'wechat'>('1688')
 
 // 币种
-const currency = ref<'USD' | 'RMB'>('USD')
-const exchangeRate = ref(6.8)
 
 // 1688采购
 const shopName = ref('')
@@ -461,8 +447,6 @@ async function onCreateSupplier() {
 function resetForm() {
   purchaseType.value = 'online'
   platform.value = '1688'
-  currency.value = 'USD'
-  exchangeRate.value = 6.8
   shopName.value = ''
   linkUrl.value = ''
   contactWechat.value = ''
@@ -562,18 +546,7 @@ function recalcTotal(index: number) {
 }
 
 function formatMoney(amount: number): string {
-  const cur = currency.value
-  const base = amount.toFixed(2) + ' ' + cur
-  if (cur === 'RMB') {
-    const usd = amount / exchangeRate.value
-    return `${base}\n≈ $${usd.toFixed(2)} USD`
-  }
-  return base
-}
-
-function onCurrencyChange() {
-  // 重算所有行的总金额显示
-  items.value.forEach((_, i) => recalcTotal(i))
+  return amount.toFixed(2) + ' RMB'
 }
 
 function onPlatformChange() {
@@ -619,7 +592,6 @@ async function onSubmit() {
     const payload: PurchasePayload = {
       dept_id: 'S',
       pi_id: orderId!,
-      currency: currency.value,
       items: items.value.map((item) => ({
         product_id: item.product_id!,
         pi_item_id: item.id,
@@ -714,28 +686,6 @@ defineExpose({ open })
 
 .supplier-footer:hover {
   background-color: #ecf5ff;
-}
-
-.currency-bar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-  padding: 12px;
-  background: #f8fafc;
-  border-radius: 6px;
-}
-
-.currency-label {
-  font-weight: 600;
-  color: #333;
-}
-
-.rate-input {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #555;
 }
 
 .purchase-tabs {
