@@ -211,7 +211,7 @@ function openCreate() {
   dialogVisible.value = true
 }
 
-function openEdit(row: Supplier) {
+async function openEdit(row: Supplier) {
   editingSupplier.value = row
   Object.assign(form, emptyForm(), {
     supplier_code: row.supplier_code,
