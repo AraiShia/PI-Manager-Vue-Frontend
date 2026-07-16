@@ -183,9 +183,11 @@ async function loadProvinces() {
   }
 }
 
-async function onProvinceChange(value?: string) {
+async function onProvinceChange(value?: string, preserveCity = false) {
   cities.value = []
-  form.city = ''
+  if (!preserveCity) {
+    form.city = ''
+  }
   if (!value) return
   try {
     const res = await suppliersApi.cities(value)
@@ -221,8 +223,13 @@ function openEdit(row: Supplier) {
     email: row.email || '',
     address: row.address || '',
   })
-  if (form.province) onProvinceChange(form.province)
   dialogVisible.value = true
+  if (form.province) {
+    await onProvinceChange(form.province, true)
+    if (form.city && !cities.value.includes(form.city)) {
+      form.city = ''
+    }
+  }
 }
 
 async function saveSupplier() {
