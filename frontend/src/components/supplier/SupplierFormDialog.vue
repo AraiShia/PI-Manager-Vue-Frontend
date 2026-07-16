@@ -141,9 +141,10 @@ async function onProvinceChange(value?: string) {
   await loadCities(value)
 }
 
-async function loadCities(province: string, initialCity?: string) {
+async function loadCities(province: string | null | undefined, initialCity?: string | null | undefined) {
+  if (!province) return
   try {
-    const res = await suppliersApi.cities(province)
+    const res = await suppliersApi.cities(province as string)
     cities.value = res.data || []
     if (initialCity && !cities.value.includes(initialCity)) {
       form.city = ''
