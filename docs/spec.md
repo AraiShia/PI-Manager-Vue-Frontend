@@ -191,7 +191,53 @@ ArCustomerPayment 客户收款
 
 ## 5. 常用接口约定
 
-### 5.1 客户产品
+前端端点统一维护在 `frontend/src/api/endpoints.ts`。新增或调整接口时，优先更新 `endpoints.ts`，再同步本节。
+
+`API_HOST` 当前默认值：`https://piapi.wakabashia.tj.cn`。
+
+### 5.1 认证
+
+对应 `AUTH`：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `POST` | `/api/auth/login` | 登录 |
+| `POST` | `/api/auth/logout` | 登出 |
+| `GET` | `/api/auth/me` | 当前用户 |
+
+### 5.2 客户 / 供应商
+
+对应 `CUSTOMERS`：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/customers/` | 客户列表 |
+| `GET` | `/api/customers/{id}` | 客户详情 |
+| `POST` | `/api/customers/` | 创建客户 |
+| `PUT` | `/api/customers/{id}` | 更新客户 |
+| `DELETE` | `/api/customers/{id}` | 删除客户 |
+| `PATCH` | `/api/customers/{id}/status` | 切换客户状态 |
+| `GET` | `/api/customers/search` | 搜索客户 |
+| `GET` | `/api/customers/{id}/contacts` | 客户联系人 |
+| `POST` | `/api/customers/{id}/contacts` | 创建联系人 |
+| `PUT` | `/api/customers/{id}/contacts/{cid}` | 更新联系人 |
+| `DELETE` | `/api/customers/{id}/contacts/{cid}` | 删除联系人 |
+
+对应 `SUPPLIERS`：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/suppliers/` | 供应商列表 |
+| `GET` | `/api/suppliers/{id}` | 供应商详情 |
+| `POST` | `/api/suppliers/` | 创建供应商 |
+| `PUT` | `/api/suppliers/{id}` | 更新供应商 |
+| `DELETE` | `/api/suppliers/{id}` | 删除供应商 |
+| `GET` | `/api/suppliers/provinces` | 供应商省份列表 |
+| `GET` | `/api/suppliers/cities/{province}` | 指定省份城市 |
+
+### 5.3 客户产品 / 分类
+
+对应 `CUSTOMER_PRODUCTS`：
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -200,9 +246,6 @@ ArCustomerPayment 客户收款
 | `POST` | `/api/customer-products` | 创建客户产品 |
 | `PUT` | `/api/customer-products/{id}` | 更新客户产品 |
 | `DELETE` | `/api/customer-products/{id}` | 删除客户产品 |
-| `GET` | `/api/customer-products/by-customer/{customer_id}` | 按客户获取产品 |
-| `GET` | `/api/customer-products/by-oe/{oe_number}` | 按 OE 搜索 |
-| `GET` | `/api/customer-products/by-code/{code}` | 按客户产品编号搜索 |
 
 `GET /api/customer-products` 查询参数：
 
@@ -225,39 +268,107 @@ ArCustomerPayment 客户收款
 }
 ```
 
-### 5.2 分类
+对应 `PRODUCT_CATEGORIES`：
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/product-categories/?status=1` | 获取启用分类 |
+| `GET` | `/api/product-categories/{id}` | 分类详情 |
 | `POST` | `/api/product-categories/` | 创建分类 |
 | `PUT` | `/api/product-categories/{id}` | 更新分类 |
 | `DELETE` | `/api/product-categories/{id}` | 删除分类 |
+| `GET` | `/api/product-categories/next-code` | 获取下一个分类编码 |
 
-### 5.3 订单 / PI
+对应 `PRODUCT_CUSTOMER`：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/product-customer/search` | 兼容产品搜索 |
+
+### 5.4 订单 / PI
+
+对应 `ORDERS_BFF`：
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/bff/orders` | 订单列表聚合接口 |
+| `GET` | `/api/bff/orders/{id}` | BFF 订单详情 |
+| `POST` | `/api/bff/orders` | 创建订单 |
+| `PUT` | `/api/bff/orders/{id}` | 更新订单 |
+| `DELETE` | `/api/bff/orders/{id}` | 删除订单 |
+| `POST` | `/api/bff/orders/{order_id}/import-items` | 导入订单明细 |
+| `GET` | `/api/bff/orders/dashboard` | 订单看板统计 |
 | `GET` | `/api/bff/orders/{order_id}/full-detail` | 订单完整详情 |
-| `GET` | `/api/pi/{id}` | PI 详情 |
-| `PUT` | `/api/pi/{id}/items/{item_id}` | 更新 PI 明细 |
+| `POST` | `/api/orders/{order_id}/supplement-items` | 补充订单明细 |
+| `POST` | `/api/orders/import` | 订单导入 |
 
-### 5.4 收款
+对应 `PI`：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/pi/{id}` | PI 详情 |
+| `POST` | `/api/pi/` | 创建 PI |
+| `DELETE` | `/api/pi/{id}` | 删除 PI |
+| `PUT` | `/api/pi/{pi_id}/status` | 更新 PI 状态 |
+| `POST` | `/api/pi/{order_id}/generate-pi` | 生成 PI |
+| `GET` | `/api/pi/{order_id}/formal-record/exists` | 查询正式记录是否存在 |
+| `POST` | `/api/pi/{order_id}/formal-record` | 保存正式记录 |
+| `POST` | `/api/pi/{pi_id}/inbound-batch` | PI 批量入库 |
+| `GET` | `/api/pi/{order_id}/payments` | PI 付款/收款信息 |
+
+对应 `PI_ITEMS`：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `PUT` | `/api/pi/items/{item_id}` | 更新 PI 明细 |
+| `DELETE` | `/api/pi/items/{item_id}` | 删除 PI 明细 |
+| `POST` | `/api/pi/items/{item_id}/inbound` | PI 明细入库 |
+
+### 5.5 采购
+
+对应 `PURCHASE`：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `POST` | `/api/purchase-orders/1688` | 创建线上 1688 采购单 |
+| `POST` | `/api/purchase-orders` | 创建线下采购单 |
+| `GET` | `/api/purchase-orders` | 采购单列表 |
+| `POST` | `/api/purchase-orders/{id}/confirm` | 确认采购单 |
+| `POST` | `/api/purchase-orders/{id}/inbound` | 采购入库 |
+| `POST` | `/api/purchase-orders/{id}/invoice` | 采购开票 |
+| `GET` | `/api/purchase-orders/product/{product_id}/latest` | 产品最近采购记录 |
+| `GET` | `/api/purchase-orders/1688/recent-urls?product_id={product_id}&limit={limit}` | 最近 1688 链接 |
+| `GET` | `/api/export/purchase/{id}/contract` | 导出采购合同 |
+
+### 5.6 出货
+
+对应 `SHIPMENTS`：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/shipments/` | 出货列表 |
+| `GET` | `/api/shipments/{id}` | 出货详情 |
+| `GET` | `/api/shipments/shippable-items` | 可出货明细 |
+| `POST` | `/api/shipments/from-orders` | 从订单创建出货 |
+| `POST` | `/api/shipments/{id}/confirm` | 确认出货 |
+
+### 5.7 收款
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/payments/receivables` | 收款列表/BFF 聚合 |
 | `GET` | `/api/payments/receivables/by-pi/{pi_id}` | 指定 PI 的收款明细 |
+| `GET` | `/api/payments/receivables/{id}` | 收款详情 |
 
 注意：`/api/payments/receivables/by-pi/{pi_id}` 返回字段和 BFF 收款列表字段不完全一致，不要混用。
 
-### 5.5 图片
+### 5.8 图片 / 迁移
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `POST` | `/api/images/upload` | 上传图片，`multipart/form-data` |
 | `GET` | `/images/{filename}` | 访问上传图片 |
+| `POST` | `/api/migrations/sync-product-images` | 同步 PI 明细图片到客户产品主图 |
 
 ---
 
