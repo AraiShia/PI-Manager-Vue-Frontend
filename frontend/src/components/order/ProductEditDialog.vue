@@ -1972,14 +1972,11 @@ let supplierSearchTimer: ReturnType<typeof setTimeout> | null = null
 async function searchSuppliers(query: string) {
   supplierSearchQuery.value = query
   if (supplierSearchTimer) clearTimeout(supplierSearchTimer)
-  if (!query) {
-    suppliers.value = []
-    return
-  }
+  // 即便 query 为空也允许拉一次默认列表（首次聚焦时使用）
   supplierSearchTimer = setTimeout(async () => {
     supplierLoading.value = true
     try {
-      const res = await suppliersApi.list({ skip: 0, limit: 20, keyword: query })
+      const res = await suppliersApi.list({ skip: 0, limit: 20, keyword: query || undefined })
       suppliers.value = res.data || []
       // 如果有 supplier_name 但尚未匹配到 supplier，自动选中第一个匹配的
       if (!form.supplier && form.supplier_name && suppliers.value.length > 0) {
@@ -1991,7 +1988,8 @@ async function searchSuppliers(query: string) {
           form.supplier = suppliers.value[0]
         }
       }
-    } catch {
+    } catch (err) {
+      console.warn('[ProductEditDialog] 加载供应商列表失败', err)
       suppliers.value = []
     } finally {
       supplierLoading.value = false
