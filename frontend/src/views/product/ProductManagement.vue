@@ -13,8 +13,11 @@
           placeholder="搜索 OE号/产品编号/系统编号/品牌/描述"
           @keyup.enter="loadProducts(1)"
         />
-        <el-select v-model="filters.categoryCode" clearable filterable placeholder="全部类别" class="filter-select">
-          <el-option v-for="item in categories" :key="item.code || item.id" :label="item.name" :value="item.code" />
+        <el-select v-model="filters.categoryLevel1" clearable filterable placeholder="全部大类" class="filter-select" @change="onCategoryLevel1Change">
+          <el-option v-for="item in parentCategories" :key="item.code" :label="item.name" :value="item.code" />
+        </el-select>
+        <el-select v-model="filters.categoryLevel2" clearable filterable placeholder="全部子类" class="filter-select" :disabled="!filters.categoryLevel1" @change="onCategoryLevel2Change">
+          <el-option v-for="item in childCategoryOptions" :key="item.code" :label="item.name" :value="item.code" />
         </el-select>
         <el-select v-model="filters.customerId" clearable filterable placeholder="全部客户" class="filter-select">
           <el-option v-for="item in customers" :key="item.id" :label="customerName(item)" :value="item.id" />
@@ -174,8 +177,25 @@ const oesText = ref('')
 const filters = reactive({
   search: '',
   customerId: undefined as number | undefined,
-  categoryCode: undefined as string | undefined,
+  categoryLevel1: undefined as string | undefined,
+  categoryLevel2: undefined as string | undefined,
 })
+
+const parentCategories = computed(() =>
+  categories.value.filter(c => !c.parent_id)
+)
+
+const childCategoryOptions = computed(() =>
+  categories.value.filter(c => c.parent_id === filters.categoryLevel1)
+)
+
+function onCategoryLevel1Change() {
+  filters.categoryLevel2 = undefined
+}
+
+function onCategoryLevel2Change() {
+  // 子类变化时无需额外处理
+}
 
 const emptyForm = (): ProductFormPayload => ({
   customer_id: undefined as unknown as number,
@@ -247,12 +267,14 @@ async function loadProducts(nextPage = page.value) {
   loading.value = true
   try {
     page.value = nextPage
+    // 只传叶子类目码（子类选中时）或大类码
+    const category_code = filters.categoryLevel2 || filters.categoryLevel1
     const res = await productsApi.list({
       page: page.value,
       page_size: pageSize.value,
       search: filters.search || undefined,
       customer_id: filters.customerId,
-      category_code: filters.categoryCode,
+      category_code: category_code || undefined,
     })
     products.value = res.data.items || []
     total.value = res.data.total || 0
@@ -264,7 +286,8 @@ async function loadProducts(nextPage = page.value) {
 function resetFilters() {
   filters.search = ''
   filters.customerId = undefined
-  filters.categoryCode = undefined
+  filters.categoryLevel1 = undefined
+  filters.categoryLevel2 = undefined
   loadProducts(1)
 }
 
