@@ -175,6 +175,7 @@ import { Search, UploadFilled } from '@element-plus/icons-vue'
 import type { OrderListItem } from '@/types/orderSummary'
 import * as XLSX from 'xlsx'
 import { apiUrl } from '@/api/base'
+import { ORDERS_BFF, PRODUCT_CUSTOMER } from '@/api/endpoints'
 
 const visible = ref(false)
 const submitting = ref(false)
@@ -248,7 +249,7 @@ async function searchProducts(query: string, callback: (results: ProductSuggesti
   
   searchTimer = setTimeout(async () => {
     try {
-      const res = await fetch(apiUrl(`/api/product-customer/search?keyword=${encodeURIComponent(query)}`))
+      const res = await fetch(apiUrl(`${PRODUCT_CUSTOMER.search}?keyword=${encodeURIComponent(query)}`))
       if (res.ok) {
         const data = await res.json()
         callback(data.results || data || [])
@@ -355,7 +356,7 @@ async function submitSingle() {
     
     submitting.value = true
     try {
-      const res = await fetch(apiUrl(`/api/orders/${order.value.id}/supplement-items`), {
+      const res = await fetch(apiUrl(ORDERS_BFF.supplementItems(order.value.id)), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -417,7 +418,7 @@ async function submitExcel() {
       return
     }
     
-    const res = await fetch(apiUrl(`/api/orders/${order.value.id}/supplement-items`), {
+    const res = await fetch(apiUrl(ORDERS_BFF.supplementItems(order.value.id)), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items })

@@ -1,4 +1,5 @@
 import client from './client'
+import { SUPPLIERS } from './endpoints'
 
 export interface Supplier {
   id: number
@@ -30,13 +31,13 @@ export interface SupplierFormPayload {
 
 export const suppliersApi = {
   list: (params: { skip?: number; limit?: number; keyword?: string } = {}) =>
-    client.get<Supplier[]>('/api/suppliers/', { params }),
-  get: (id: number) => client.get<Supplier>(`/api/suppliers/${id}`),
+    client.get<Supplier[]>(SUPPLIERS.list, { params }),
+  get: (id: number) => client.get<Supplier>(SUPPLIERS.detail(id)),
   create: (payload: SupplierFormPayload, deptId = 'S') =>
-    client.post<Supplier>('/api/suppliers/', payload, { params: { dept_id: deptId } }),
+    client.post<Supplier>(SUPPLIERS.create, payload, { params: { dept_id: deptId } }),
   update: (id: number, payload: Partial<SupplierFormPayload>) =>
-    client.put<Supplier>(`/api/suppliers/${id}`, payload),
-  remove: (id: number) => client.delete(`/api/suppliers/${id}`),
-  provinces: () => client.get<string[]>('/api/suppliers/provinces'),
-  cities: (province: string) => client.get<string[]>(`/api/suppliers/cities/${encodeURIComponent(province)}`),
+    client.put<Supplier>(SUPPLIERS.update(id), payload),
+  remove: (id: number) => client.delete(SUPPLIERS.remove(id)),
+  provinces: () => client.get<string[]>(SUPPLIERS.provinces),
+  cities: (province: string) => client.get<string[]>(SUPPLIERS.cities(province)),
 }

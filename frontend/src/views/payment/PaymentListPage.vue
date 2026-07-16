@@ -137,6 +137,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
 import { apiUrl } from '@/api/base'
+import { PAYMENTS } from '@/api/endpoints'
 import { format } from 'date-fns'
 import type { ArCustomerPayment } from '@/types/payment'
 import PaymentRecordDialog from '@/components/payment/PaymentRecordDialog.vue'
@@ -222,7 +223,7 @@ async function fetchList() {
       params.append('date_from', dateRange.value[0])
       params.append('date_to', dateRange.value[1])
     }
-    const res = await fetch(apiUrl('/api/payments/receivables?' + params.toString()))
+    const res = await fetch(apiUrl(PAYMENTS.receivables + '?' + params.toString()))
     if (res.ok) {
       const data = await res.json()
       list.value = data.items || data.list || []
@@ -261,7 +262,7 @@ async function onViewDetail(row: PaymentListRow) {
     return
   }
 
-  const res = await fetch(apiUrl(`/api/payments/receivables/by-pi/${row.pi_id}`))
+  const res = await fetch(apiUrl(PAYMENTS.receivablesByPi(row.pi_id)))
   if (!res.ok) {
     ElMessage.error('获取收款详情失败')
     return

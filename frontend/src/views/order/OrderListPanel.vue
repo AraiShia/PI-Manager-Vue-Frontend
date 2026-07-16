@@ -246,6 +246,7 @@ import type { OrderListItem, OrderListFilter } from '@/types/orderSummary'
 import { ORDER_STATUS } from '@/constants/orderStatus'
 import { format } from 'date-fns'
 import { apiUrl } from '@/api/base'
+import { PAYMENTS, PI } from '@/api/endpoints'
 import NewOrderDialog from '@/components/order/NewOrderDialog.vue'
 import PaymentDialog from '@/components/order/PaymentDialog.vue'
 import PiOperationDialog from '@/components/order/PiOperationDialog.vue'
@@ -315,7 +316,7 @@ async function onShowPaymentDetail(row: OrderListItem) {
   paymentDetailSlots.value = []
   try {
     const { apiUrl } = await import('@/api/base')
-    const res = await fetch(apiUrl(`/api/payments/receivables/by-pi/${row.id}`))
+    const res = await fetch(apiUrl(PAYMENTS.receivablesByPi(row.id)))
     const data = await res.json()
     paymentDetailSlots.value = Array.isArray(data) ? data : []
   } catch (e) {

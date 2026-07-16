@@ -707,6 +707,7 @@ import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
 import { orderSummaryApi } from '@/api/orderSummary'
 import { suppliersApi, type Supplier } from '@/api/suppliers'
 import { apiUrl, assetUrl } from '@/api/base'
+import { CUSTOMER_PRODUCTS, PRODUCT_CATEGORIES } from '@/api/endpoints'
 import type { OrderDetailItem } from '@/types/orderSummary'
 import FieldInput from './FieldInput.vue'
 import ImagePreviewDialog from './ImagePreviewDialog.vue'
@@ -1116,7 +1117,7 @@ function syncCartonCount() {
 // 加载产品类目（API 优先，空则用硬编码兜底）
 async function loadCategories() {
   try {
-    const res = await fetch(apiUrl('/api/product-categories/'))
+    const res = await fetch(apiUrl(PRODUCT_CATEGORIES.list))
     if (res.ok) {
       const data = await res.json()
       if (data && data.length) {
@@ -1175,7 +1176,7 @@ async function updateCustomerProductCategory(productId: number, categoryId: stri
     return
   }
   try {
-    const res = await fetch(apiUrl(`/api/customer-products/${productId}`), {
+    const res = await fetch(apiUrl(CUSTOMER_PRODUCTS.update(productId)), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ category_id: categoryId }),
@@ -1242,7 +1243,7 @@ async function onCustomerModelBlur() {
   }
   // 确认后更新并锁定
   try {
-    const res = await fetch(apiUrl(`/api/customer-products/${productId}`), {
+    const res = await fetch(apiUrl(CUSTOMER_PRODUCTS.update(productId)), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ customer_model: form.customer_model }),

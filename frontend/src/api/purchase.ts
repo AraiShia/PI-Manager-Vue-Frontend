@@ -2,6 +2,7 @@
  * 采购相关 API
  */
 import client from './client'
+import { PURCHASE, PI_ITEMS, PI } from './endpoints'
 import type { ApiResponse } from '@/types/api'
 
 export interface PurchaseItem {
@@ -77,73 +78,73 @@ export const purchaseApi = {
    * 创建线上采购订单 (1688/微信)
    */
   createOnlinePurchase: (data: PurchasePayload) =>
-    client.post<ApiResponse<{ purchase_id: number }>>('/api/purchase-orders/1688', data),
+    client.post<ApiResponse<{ purchase_id: number }>>(PURCHASE.createOnline, data),
 
   /**
    * 创建线下采购订单
    */
   createOfflinePurchase: (data: PurchasePayload) =>
-    client.post<ApiResponse<{ purchase_id: number }>>('/api/purchase-orders', data),
+    client.post<ApiResponse<{ purchase_id: number }>>(PURCHASE.createOffline, data),
 
   /**
    * 获取产品最近采购记录
    */
   getProductLatestPurchase: (productId: number) =>
-    client.get<ApiResponse<{ record: any }>>(`/api/purchase-orders/product/${productId}/latest`),
+    client.get<ApiResponse<{ record: any }>>(PURCHASE.productLatest(productId)),
 
   /**
    * 获取产品最近 1688 链接列表（按 product_id，跨订单）
    */
   getRecent1688Urls: (productId: number, limit: number = 5) =>
     client.get<ApiResponse<{ urls: string[] }>>(
-      `/api/purchase-orders/1688/recent-urls?product_id=${productId}&limit=${limit}`
+      PURCHASE.recent1688Urls(productId, limit)
     ),
 
   /**
    * 更新产品行 1688 链接（同步到 pi_item.shop_url）
    */
   updatePiItemLink: (piItemId: number, link: string) =>
-    client.put<ApiResponse<any>>(`/api/pi/items/${piItemId}`, { shop_url: link }),
+    client.put<ApiResponse<any>>(PI_ITEMS.update(piItemId), { shop_url: link }),
 
   /**
    * 采购订单列表
    */
   list: (params: { page?: number; page_size?: number; keyword?: string; status?: number }) =>
-    client.get<ApiResponse<PurchaseListResponse>>('/api/purchase-orders', { params }),
+    client.get<ApiResponse<PurchaseListResponse>>(PURCHASE.list, { params }),
 
   /**
    * 确认采购订单
    */
   confirm: (id: number) =>
-    client.post<ApiResponse<void>>(`/api/purchase-orders/${id}/confirm`),
+    client.post<ApiResponse<void>>(PURCHASE.confirm(id)),
 
   /**
    * 采购订单入库
    */
   inbound: (id: number) =>
-    client.post<ApiResponse<void>>(`/api/purchase-orders/${id}/inbound`),
+    client.post<ApiResponse<void>>(PURCHASE.inbound(id)),
 
   /**
    * 导出采购合同
    */
   exportContract: (id: number) =>
-    client.get(`/api/export/purchase/${id}/contract`, { responseType: 'blob' }),
+    client.get(PURCHASE.exportContract(id), { responseType: 'blob' }),
 
   /**
    * 获取发票 URL
    */
   getInvoiceUrl: (id: number) =>
-    client.get<ApiResponse<{ url?: string }>>(`/api/purchase-orders/${id}/invoice`),
+    client.get<ApiResponse<{ url?: string }>>(PURCHASE.invoice(id)),
 
   /**
    * 单品入库
    */
   inboundPiItem: (itemId: number, data: { quantity: number; inspector?: string; remark?: string }) =>
-    client.post<ApiResponse<any>>(`/api/pi/items/${itemId}/inbound`, data),
+    client.post<ApiResponse<any>>(PI_ITEMS.inbound(itemId), data),
 
   /**
    * 批量入库
    */
   inboundPiItemsBatch: (piId: number, data: { items: InboundItem[]; inspector?: string }) =>
-    client.post<ApiResponse<any>>(`/api/pi/${piId}/inbound-batch`, data),
+    client.post<ApiResponse<any>>(PI.inboundBatch(piId), data),
 }

@@ -389,6 +389,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, reactive, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiUrl } from '@/api/base'
+import { PI_ITEMS } from '@/api/endpoints'
 import {
   ArrowLeft,
   Upload,
@@ -1249,7 +1250,7 @@ async function handleContextMenuAction(action: string) {
 async function deleteItem(item: OrderDetailItem) {
   try {
     await ElMessageBox.confirm('确定要删除该产品吗？', '确认删除', { type: 'warning' })
-    const res = await fetch(apiUrl(`/api/pi/items/${item.id}`), { method: 'DELETE' })
+    const res = await fetch(apiUrl(PI_ITEMS.remove(item.id)), { method: 'DELETE' })
     if (res.ok) {
       ElMessage.success('删除成功')
       onDetailSuccess()

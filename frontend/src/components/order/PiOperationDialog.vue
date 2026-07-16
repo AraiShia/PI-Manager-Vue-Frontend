@@ -57,6 +57,7 @@ import { DocumentAdd, Refresh, Clock } from '@element-plus/icons-vue'
 import type { OrderListItem } from '@/types/orderSummary'
 import { ORDER_STATUS } from '@/constants/orderStatus'
 import { apiUrl } from '@/api/base'
+import { PI } from '@/api/endpoints'
 
 const visible = ref(false)
 const order = ref<OrderListItem | null>(null)
@@ -78,7 +79,7 @@ function getStatusType(status?: number): string {
 async function onGeneratePi() {
   if (!order.value?.id) return
   try {
-    const res = await fetch(apiUrl(`/api/pi/${order.value.id}/generate-pi`), {
+    const res = await fetch(apiUrl(PI.generatePi(order.value.id)), {
       method: 'POST'
     })
     if (res.ok) {

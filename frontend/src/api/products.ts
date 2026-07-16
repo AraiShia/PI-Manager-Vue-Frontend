@@ -1,4 +1,5 @@
 import client from './client'
+import { CUSTOMER_PRODUCTS, CUSTOMERS, PRODUCT_CATEGORIES } from './endpoints'
 
 export interface ProductCode {
   id: number
@@ -90,11 +91,11 @@ export interface CategoryOption {
 
 export const productsApi = {
   list: (params: { page?: number; page_size?: number; search?: string; customer_id?: number; category_code?: string }) =>
-    client.get<CustomerProductListResponse>('/api/customer-products', { params }),
-  get: (id: number) => client.get<CustomerProduct>(`/api/customer-products/${id}`),
-  create: (payload: ProductFormPayload) => client.post<CustomerProduct>('/api/customer-products', payload),
-  update: (id: number, payload: Partial<ProductFormPayload>) => client.put<CustomerProduct>(`/api/customer-products/${id}`, payload),
-  remove: (id: number) => client.delete(`/api/customer-products/${id}`),
-  customers: () => client.get<CustomerOption[]>('/api/customers/', { params: { limit: 1000 } }),
-  categories: () => client.get<CategoryOption[]>('/api/product-categories/', { params: { status: 1 } }),
+    client.get<CustomerProductListResponse>(CUSTOMER_PRODUCTS.list, { params }),
+  get: (id: number) => client.get<CustomerProduct>(CUSTOMER_PRODUCTS.detail(id)),
+  create: (payload: ProductFormPayload) => client.post<CustomerProduct>(CUSTOMER_PRODUCTS.create, payload),
+  update: (id: number, payload: Partial<ProductFormPayload>) => client.put<CustomerProduct>(CUSTOMER_PRODUCTS.update(id), payload),
+  remove: (id: number) => client.delete(CUSTOMER_PRODUCTS.remove(id)),
+  customers: () => client.get<CustomerOption[]>(CUSTOMERS.list, { params: { limit: 1000 } }),
+  categories: () => client.get<CategoryOption[]>(PRODUCT_CATEGORIES.list, { params: { status: 1 } }),
 }

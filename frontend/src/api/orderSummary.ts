@@ -1,5 +1,6 @@
 import client from './client'
 import { assetUrl } from './base'
+import { ORDERS_BFF, PI, PI_ITEMS, IMAGES } from './endpoints'
 import type { AxiosResponse } from 'axios'
 import type { ApiResponse } from '@/types/api'
 import type { 
@@ -23,43 +24,43 @@ export interface OrderItemUpdateResponse {
 
 export const orderSummaryApi = {
   getOrders: (params: OrderListParams) =>
-    client.get<ApiResponse<OrderListResponse>>('/api/bff/orders', { params }),
+    client.get<ApiResponse<OrderListResponse>>(ORDERS_BFF.list, { params }),
 
   getOrderDetail: (orderId: number) =>
-    client.get<ApiResponse<OrderDetailResponse>>(`/api/bff/orders/${orderId}/full-detail`),
+    client.get<ApiResponse<OrderDetailResponse>>(ORDERS_BFF.fullDetail(orderId)),
 
   getDashboard: (filter?: OrderListFilter) =>
-    client.get<ApiResponse<OrderDashboardData>>('/api/bff/orders/dashboard', { params: filter }),
+    client.get<ApiResponse<OrderDashboardData>>(ORDERS_BFF.dashboard, { params: filter }),
 
   importItems: (orderId: number, items: any[]) =>
     client.post<ApiResponse<{ imported: number }>>(
-      `/api/bff/orders/${orderId}/import-items`,
+      ORDERS_BFF.importItems(orderId),
       items
     ),
 
   updateOrderItem: (itemId: number, payload: OrderItemUpdatePayload) =>
     client.put<OrderItemUpdateResponse>(
-      `/api/pi/items/${itemId}`,
+      PI_ITEMS.update(itemId),
       payload
     ),
 
   checkFormalRecord: (orderId: number) =>
-    client.get<{ exists: boolean }>(`/api/pi/${orderId}/formal-record/exists`),
+    client.get<{ exists: boolean }>(PI.formalRecordExists(orderId)),
 
   saveFormalRecord: (orderId: number) =>
-    client.post(`/api/pi/${orderId}/formal-record`),
+    client.post(PI.saveFormalRecord(orderId)),
 
   updatePiStatus: (piId: number, payload: { status: number }) =>
-    client.put(`/api/pi/${piId}/status`, payload),
+    client.put(PI.status(piId), payload),
 
   deletePi: (piId: number) =>
-    client.delete(`/api/pi/${piId}`),
+    client.delete(PI.remove(piId)),
 
   uploadProductImage: async (file: File): Promise<AxiosResponse<ApiResponse<{ url: string }>>> => {
     const formData = new FormData()
     formData.append('file', file)
     const res = await client.post<ApiResponse<{ url: string }> | { url: string; message?: string }>(
-      '/api/images/upload',
+      IMAGES.upload,
       formData,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     )

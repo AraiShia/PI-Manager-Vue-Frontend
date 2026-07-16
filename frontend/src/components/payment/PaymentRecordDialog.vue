@@ -94,6 +94,7 @@ import { ref, reactive, computed } from 'vue'
 import { ElMessage, FormInstance, FormRules } from 'element-plus'
 import type { ArCustomerPayment } from '@/types/payment'
 import { apiUrl } from '@/api/base'
+import { PAYMENTS } from '@/api/endpoints'
 import { orderSummaryApi } from '@/api/orderSummary'
 import { isFormalOrderStatus } from '@/utils/formalRecord'
 import WaterBillUploader from './WaterBillUploader.vue'
@@ -198,8 +199,8 @@ async function onSubmit() {
     submitting.value = true
     try {
       const url = isEdit.value
-        ? apiUrl(`/api/payments/receivables/${editingId.value}`)
-        : apiUrl('/api/payments/receivables')
+        ? apiUrl(PAYMENTS.receivableDetail(editingId.value!))
+        : apiUrl(PAYMENTS.receivables)
 
       const method = isEdit.value ? 'PUT' : 'POST'
 

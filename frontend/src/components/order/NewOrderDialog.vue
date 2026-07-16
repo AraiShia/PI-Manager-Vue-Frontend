@@ -348,6 +348,7 @@ import { Search, UploadFilled, InfoFilled, Download } from '@element-plus/icons-
 import * as XLSX from 'xlsx'
 import type { UploadFile, UploadRawFile, UploadInstance } from 'element-plus'
 import { apiUrl } from '@/api/base'
+import { CUSTOMERS, ORDERS_BFF, PI, PRODUCT_CUSTOMER } from '@/api/endpoints'
 
 interface Customer {
   id: number
@@ -553,7 +554,7 @@ const newCustomerRules: FormRules = {
 async function loadCustomers() {
   customerLoading.value = true
   try {
-    const res = await fetch(apiUrl('/api/customers/search?keyword=&limit=200'))
+    const res = await fetch(apiUrl(`${CUSTOMERS.search}?keyword=&limit=200`))
     if (res.ok) {
       const data = await res.json()
       const list = Array.isArray(data) ? data : (data.list || data.data || [])
@@ -580,7 +581,7 @@ async function searchCustomers(query: string) {
   customerSearchTimer = setTimeout(async () => {
     customerLoading.value = true
     try {
-      const url = apiUrl(`/api/customers/search?keyword=${encodeURIComponent(query || '')}&limit=200`)
+      const url = apiUrl(`${CUSTOMERS.search}?keyword=${encodeURIComponent(query || '')}&limit=200`)
       const res = await fetch(url)
       if (res.ok) {
         const data = await res.json()
@@ -624,7 +625,7 @@ async function submitNewCustomer() {
         email: newCustomer.email || undefined,
         remark: newCustomer.remark || undefined,
       }
-      const res = await fetch(apiUrl('/api/customers/'), {
+      const res = await fetch(apiUrl(CUSTOMERS.create), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -679,7 +680,7 @@ async function searchProducts(query: string, callback: (results: Product[]) => v
   }
   searchTimer = setTimeout(async () => {
     try {
-      let url = apiUrl(`/api/product-customer/search?keyword=${encodeURIComponent(query)}&limit=20`)
+      let url = apiUrl(`${PRODUCT_CUSTOMER.search}?keyword=${encodeURIComponent(query)}&limit=20`)
       if (searchMode.value !== 'both') {
         url += `&fields=${searchMode.value}`
       }
@@ -881,7 +882,7 @@ async function onSubmitSingle() {
         }],
         payment_stages: [],
       }
-      const res = await fetch(apiUrl('/api/pi/'), {
+      const res = await fetch(apiUrl(PI.create), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -986,7 +987,7 @@ async function onSubmitExcel() {
     if (form.customer_id) query += `&customer_id=${form.customer_id}`
     query += `&profit_margin=${presetProfitMargin.value}&exchange_rate=${presetExchangeRate.value}`
 
-    const res = await fetch(apiUrl('/api/orders/import?' + query), {
+    const res = await fetch(apiUrl(ORDERS_BFF.import + '?' + query), {
       method: 'POST',
       body: fd,
     })

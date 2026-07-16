@@ -1,4 +1,5 @@
 import client from './client'
+import { CUSTOMERS } from './endpoints'
 
 export interface CustomerContact {
   id?: number
@@ -33,18 +34,18 @@ export interface CustomerFormPayload {
 
 export const customersApi = {
   list: (params: { skip?: number; limit?: number } = {}) =>
-    client.get<Customer[]>('/api/customers/', { params }),
-  get: (id: number) => client.get<Customer>(`/api/customers/${id}`),
-  create: (payload: CustomerFormPayload) => client.post<Customer>('/api/customers/', payload),
+    client.get<Customer[]>(CUSTOMERS.list, { params }),
+  get: (id: number) => client.get<Customer>(CUSTOMERS.detail(id)),
+  create: (payload: CustomerFormPayload) => client.post<Customer>(CUSTOMERS.create, payload),
   update: (id: number, payload: Partial<CustomerFormPayload>) =>
-    client.put<Customer>(`/api/customers/${id}`, payload),
-  remove: (id: number) => client.delete(`/api/customers/${id}`),
-  toggleStatus: (id: number) => client.patch(`/api/customers/${id}/status`),
-  contacts: (id: number) => client.get<CustomerContact[]>(`/api/customers/${id}/contacts`),
+    client.put<Customer>(CUSTOMERS.update(id), payload),
+  remove: (id: number) => client.delete(CUSTOMERS.remove(id)),
+  toggleStatus: (id: number) => client.patch(CUSTOMERS.toggleStatus(id)),
+  contacts: (id: number) => client.get<CustomerContact[]>(CUSTOMERS.contacts(id)),
   createContact: (id: number, payload: Omit<CustomerContact, 'id'>) =>
-    client.post(`/api/customers/${id}/contacts`, payload),
+    client.post(CUSTOMERS.createContact(id), payload),
   updateContact: (id: number, contactId: number, payload: Omit<CustomerContact, 'id'>) =>
-    client.put(`/api/customers/${id}/contacts/${contactId}`, payload),
+    client.put(CUSTOMERS.updateContact(id, contactId), payload),
   removeContact: (id: number, contactId: number) =>
-    client.delete(`/api/customers/${id}/contacts/${contactId}`),
+    client.delete(CUSTOMERS.removeContact(id, contactId)),
 }

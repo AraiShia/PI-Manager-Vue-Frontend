@@ -1,4 +1,5 @@
 import client from './client'
+import { PRODUCT_CATEGORIES } from './endpoints'
 
 export interface ProductCategory {
   id: number
@@ -18,13 +19,13 @@ export interface CategoryFormPayload {
 
 export const categoriesApi = {
   list: (params?: { status?: number }) =>
-    client.get<ProductCategory[]>('/api/product-categories/', { params }),
+    client.get<ProductCategory[]>(PRODUCT_CATEGORIES.list, { params }),
   get: (id: number) =>
-    client.get<ProductCategory>(`/api/product-categories/${id}`),
+    client.get<ProductCategory>(PRODUCT_CATEGORIES.detail(id)),
   create: (payload: CategoryFormPayload & { code?: string }, autoCode = true) =>
-    client.post<ProductCategory>('/api/product-categories/', payload, { params: { auto_code: autoCode } }),
+    client.post<ProductCategory>(PRODUCT_CATEGORIES.create, payload, { params: { auto_code: autoCode } }),
   update: (id: number, payload: Partial<CategoryFormPayload>) =>
-    client.put<ProductCategory>(`/api/product-categories/${id}`, payload),
-  remove: (id: number) => client.delete(`/api/product-categories/${id}`),
-  nextCode: () => client.get<{ next_code: string }>('/api/product-categories/next-code'),
+    client.put<ProductCategory>(PRODUCT_CATEGORIES.update(id), payload),
+  remove: (id: number) => client.delete(PRODUCT_CATEGORIES.remove(id)),
+  nextCode: () => client.get<{ next_code: string }>(PRODUCT_CATEGORIES.nextCode),
 }

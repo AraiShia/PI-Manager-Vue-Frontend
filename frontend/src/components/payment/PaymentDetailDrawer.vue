@@ -82,6 +82,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Edit, Delete, Upload } from '@element-plus/icons-vue'
 import type { ArCustomerPayment } from '@/types/payment'
 import { apiUrl } from '@/api/base'
+import { PAYMENTS } from '@/api/endpoints'
 
 const emit = defineEmits<{
   (e: 'edit', payment: ArCustomerPayment): void
@@ -131,7 +132,7 @@ async function onDelete() {
     )
 
     const response = await fetch(
-      apiUrl(`/api/payments/receivables/${currentPayment.value.id}`),
+      apiUrl(PAYMENTS.receivableDetail(currentPayment.value.id)),
       {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -186,7 +187,7 @@ async function onFileChange(e: Event) {
 
     try {
       const response = await fetch(
-        apiUrl(`/api/payments/receivables/${currentPayment.value!.id}`),
+        apiUrl(PAYMENTS.receivableDetail(currentPayment.value!.id)),
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },

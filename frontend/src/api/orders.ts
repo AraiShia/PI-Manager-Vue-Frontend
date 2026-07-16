@@ -1,4 +1,5 @@
 import client from './client'
+import { ORDERS_BFF } from './endpoints'
 import type { Order, OrderDetail, ApiResponse, PaginatedResponse } from '@/types/api'
 
 export interface OrderListParams {
@@ -11,23 +12,23 @@ export interface OrderListParams {
 
 export const orderAPI = {
   list: (params: OrderListParams) =>
-    client.get<PaginatedResponse<Order>>('/api/bff/orders', { params }),
+    client.get<PaginatedResponse<Order>>(ORDERS_BFF.list, { params }),
 
   get: (id: number) =>
-    client.get<ApiResponse<OrderDetail>>(`/api/bff/orders/${id}`),
+    client.get<ApiResponse<OrderDetail>>(ORDERS_BFF.detail(id)),
 
   create: (data: Partial<Order>) =>
-    client.post<ApiResponse<Order>>('/api/bff/orders', data),
+    client.post<ApiResponse<Order>>(ORDERS_BFF.create, data),
 
   update: (id: number, data: Partial<Order>) =>
-    client.put<ApiResponse<Order>>(`/api/bff/orders/${id}`, data),
+    client.put<ApiResponse<Order>>(ORDERS_BFF.update(id), data),
 
   delete: (id: number) =>
-    client.delete<ApiResponse<null>>(`/api/bff/orders/${id}`),
+    client.delete<ApiResponse<null>>(ORDERS_BFF.remove(id)),
 
   importItems: (orderId: number, items: any[]) =>
     client.post<ApiResponse<{ imported: number }>>(
-      `/api/bff/orders/${orderId}/import-items`,
+      ORDERS_BFF.importItems(orderId),
       items
     ),
 
@@ -37,5 +38,5 @@ export const orderAPI = {
       total_amount_usd: number
       total_items: number
       status_stats: Record<string, number>
-    }>>('/api/bff/orders/dashboard', { params }),
+    }>>(ORDERS_BFF.dashboard, { params }),
 }

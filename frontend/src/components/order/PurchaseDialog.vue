@@ -234,6 +234,8 @@ import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { purchaseApi, type PurchasePayload, type PurchaseItem } from '@/api/purchase'
+import { apiUrl } from '@/api/base'
+import { SUPPLIERS } from '@/api/endpoints'
 import type { OrderDetailItem } from '@/types/orderSummary'
 
 const emit = defineEmits<{
@@ -349,7 +351,7 @@ function open(
 async function loadSuppliers() {
   supplierLoading.value = true
   try {
-    const res = await fetch('/api/suppliers')
+    const res = await fetch(apiUrl(SUPPLIERS.list))
     if (res.ok) {
       const data = (await res.json()) || []
       suppliers.value = data
@@ -423,7 +425,7 @@ async function onCreateSupplier() {
   }
   creatingSupplier.value = true
   try {
-    const res = await fetch('/api/suppliers', {
+    const res = await fetch(apiUrl(SUPPLIERS.create), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
