@@ -669,32 +669,11 @@
   </div>
 
   <!-- 新建供应商弹窗 -->
-  <el-dialog
+  <SupplierFormDialog
     v-model="newSupplierDialogVisible"
-    title="新建供应商"
-    width="500px"
-    :close-on-click-modal="false"
-    append-to-body
-  >
-    <el-form ref="newSupplierFormRef" :model="newSupplier" :rules="newSupplierRules" label-width="100px">
-      <el-form-item label="供应商编号">
-        <el-input v-model="newSupplier.supplier_code" placeholder="可选，系统可自动生成" />
-      </el-form-item>
-      <el-form-item label="供应商名称 *" prop="supplier_name">
-        <el-input v-model="newSupplier.supplier_name" placeholder="请输入供应商名称" />
-      </el-form-item>
-      <el-form-item label="省份">
-        <el-input v-model="newSupplier.province" placeholder="可选" />
-      </el-form-item>
-      <el-form-item label="城市">
-        <el-input v-model="newSupplier.city" placeholder="可选" />
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="newSupplierDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="creatingSupplier" @click="submitNewSupplier">确定新建</el-button>
-    </template>
-  </el-dialog>
+    :supplier="null"
+    @success="onNewSupplierCreated"
+  />
   </div>
 </template>
 
@@ -706,6 +685,7 @@ import { Plus, Close } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
 import { orderSummaryApi } from '@/api/orderSummary'
 import { suppliersApi, type Supplier } from '@/api/suppliers'
+import SupplierFormDialog from '@/components/supplier/SupplierFormDialog.vue'
 import { apiUrl, assetUrl } from '@/api/base'
 import { CUSTOMER_PRODUCTS, PRODUCT_CATEGORIES } from '@/api/endpoints'
 import type { OrderDetailItem } from '@/types/orderSummary'
@@ -816,17 +796,6 @@ const suppliers = ref<Supplier[]>([])
 const supplierLoading = ref(false)
 const supplierSearchQuery = ref('')
 const newSupplierDialogVisible = ref(false)
-const newSupplierFormRef = ref()
-const creatingSupplier = ref(false)
-const newSupplier = reactive({
-  supplier_code: '',
-  supplier_name: '',
-  province: null as string | null,
-  city: null as string | null,
-})
-const newSupplierRules = {
-  supplier_name: [{ required: true, message: '请输入供应商名称', trigger: 'blur' }],
-}
 
 const form = reactive<ProductEditForm>({
   customer_name: '',
@@ -2027,38 +1996,14 @@ function onSupplierChange(s: Supplier) {
 }
 
 function openNewSupplierDialog() {
-  newSupplier.supplier_code = ''
-  newSupplier.supplier_name = supplierSearchQuery.value || form.supplier?.supplier_name || ''
-  newSupplier.province = form.supplier?.province ?? null
-  newSupplier.city = form.supplier?.city ?? null
   newSupplierDialogVisible.value = true
 }
 
-async function submitNewSupplier() {
-  if (!newSupplier.supplier_name.trim()) {
-    ElMessage.warning('请输入供应商名称')
-    return
-  }
-  creatingSupplier.value = true
-  try {
-    const res = await suppliersApi.create({
-      supplier_code: newSupplier.supplier_code,
-      supplier_name: newSupplier.supplier_name.trim(),
-      province: newSupplier.province,
-      city: newSupplier.city,
-    })
-    const created: Supplier = res.data
-    form.supplier_name = created.supplier_name
-    form.supplier = created
-    saveField('supplier_name', created.supplier_name)
-    newSupplierDialogVisible.value = false
-    ElMessage.success('供应商创建成功')
-    await searchSuppliers(created.supplier_name)
-  } catch (e: any) {
-    ElMessage.error(e?.message || '创建供应商失败')
-  } finally {
-    creatingSupplier.value = false
-  }
+async function onNewSupplierCreated(created: Supplier) {
+  form.supplier_name = created.supplier_name
+  form.supplier = created
+  saveField('supplier_name', created.supplier_name)
+  await searchSuppliers(created.supplier_name)
 }
 
 defineExpose({ open, close })

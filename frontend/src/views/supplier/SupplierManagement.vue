@@ -52,106 +52,31 @@
       </el-table>
     </section>
 
-    <el-dialog
+    <SupplierFormDialog
       v-model="dialogVisible"
-      :title="editingSupplier ? '编辑供应商' : '新增供应商'"
-      width="780px"
-      destroy-on-close
-    >
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="supplier-form">
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="供应商编号" prop="supplier_code">
-              <el-input v-model="form.supplier_code" :disabled="!!editingSupplier" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="供应商名称" prop="supplier_name">
-              <el-input v-model="form.supplier_name" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="省份">
-              <el-select v-model="form.province" filterable clearable class="full-width" @change="onProvinceChange">
-                <el-option v-for="item in provinces" :key="item" :label="item" :value="item" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="城市">
-              <el-select v-model="form.city" filterable clearable class="full-width">
-                <el-option v-for="item in cities" :key="item" :label="item" :value="item" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="联系人">
-              <el-input v-model="form.contact_person" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="电话">
-              <el-input v-model="form.phone" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="24">
-            <el-form-item label="邮箱">
-              <el-input v-model="form.email" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="24">
-            <el-form-item label="地址">
-              <el-input v-model="form.address" type="textarea" :rows="2" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveSupplier">保存</el-button>
-      </template>
-    </el-dialog>
+      :supplier="editingSupplier"
+      @success="onSupplierCreated"
+    />
   </main>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { suppliersApi, type Supplier } from '@/api/suppliers'
+import SupplierFormDialog from '@/components/supplier/SupplierFormDialog.vue'
 
 const loading = ref(false)
-const saving = ref(false)
 const suppliers = ref<Supplier[]>([])
 const provinces = ref<string[]>([])
-const cities = ref<string[]>([])
 const dialogVisible = ref(false)
 const editingSupplier = ref<Supplier | null>(null)
-const formRef = ref<FormInstance>()
 
 const filters = reactive({
   search: '',
   province: undefined as string | undefined,
 })
-
-const emptyForm = () => ({
-  supplier_code: '',
-  supplier_name: '',
-  province: '',
-  city: '',
-  contact_person: '',
-  phone: '',
-  email: '',
-  address: '',
-})
-
-const form = reactive(emptyForm())
-
-const rules: FormRules = {
-  supplier_code: [{ required: true, message: '请输入供应商编号', trigger: 'blur' }],
-  supplier_name: [{ required: true, message: '请输入供应商名称', trigger: 'blur' }],
-}
 
 const filteredSuppliers = computed(() => {
   const keyword = filters.search.trim().toLowerCase()
@@ -183,20 +108,6 @@ async function loadProvinces() {
   }
 }
 
-async function onProvinceChange(value?: string, preserveCity = false) {
-  cities.value = []
-  if (!preserveCity) {
-    form.city = ''
-  }
-  if (!value) return
-  try {
-    const res = await suppliersApi.cities(value)
-    cities.value = res.data || []
-  } catch (err) {
-    console.warn('[供应商] 加载城市失败', err)
-  }
-}
-
 function applyFilters() { /* computed */ }
 
 function resetFilters() {
@@ -206,69 +117,19 @@ function resetFilters() {
 
 function openCreate() {
   editingSupplier.value = null
-  Object.assign(form, emptyForm())
-  cities.value = []
   dialogVisible.value = true
 }
 
-async function openEdit(row: Supplier) {
+function openEdit(row: Supplier) {
   editingSupplier.value = row
-  Object.assign(form, emptyForm(), {
-    supplier_code: row.supplier_code,
-    supplier_name: row.supplier_name,
-    province: row.province || '',
-    city: row.city || '',
-    contact_person: row.contact_person || '',
-    phone: row.phone || '',
-    email: row.email || '',
-    address: row.address || '',
-  })
   dialogVisible.value = true
-  if (form.province) {
-    await onProvinceChange(form.province, true)
-    if (form.city && !cities.value.includes(form.city)) {
-      form.city = ''
-    }
-  }
 }
 
-async function saveSupplier() {
-  await formRef.value?.validate()
-  saving.value = true
-  try {
-    if (editingSupplier.value) {
-      await suppliersApi.update(editingSupplier.value.id, {
-        supplier_name: form.supplier_name,
-        province: form.province || null,
-        city: form.city || null,
-        contact_person: form.contact_person || null,
-        phone: form.phone || null,
-        email: form.email || null,
-        address: form.address || null,
-      })
-      ElMessage.success('供应商已更新')
-    } else {
-      await suppliersApi.create({
-        supplier_code: form.supplier_code,
-        supplier_name: form.supplier_name,
-        province: form.province || null,
-        city: form.city || null,
-        contact_person: form.contact_person || null,
-        phone: form.phone || null,
-        email: form.email || null,
-        address: form.address || null,
-      })
-      ElMessage.success('供应商已创建')
-    }
-    dialogVisible.value = false
-    await loadSuppliers()
-  } finally {
-    saving.value = false
-  }
+async function onSupplierCreated(_supplier: Supplier) {
+  await loadSuppliers()
 }
 
 async function toggleStatus(row: Supplier) {
-  // 后端未提供 PATCH 状态，使用切换 status 字段的 PUT 形式（依赖后端允许）
   const next = row.status === 1 ? 0 : 1
   const action = next === 1 ? '启用' : '禁用'
   await ElMessageBox.confirm(`确定要${action}供应商 ${row.supplier_name} 吗？`, '确认操作', { type: 'warning' })
