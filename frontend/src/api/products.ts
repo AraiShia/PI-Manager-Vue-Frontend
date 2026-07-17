@@ -98,4 +98,6 @@ export const productsApi = {
   remove: (id: number) => client.delete(CUSTOMER_PRODUCTS.remove(id)),
   customers: () => client.get<CustomerOption[]>(CUSTOMERS.list, { params: { limit: 1000 } }),
   categories: () => client.get<CategoryOption[]>(PRODUCT_CATEGORIES.list, { params: { status: 1 } }),
+  bulkSyncOes: (id: number, oes: string[]) =>
+    client.post(CUSTOMER_PRODUCTS.oesBulkSync(id), { oes }),
 }

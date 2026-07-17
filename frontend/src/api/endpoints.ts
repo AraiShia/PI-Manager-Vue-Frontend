@@ -64,6 +64,7 @@ export const CUSTOMER_PRODUCTS = {
   create: '/api/customer-products',
   update: (id: number) => `/api/customer-products/${id}`,
   remove: (id: number) => `/api/customer-products/${id}`,
+  oesBulkSync: (id: number) => `/api/customer-products/${id}/oes/bulk-sync`,
 } as const
 
 export const PRODUCT_CATEGORIES = {
