@@ -684,7 +684,13 @@ def bulk_sync_oes(
     not_found = False
 
     # with db.begin() 确保事务边界完全托管：所有 SQL 操作必须在同一事务内执行
-    with db.begin():
+    # 兼容测试环境（已存在隐式事务）：检查是否已有活跃事务，有则复用
+    use_nested = not db.in_transaction()
+    if use_nested:
+        tx = db.begin()
+    else:
+        tx = None
+    try:
         customer_product = get_customer_product(db, customer_product_id)
         if not customer_product:
             not_found = True
@@ -737,6 +743,15 @@ def bulk_sync_oes(
             final_primary = next(
                 (oe for oe in preserved if oe.is_primary), None
             )
+
+    except Exception:
+        if use_nested:
+            tx.rollback()
+        raise
+
+    # 提交事务（仅当由我们开启时）
+    if use_nested:
+        tx.commit()
 
     if not_found:
         return None

@@ -117,7 +117,7 @@ def build_search_item(
     matched: list[str],
     score: float,
 ) -> ProductSearchItem:
-    # matched_in key 映射：PI item 字段 → 响应字段
+    # matched_in key 映射：PI item 字段 → 响应字段（仅当有 pi_item 时才映射）
     pi_name_map = {
         "detail_desc": "product_name",
         "customer_model": "customer_model",
@@ -125,7 +125,13 @@ def build_search_item(
         "product_short_name": "product_short_name",
         "product_short_name_en": "product_short_name_en",
     }
-    resolved_matched = [pi_name_map.get(m, m) for m in matched]
+    # 仅对 PI item 特有字段做映射，原有产品表字段保持原名
+    resolved_matched = []
+    for m in matched:
+        if pi_item is not None and m in pi_name_map:
+            resolved_matched.append(pi_name_map[m])
+        else:
+            resolved_matched.append(m)
 
     pi_detail_desc = getattr(pi_item, "detail_desc", None) if pi_item else None
     pi_customer_model = getattr(pi_item, "customer_model", None) if pi_item else None
@@ -133,7 +139,7 @@ def build_search_item(
     return ProductSearchItem(
         id=p.id,
         customer_id=p.customer_id,
-        customer_name=(p.customer.name if p.customer else "") or "",
+        customer_name=(p.customer.customer_name if p.customer else "") or "",
         customer_model=(pi_customer_model or p.customer_model or "") or None,
         product_name=(pi_detail_desc or p.product_name or "") or None,
         product_name_en=getattr(pi_item, "detail_desc_en", None) if pi_item else None,
@@ -172,10 +178,11 @@ def search_products(
         )
     exact_model = exact_model_q.all()
 
-    # 2) PrdCustomerProduct 文本字段模糊匹配
+    # 2) PrdCustomerProduct 文本字段模糊匹配（包含 customer_model 用于 fuzzy 匹配）
     text_match_q = db.query(PrdCustomerProduct).filter(
         PrdCustomerProduct.deleted_at.is_(None),
         or_(
+            PrdCustomerProduct.customer_model.ilike(text_kw),
             PrdCustomerProduct.product_name.ilike(text_kw),
             PrdCustomerProduct.detail_desc.ilike(text_kw),
         ),
