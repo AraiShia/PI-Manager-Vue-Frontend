@@ -52,11 +52,15 @@
 | 简称（中） | `form.product_short_name` | `product_short_name` | ✅ `product_short_name`（PI 表，2026-07-09 新增） |
 | 简称（英） | `form.product_short_name_en` | `product_short_name_en` | ✅ `product_short_name_en`（PI 表，2026-07-09 新增） |
 
-**结论（P1-2）**:
-- PI item 表是当前名称字段的**唯一数据源**，crud/pi.py L1096-1103 已经写好 4 个 if 分支，无须改。
-- `prd_customer_product` 表**不需要新增** 3 列（`product_name_en` / `product_short_name*`）。
-- 之前 spec §3.1.1 / §4.3.1 关于"修复 saveField 键错位 + 数据库迁移"的提议是**误判**，整段撤掉。
-- 搜索要读到名称字段，必须**跨表查询**（`PrdCustomerProduct` 主表 JOIN `pi_proforma_invoice_item` 取 max(id) 的最近一次名称），见 §3.5。
+**P0-5 名称来源闭环（精排已实现**:
+- `product_name` 精排时取自 `_get_name_fields(p, pi_item)`：
+  - 优先 `pi_item.detail_desc`（用户编辑的"产品名称中"）
+  - fallback `p.product_name`（PrdCustomerProduct 表默认值）
+  - 命中 score=60，与 PrdCustomerProduct.product_name 同分，不重复计分
+- `customer_model` 精排同样取自 `_get_name_fields`：
+  - 优先 `pi_item.customer_model`（用户编辑的"客户型号"）
+  - fallback `p.customer_model`
+- 4 个 PI item 字段（detail_desc / detail_desc_en / product_short_name / product_short_name_en）全部参与精排，无遗漏。
 
 ---
 
@@ -73,7 +77,7 @@
               ┌──────────────────────────────┐
               │ productSearchService (前端)   │
               │  - search(keyword, opts)     │
-              │  - highlight(text, kw)       │
+              │  - splitForHighlight(text, kw) │
               │  - escape / dedupe           │
               └──────────────┬───────────────┘
                              │ axios.get + 防抖 200ms
@@ -165,7 +169,7 @@ class ProductSearchItem(BaseModel):
     detail_desc: str | None
     brand: str | None
     # ---- 下单回填关键字段（P0-2 修复）----
-    customer_code: str | None                # 客户产品编号（PrdCustomerProductCode.primary_code）
+    customer_code: str | None                # PrdCustomerProductCode 表中 is_primary=true 的 product_code；空则取第一条
     product_code: str | None                 # 系统产品编号（PrdCustomerProduct.system_code，备用）
     price_usd: float | None                  # PrdCustomerProduct.price_usd（USD 单价，作为 PI item.unit_price 回填）
     # price_rmb 当前不返回给前端：业务仅支持 USD；PI item 不保留 price_rmb/price_usd 行级字段，
@@ -372,23 +376,47 @@ products = {
 }
 ```
 
-**Python 端精排 score**（按 score desc，最后才 LIMIT 截取，保证精确匹配不被丢弃）：
+**Python 端精排 score + 统一名称映射**（按 score desc，最后才 LIMIT 截取，保证精确匹配不被丢弃）：
 
 ```python
+def _get_name_fields(p, pi_item):
+    """
+    统一名称来源（P0-5 闭环）：
+    - product_name:  优先取 PI item.detail_desc（用户保存中文名的地方），
+                    为空时 fallback 到 PrdCustomerProduct.product_name
+    - customer_model: 优先取 PI item.customer_model（用户保存客户型号的地方），
+                    为空时 fallback 到 PrdCustomerProduct.customer_model
+    """
+    product_name = (
+        (pi_item.detail_desc if pi_item else None)
+        or p.product_name
+        or ""
+    )
+    customer_model = (
+        (pi_item.customer_model if pi_item else None)
+        or p.customer_model
+        or ""
+    )
+    return product_name, customer_model
+
 def score_product(p, kw, oe_tokens, latest_pi_item) -> tuple[float, list[str]]:
     score, matched = 0.0, []
     kwl = kw.lower()
     token_lc = [t.lower() for t in oe_tokens if t]
+    product_name, customer_model = _get_name_fields(p, latest_pi_item)
 
-    if p.customer_model:
-        if p.customer_model == kw:
+    # 客户型号精确 > 模糊（最高优先级）
+    if customer_model:
+        if customer_model == kw:
             score = max(score, 100.0); matched.append("customer_model")
-        elif kwl in p.customer_model.lower():
+        elif kwl in customer_model.lower():
             score = max(score, 80.0); matched.append("customer_model")
 
-    if p.product_name and kwl in p.product_name.lower():
+    # product_name 来自 PI item.detail_desc（优先）/ PrdCustomerProduct（fallback）
+    if product_name and kwl in product_name.lower():
         score = max(score, 60.0); matched.append("product_name")
 
+    # PI item 名称字段：英文全称 + 中英简称
     if latest_pi_item is not None:
         pi_name_fields = [
             ("product_name_en",       getattr(latest_pi_item, "detail_desc_en", None), 55),
@@ -399,14 +427,15 @@ def score_product(p, kw, oe_tokens, latest_pi_item) -> tuple[float, list[str]]:
             if val and kwl in str(val).lower():
                 score = max(score, float(sc)); matched.append(key)
 
-    if p.detail_desc and kwl in p.detail_desc.lower():
-        score = max(score, 30.0); matched.append("detail_desc")
+    # detail_desc（P0：PI item.detail_desc 已合并到 product_name，上面已处理）
+    # 不再单独匹配 PrdCustomerProduct.detail_desc（避免重复）
 
     oes = [(oe.oe_number or "") for oe in p.oes]
     if any(any(tok in oe.lower() for tok in token_lc) for oe in oes):
         score = max(score, 50.0); matched.append("oe")
 
     return score, matched
+```
 
 # 主流程：先算所有候选 score，再排序截 limit
 results = []
@@ -416,8 +445,12 @@ for pid, p in products.items():
     )
     results.append((score, p, matched))
 results.sort(key=lambda x: (-x[0], x[1].id))
+total = len(results)                                    # P1-2：截取前的全部候选数量
 results = results[:limit]
-```
+return ProductSearchResponse(
+        results=[{"product": p, "matched": m} for _, p, m in results],
+        total=total,
+    )
 
 **性能约束**: 全表 ILIKE + Python score 在数据量 < 5k 行客户产品时实测 < 200ms。如未来超 10k 行再评估 pg_trgm 全文索引。
 
