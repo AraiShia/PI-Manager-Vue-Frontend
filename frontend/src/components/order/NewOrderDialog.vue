@@ -222,51 +222,13 @@
       <!-- 单条新增（备选） -->
       <el-tab-pane label="单条新增" name="single">
         <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
-          <el-form-item label="搜索模式">
-            <el-radio-group v-model="searchMode">
-              <el-radio value="both">OE号 + 名称</el-radio>
-              <el-radio value="oe">仅OE号</el-radio>
-              <el-radio value="name">仅名称</el-radio>
-            </el-radio-group>
-          </el-form-item>
-
-          <el-form-item label="产品搜索" prop="search_keyword">
-            <el-autocomplete
-              v-model="searchKeyword"
-              :fetch-suggestions="searchProducts"
-              placeholder="输入关键词搜索产品..."
-              :trigger-on-focus="false"
-              clearable
-              style="width: 100%"
+          <el-form-item label="产品搜索">
+            <ProductSearchSelect
+              v-model="selectedProduct"
+              :customer-id="form.customer_id ?? undefined"
+              placeholder="搜索产品（OE号 / 客户型号 / 产品名称）"
               @select="onProductSelect"
-              @change="onSearchChange"
-            >
-              <template #prefix>
-                <el-icon><search /></el-icon>
-              </template>
-              <template #default="{ item }">
-                <div class="product-suggestion">
-                  <span class="oe">{{ item.oe_number || item.oe || '-' }}</span>
-                  <span class="name">{{ item.detail_desc || item.product_name || item.customer_model || '-' }}</span>
-                </div>
-              </template>
-            </el-autocomplete>
-          </el-form-item>
-
-          <el-form-item label="搜索结果">
-            <el-select
-              v-model="selectedProductIndex"
-              placeholder="请选择搜索到的产品"
-              style="width: 100%"
-              @change="onResultSelect"
-            >
-              <el-option
-                v-for="(p, idx) in searchResults"
-                :key="idx"
-                :label="formatProductDisplay(p)"
-                :value="idx"
-              />
-            </el-select>
+            />
           </el-form-item>
 
           <template v-if="selectedProduct">
@@ -349,6 +311,8 @@ import * as XLSX from 'xlsx'
 import type { UploadFile, UploadRawFile, UploadInstance } from 'element-plus'
 import { apiUrl } from '@/api/base'
 import { CUSTOMERS, ORDERS_BFF, PI, PRODUCT_CUSTOMER } from '@/api/endpoints'
+import ProductSearchSelect from '@/components/common/ProductSearchSelect.vue'
+import type { CustomerProductSearchItem } from '@/api/customerProduct'
 
 interface Customer {
   id: number
@@ -410,15 +374,17 @@ const searchMode = ref<'both' | 'oe' | 'name'>('both')
 const searchKeyword = ref('')
 const searchResults = ref<Product[]>([])
 const selectedProductIndex = ref<number | null>(null)
-const selectedProduct = ref<Product | null>(null)
+const selectedProduct = ref<CustomerProductSearchItem | null>(null)
 
 const form = reactive({
   customer_id: null as number | null,
   customer_code: '',
   customer_model: '',
   oe_number: '',
+  detail_desc: '',
   quantity: 1,
   unit_price: 0,
+  product_id: null as number | null,
 })
 
 const rules: FormRules = {
@@ -523,9 +489,10 @@ function formatAmount(amount: number): string {
   return isNaN(amount) ? '0.00' : amount.toFixed(2)
 }
 
-function formatProductDisplay(p: Product): string {
-  const oe = p.oe_number || p.oe || ''
-  const name = p.detail_desc || p.product_name || p.customer_model || ''
+function formatProductDisplay(p: CustomerProductSearchItem | Product): string {
+  // CustomerProductSearchItem has oes array, Product has oe_number/oe
+  const oe = ('oes' in p ? p.oes?.[0] : null) || (p as any).oe_number || (p as any).oe || ''
+  const name = p.product_name || p.customer_model || p.detail_desc || ''
   if (oe && name) return `${oe} - ${name}`
   return oe || name || '未命名产品'
 }
@@ -663,71 +630,18 @@ async function submitNewCustomer() {
 }
 
 function onCustomerChange() {
-  searchKeyword.value = ''
-  searchResults.value = []
-  selectedProductIndex.value = null
   selectedProduct.value = null
 }
 
 // ============== 单条搜索 ==============
-let searchTimer: ReturnType<typeof setTimeout> | null = null
-
-async function searchProducts(query: string, callback: (results: Product[]) => void) {
-  if (searchTimer) clearTimeout(searchTimer)
-  if (!query || query.length < 2) {
-    callback([])
-    return
-  }
-  searchTimer = setTimeout(async () => {
-    try {
-      let url = apiUrl(`${PRODUCT_CUSTOMER.search}?keyword=${encodeURIComponent(query)}&limit=20`)
-      if (searchMode.value !== 'both') {
-        url += `&fields=${searchMode.value}`
-      }
-      const res = await fetch(url)
-      if (res.ok) {
-        const data = await res.json()
-        const results = data.results || data.data || data || []
-        searchResults.value = Array.isArray(results) ? results : []
-        callback(searchResults.value)
-      } else {
-        searchResults.value = []
-        callback([])
-      }
-    } catch {
-      searchResults.value = []
-      callback([])
-    }
-  }, 150)
-}
-
-function onSearchChange() {
-  selectedProductIndex.value = null
-  selectedProduct.value = null
-}
-
-function onResultSelect(index: number) {
-  if (index < 0 || index >= searchResults.value.length) {
-    selectedProduct.value = null
-    return
-  }
-  const product = searchResults.value[index]
-  selectedProduct.value = product
-  form.customer_code = product.customer_code || product.product_code || ''
-  form.customer_model = product.customer_model || ''
-  form.oe_number = product.oe_number || product.oe || ''
-  const price = product.price_usd || product.price || product.unit_price || 0
-  form.unit_price = price
-}
-
-function onProductSelect(product: Product) {
-  const idx = searchResults.value.findIndex(
-    p => p.id === product.id || p.product_id === product.product_id
-  )
-  if (idx >= 0) {
-    selectedProductIndex.value = idx
-    onResultSelect(idx)
-  }
+function onProductSelect(item: CustomerProductSearchItem) {
+  selectedProduct.value = item
+  form.customer_code = item.customer_code || item.customer_model || ''
+  form.customer_model = item.customer_model || ''
+  form.oe_number = item.oes[0] || ''
+  form.detail_desc = item.product_name || ''
+  form.unit_price = item.price_usd || 0
+  form.product_id = item.id
 }
 
 // ============== Excel 解析 ==============
@@ -879,6 +793,7 @@ async function onSubmitSingle() {
           customer_code: form.customer_code,
           customer_model: form.customer_model || undefined,
           oe_number: form.oe_number || undefined,
+          product_id: form.product_id ?? null,
         }],
         payment_stages: [],
       }

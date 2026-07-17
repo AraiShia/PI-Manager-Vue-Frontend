@@ -15,34 +15,21 @@
           </el-form-item>
           
           <el-form-item label="产品搜索" prop="search_keyword">
-            <el-autocomplete
-              v-model="singleForm.search_keyword"
-              :fetch-suggestions="searchProducts"
-              placeholder="输入 OE号 或 产品名称 搜索"
-              :trigger-on-focus="false"
-              clearable
-              style="width: 100%"
+            <ProductSearchSelect
+              v-model="selectedProduct"
+              :customer-id="order?.customer_id"
+              placeholder="搜索 OE号 / 客户型号 / 产品名称"
               @select="onProductSelect"
-              @change="onSearchChange"
-            >
-              <template #prefix>
-                <el-icon><Search /></el-icon>
-              </template>
-              <template #default="{ item }">
-                <div class="product-suggestion">
-                  <span class="oe-number">{{ item.oe_number }}</span>
-                  <span class="product-name">{{ item.detail_desc }}</span>
-                </div>
-              </template>
-            </el-autocomplete>
+              @clear="onSearchClear"
+            />
           </el-form-item>
           
           <template v-if="selectedProduct">
             <el-divider content-position="left">已选产品</el-divider>
             <div class="selected-product-info">
               <el-descriptions :column="2" border size="small">
-                <el-descriptions-item label="OE号">{{ selectedProduct.oe_number }}</el-descriptions-item>
-                <el-descriptions-item label="产品名称">{{ selectedProduct.detail_desc }}</el-descriptions-item>
+                <el-descriptions-item label="OE号">{{ selectedProduct.oes?.[0] }}</el-descriptions-item>
+                <el-descriptions-item label="产品名称">{{ selectedProduct.product_name }}</el-descriptions-item>
               </el-descriptions>
             </div>
           </template>
@@ -176,6 +163,8 @@ import type { OrderListItem } from '@/types/orderSummary'
 import * as XLSX from 'xlsx'
 import { apiUrl } from '@/api/base'
 import { ORDERS_BFF, PRODUCT_CUSTOMER } from '@/api/endpoints'
+import ProductSearchSelect from '@/components/common/ProductSearchSelect.vue'
+import type { CustomerProductSearchItem } from '@/api/customerProduct'
 
 const visible = ref(false)
 const submitting = ref(false)
@@ -191,11 +180,12 @@ interface ProductSuggestion {
   product_code?: string
 }
 
-const selectedProduct = ref<ProductSuggestion | null>(null)
+const selectedProduct = ref<CustomerProductSearchItem | null>(null)
 
 const singleForm = reactive({
   search_keyword: '',
   customer_code: '',
+  customer_model: '',
   oe_number: '',
   detail_desc: '',
   quantity: 1,
@@ -236,44 +226,23 @@ function formatAmount(amount: number): string {
   return isNaN(amount) ? '0.00' : amount.toFixed(2)
 }
 
-// 产品搜索
-let searchTimer: ReturnType<typeof setTimeout> | null = null
-
-async function searchProducts(query: string, callback: (results: ProductSuggestion[]) => void) {
-  if (searchTimer) clearTimeout(searchTimer)
-  
-  if (!query || query.length < 2) {
-    callback([])
-    return
-  }
-  
-  searchTimer = setTimeout(async () => {
-    try {
-      const res = await fetch(apiUrl(`${PRODUCT_CUSTOMER.search}?keyword=${encodeURIComponent(query)}`))
-      if (res.ok) {
-        const data = await res.json()
-        callback(data.results || data || [])
-      } else {
-        callback([])
-      }
-    } catch {
-      callback([])
-    }
-  }, 150)
+// onProductSelect
+function onProductSelect(item: CustomerProductSearchItem) {
+  selectedProduct.value = item
+  singleForm.customer_code = item.customer_code || item.customer_model || ''
+  singleForm.customer_model = item.customer_model || ''
+  singleForm.oe_number = item.oes[0] || ''
+  singleForm.detail_desc = item.product_name || ''
+  singleForm.unit_price = item.price_usd || 0
 }
 
-function onSearchChange() {
-  // 清除已选产品
+function onSearchClear() {
   selectedProduct.value = null
+  singleForm.customer_code = ''
+  singleForm.customer_model = ''
   singleForm.oe_number = ''
   singleForm.detail_desc = ''
-}
-
-function onProductSelect(item: ProductSuggestion) {
-  selectedProduct.value = item
-  singleForm.oe_number = item.oe_number || ''
-  singleForm.detail_desc = item.detail_desc || ''
-  singleForm.customer_code = item.product_code || ''
+  singleForm.unit_price = 0
 }
 
 // Excel 文件处理
@@ -363,6 +332,7 @@ async function submitSingle() {
           items: [{
             product_code: singleForm.customer_code,
             customer_code: singleForm.customer_code,
+            customer_model: singleForm.customer_model || undefined,
             oe_number: singleForm.oe_number || undefined,
             detail_desc: singleForm.detail_desc || undefined,
             quantity: singleForm.quantity,
@@ -444,6 +414,7 @@ function onClose() {
   singleFormRef.value?.resetFields()
   singleForm.search_keyword = ''
   singleForm.customer_code = ''
+  singleForm.customer_model = ''
   singleForm.oe_number = ''
   singleForm.detail_desc = ''
   singleForm.quantity = 1

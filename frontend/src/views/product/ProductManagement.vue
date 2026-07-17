@@ -13,6 +13,11 @@
           placeholder="搜索 OE号/产品编号/系统编号/品牌/描述"
           @keyup.enter="loadProducts(1)"
         />
+        <ProductSearchSelect
+          v-model="quickJumpProduct"
+          placeholder="输入产品名称/型号快速定位"
+          @select="onQuickJump"
+        />
         <el-select v-model="filters.categoryLevel1" clearable filterable placeholder="全部大类" class="filter-select" @change="onCategoryLevel1Change">
           <el-option v-for="item in parentCategories" :key="item.code" :label="item.name" :value="item.code" />
         </el-select>
@@ -158,6 +163,8 @@ import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import { assetUrl } from '@/api/base'
 import { productsApi, type CategoryOption, type CustomerOption, type CustomerProduct, type ProductFormPayload } from '@/api/products'
 import { FALLBACK_PARENT_CATEGORIES, FALLBACK_CHILD_CATEGORIES } from '@/constants/productCategories'
+import ProductSearchSelect from '@/components/common/ProductSearchSelect.vue'
+import type { CustomerProductSearchItem } from '@/api/customerProduct'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -180,6 +187,8 @@ const filters = reactive({
   categoryLevel1: undefined as string | undefined,
   categoryLevel2: undefined as string | undefined,
 })
+
+const quickJumpProduct = ref<CustomerProductSearchItem | null>(null)
 
 const parentCategories = computed(() =>
   categories.value.filter(c => !c.parent_id)
@@ -281,6 +290,14 @@ async function loadProducts(nextPage = page.value) {
   } finally {
     loading.value = false
   }
+}
+
+async function onQuickJump(item: CustomerProductSearchItem) {
+  quickJumpProduct.value = item
+  // 直接用 product_id 打开编辑框，跳过列表 substring 过滤
+  productsApi.get(item.id).then(res => {
+    openEdit(res.data)
+  })
 }
 
 function resetFilters() {

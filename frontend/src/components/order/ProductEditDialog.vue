@@ -681,6 +681,8 @@ import { Plus, Close } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
 import { orderSummaryApi } from '@/api/orderSummary'
 import { suppliersApi, type Supplier } from '@/api/suppliers'
+import { productsApi } from '@/api/products'
+import { splitOeInput } from '@/api/customerProduct'
 import SupplierFormDialog from '@/components/supplier/SupplierFormDialog.vue'
 import { apiUrl, assetUrl } from '@/api/base'
 import { CUSTOMER_PRODUCTS, PRODUCT_CATEGORIES } from '@/api/endpoints'
@@ -1954,6 +1956,18 @@ async function onSaveClick() {
     if (failedField) {
       ElMessage.error('部分字段保存失败，请检查标红字段')
       return
+    }
+    // 同步 OE 列表（如果用户修改了 OE 字段）
+    if (form.oe_number) {
+      const productId = item.value?.product_id
+      if (productId) {
+        try {
+          await productsApi.bulkSyncOes(productId, splitOeInput(form.oe_number))
+        } catch {
+          // OE 同步失败不影响主保存流程，仅警告
+          console.warn('[ProductEditDialog] OE 同步失败')
+        }
+      }
     }
     initialFormSnapshot.value = createFormSnapshot()
     ElMessage.success('保存成功')
