@@ -2,6 +2,7 @@
 客户产品管理 API 路由
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional, List
 import json
@@ -13,7 +14,11 @@ from crud.customer_product import (
     get_product_codes, get_product_oes, add_product_code, add_product_oe,
     delete_product_code, delete_product_oe, set_primary_code, set_primary_oe,
     batch_add_codes, batch_add_oes, search_by_oe_number, search_by_code,
+    bulk_sync_oes,
 )
+from schemas.product_search import ProductSearchResponse
+from crud.product_search import search_products
+import logging
 from crud.customer import get_customer as get_customer_by_id
 from schemas.customer_product import (
     CustomerProductCreate, CustomerProductUpdate, CustomerProductResponse,
@@ -190,6 +195,58 @@ def get_customer_product_by_system_code_api(system_code: str, db: Session = Depe
     if not customer_product:
         raise HTTPException(status_code=404, detail="客户产品不存在")
     return _build_response(customer_product, db)
+
+
+@router.get("/search", response_model=ProductSearchResponse)
+def search_products_api(
+    keyword: str = Query(..., min_length=1, max_length=100),
+    customer_id: Optional[int] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """
+    多字段产品搜索（2026-07-17 引入）：
+    - customer_model 精确匹配 score=100，模糊 score=80
+    - PI item 中文/英文/简称：score=60/55/45/40
+    - PrdCustomerProduct.detail_desc: score=30
+    - OE 子串命中: score=50
+    返回: { results: 按 score desc, total }
+    """
+    try:
+        return search_products(
+            db, keyword=keyword, customer_id=customer_id, limit=limit
+        )
+    except Exception as e:
+        logging.getLogger(__name__).exception("[product_search] search failed")
+        raise HTTPException(status_code=500, detail=f"search failed: {e}")
+
+
+class BulkSyncOERequest(BaseModel):
+    oes: list[str]
+    set_first_as_primary: bool = True
+
+
+@router.post("/{product_id}/oes/bulk-sync")
+def bulk_sync_oes_api(
+    product_id: int,
+    request: BulkSyncOERequest,
+    db: Session = Depends(get_db),
+):
+    """
+    差量同步一个客户产品的 OE 号列表（2026-07-17）。
+    - 单事务原子，失败整体回滚
+    - 有序去重（按用户输入顺序）
+    - 默认将首条设为主 OE
+    """
+    result = bulk_sync_oes(
+        db,
+        customer_product_id=product_id,
+        oes=request.oes,
+        set_first_as_primary=request.set_first_as_primary,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="客户产品不存在")
+    return result
 
 
 @router.get("/{product_id}", response_model=CustomerProductResponse)

@@ -56,6 +56,7 @@ def create_pi_invoice(db: Session, pi: PIInvoiceCreate) -> PiProformaInvoice:
             unit_price=item.unit_price,
             total_price=total_price,
             customer_code=item.customer_code,
+            customer_model=item.customer_model,        # 2026-07-17 搜索服务接入
             detail_desc=item.detail_desc,
             remark=item.remark
         )
@@ -161,6 +162,7 @@ def update_pi_invoice(db: Session, pi_id: int, pi_update: PIInvoiceUpdate) -> Pi
                 unit_price=item.unit_price,
                 total_price=total_price,
                 customer_code=item.customer_code,
+                customer_model=item.customer_model,        # 2026-07-17 搜索服务接入
                 detail_desc=item.detail_desc,
                 remark=item.remark
             )

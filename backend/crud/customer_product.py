@@ -653,3 +653,101 @@ def search_by_code(db: Session, code: str) -> List[PrdCustomerProduct]:
         PrdCustomerProduct.id.in_(product_ids),
         PrdCustomerProduct.is_active == True
     ).all()
+
+
+def bulk_sync_oes(
+    db: Session,
+    customer_product_id: int,
+    oes: list[str],
+    set_first_as_primary: bool = True,
+) -> Optional[dict]:
+    """
+    差量同步一个客户产品的 OE 号列表（2026-07-17 引入）。
+    - 保留仍存在的 OE 记录（id / created_at 不变），仅更新 is_primary
+    - 删除请求中不存在的 OE
+    - 仅插入新增的 OE
+    - 默认将去重后列表的首条设为主 OE
+    返回: {"added": int, "removed": int, "total": int, "primary_oe": Optional[str]} 或 None（产品不存在）
+    """
+    import logging as _logging
+
+    # 有序去重（不破坏输入顺序）——纯 Python 计算，放在事务外
+    normalized: list[str] = []
+    for oe in oes:
+        s = str(oe).strip()
+        if s and s not in normalized:
+            normalized.append(s)
+
+    removed = 0
+    added = 0
+    final_primary: Optional[PrdCustomerProductOE] = None
+    not_found = False
+
+    # with db.begin() 确保事务边界完全托管：所有 SQL 操作必须在同一事务内执行
+    with db.begin():
+        customer_product = get_customer_product(db, customer_product_id)
+        if not customer_product:
+            not_found = True
+        else:
+            existing = {
+                oe.oe_number: oe
+                for oe in get_product_oes(db, customer_product_id)
+            }
+            desired_set = set(normalized)
+
+            # 删除不存在的
+            for number, oe in list(existing.items()):
+                if number not in desired_set:
+                    db.delete(oe)
+                    removed += 1
+
+            # 保留 / 新增
+            preserved: list[PrdCustomerProductOE] = []
+            for number in normalized:
+                if number in existing:
+                    oe = existing[number]
+                else:
+                    oe = PrdCustomerProductOE(
+                        customer_product_id=customer_product_id,
+                        oe_number=number,
+                        is_primary=False,
+                    )
+                    db.add(oe)
+                    added += 1
+                preserved.append(oe)
+
+            # 主 OE 规则
+            if set_first_as_primary and normalized:
+                primary_number = normalized[0]
+                for oe in preserved:
+                    oe.is_primary = (oe.oe_number == primary_number)
+            else:
+                original_primary = next(
+                    (oe for oe in existing.values() if oe.is_primary), None
+                )
+                if original_primary and original_primary.oe_number in desired_set:
+                    for oe in preserved:
+                        oe.is_primary = (
+                            oe.oe_number == original_primary.oe_number
+                        )
+                else:
+                    for oe in preserved:
+                        oe.is_primary = False
+
+            final_primary = next(
+                (oe for oe in preserved if oe.is_primary), None
+            )
+
+    if not_found:
+        return None
+
+    _logging.getLogger(__name__).info(
+        f"[product_search] bulk_sync product={customer_product_id} "
+        f"added={added} removed={removed} total={len(normalized)}"
+    )
+    return {
+        "added": added,
+        "removed": removed,
+        "total": len(normalized),
+        "primary_oe": final_primary.oe_number if final_primary else None,
+    }
