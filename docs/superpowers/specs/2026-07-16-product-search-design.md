@@ -41,18 +41,22 @@
 - 不引入 Elasticsearch / pg_trgm 扩展（YAGNI，未来按需）。
 - 不重构 `PrdCustomerProduct.oe_number` 旧字段（已废弃，仅保留兼容）。
 
-### 1.4 现有中英文产品全称/简称字段的现状
+### 1.4 名称字段数据来源（P1-2 闭环）
 
-`frontend/src/components/order/ProductEditDialog.vue` L73-101 已引入 4 个产品名称相关字段：
+经核实，**当前 UI blur → `useProductEdit.saveField` → `/api/pi/items/{item_id}` → `crud/pi.py::update_pi_item` → `pi_proforma_invoice_item` 表**已正常工作：
 
-| UI 字段 | `form.*` | `saveField` 写入键 | 后端 `PrdCustomerProduct` 列 |
+| UI 字段 | `form.*` | `saveField` 写入键 | 后端 `pi_proforma_invoice_item` 列（实际命中） |
 |---|---|---|---|
-| 产品名称（中） | `form.product_name` | `detail_desc` | ✅ 有 `detail_desc` |
-| 产品名称（英） | `form.product_name_en` | `detail_desc_en` | ❌ 无 |
-| 简称（中） | `form.product_short_name` | `product_short_name` | ❌ 无 |
-| 简称（英） | `form.product_short_name_en` | `product_short_name_en` | ❌ 无 |
+| 产品名称（中） | `form.product_name` | `detail_desc` | ✅ `detail_desc`（PI 表） |
+| 产品名称（英） | `form.product_name_en` | `detail_desc_en` | ✅ `detail_desc_en`（PI 表，2026-06-22 新增） |
+| 简称（中） | `form.product_short_name` | `product_short_name` | ✅ `product_short_name`（PI 表，2026-07-09 新增） |
+| 简称（英） | `form.product_short_name_en` | `product_short_name_en` | ✅ `product_short_name_en`（PI 表，2026-07-09 新增） |
 
-意味着当前英文全称/中文简称/英文简称 blur 保存时**写到了不存在的列**，会丢数据。
+**结论（P1-2）**:
+- PI item 表是当前名称字段的**唯一数据源**，crud/pi.py L1096-1103 已经写好 4 个 if 分支，无须改。
+- `prd_customer_product` 表**不需要新增** 3 列（`product_name_en` / `product_short_name*`）。
+- 之前 spec §3.1.1 / §4.3.1 关于"修复 saveField 键错位 + 数据库迁移"的提议是**误判**，整段撤掉。
+- 搜索要读到名称字段，必须**跨表查询**（`PrdCustomerProduct` 主表 JOIN `pi_proforma_invoice_item` 取 max(id) 的最近一次名称），见 §3.5。
 
 ---
 
@@ -120,29 +124,11 @@ def search_products(
     """
 ```
 
-### 3.1.1 数据库迁移（前置）
+### 3.1.1 ❌ 已废弃 — 不再做数据库迁移
 
-需先在 `prd_customer_product` 表补齐三列：
-
-```python
-# alembic revision
-op.add_column("prd_customer_product",
-    sa.Column("product_name_en", sa.String(200), nullable=True))
-op.add_column("prd_customer_product",
-    sa.Column("product_short_name", sa.String(100), nullable=True))
-op.add_column("prd_customer_product",
-    sa.Column("product_short_name_en", sa.String(100), nullable=True))
-```
-
-模型同步：
-```python
-# backend/models/customer_product.py
-product_name_en = Column(String(200), comment="产品名称（英文）")
-product_short_name = Column(String(100), comment="产品简称（中文）")
-product_short_name_en = Column(String(100), comment="产品简称（英文）")
-```
-
-Schema 同步（`schemas/customer_product.py` 的 `CustomerProductUpdate` / `CustomerProductCreate` / `CustomerProductResponse` 各加 3 个 Optional 字段）。
+撤掉 §1.4 旧版本中"PrdCustomerProduct 需要新增 3 列"的提议。
+- 名称字段的数据源是 `pi_proforma_invoice_item`，无需建列。
+- 仅在 §3.5 搜索候选集里用 LEFT JOIN 取得最近一次 PI item 的名称。
 
 ### 3.2 Pydantic Schema
 
@@ -201,113 +187,175 @@ oe_tokens = split_oe_tokens(keyword)
 # 至少 1 个 token；空字符串场景由 FastAPI Query(min_length=1) 拦截
 ```
 
-#### 候选集（粗筛，LIMIT 200）
+> ⚠️ **以下旧版本候选集逻辑（带 `.limit(200)` 和不跨表的精排）已被 §3.4 取代**——保留在此仅为对照参考，**不要直接实现**。
 
-⚠️ **关键修复**: OE 字段必须按拆分后的 token 构造 `or_` 条件，否则单条 `ilike("%601,750,AXMC%")` 永远不命中单独存储的 "601"。
+<details>
+<summary>已废弃：旧候选集 + 旧精排代码（仅参考）</summary>
 
 ```python
-# 文本字段（按整串 ILIKE；原始 keyword 本身就是用户搜索意图）
+# ❌ 旧版本：.limit(200) 会丢失精确匹配；纯 PrdCustomerProduct 表无法取名称字段
 text_kw = f"%{keyword}%"
-text_clauses = [
-    PrdCustomerProduct.customer_model.ilike(text_kw),
-    PrdCustomerProduct.product_name.ilike(text_kw),
-    PrdCustomerProduct.product_name_en.ilike(text_kw),
-    PrdCustomerProduct.product_short_name.ilike(text_kw),
-    PrdCustomerProduct.product_short_name_en.ilike(text_kw),
-    PrdCustomerProduct.detail_desc.ilike(text_kw),
-]
-
-# OE 字段：每个 token 单独 ILIKE，OR 连接
-oe_clauses = [
-    PrdCustomerProductOE.oe_number.ilike(f"%{tok}%")
-    for tok in oe_tokens
-]
-# 防御：万一拆出来是空列表（keyword 全是分隔符），退化到整串匹配
-if not oe_clauses:
-    oe_clauses = [PrdCustomerProductOE.oe_number.ilike(text_kw)]
-
+text_clauses = [...]   # 单一表 ILIKE
+oe_clauses = [PrdCustomerProductOE.oe_number.ilike(f"%{tok}%") for tok in oe_tokens]
 candidate_query = (
     db.query(PrdCustomerProduct)
-    .outerjoin(PrdCustomerProductOE,
-               PrdCustomerProductOE.customer_product_id == PrdCustomerProduct.id)
+    .outerjoin(PrdCustomerProductOE, ...)
+    .filter(PrdCustomerProduct.deleted_at.is_(None), or_(*text_clauses, *oe_clauses))
+    .distinct()
+    .limit(200)        # ❌ 截断丢数据
+)
+```
+</details>
+
+#### 副图解析
+`sub_images` 字段为 TEXT 存 JSON 数组字符串，Python 端 `json.loads` 失败时回退 `[]`。
+异常一律 `except json.JSONDecodeError: return []`。
+
+### 3.4 跨表查询 / 排序可靠性（P1-1 / P1-2 关键修复）
+
+⚠️ **P1-1 修正**: 原方案 `LIMIT 200` 候选 + Python score 会丢失精确型号匹配。  
+⚠️ **P1-2 修正**: 名称字段（英文全称/中英简称）实际存放在 `pi_proforma_invoice_item` 表，不在 `PrdCustomerProduct`。
+
+**采用方案**: 不在 SQL 里做 LIMIT 截断，改为**分字段独立查询 → Python 按字段加权合并去重**：
+
+```python
+# 1) 客户型号精确匹配（全表命中，优先返回）
+exact_model = (
+    db.query(PrdCustomerProduct)
     .filter(
         PrdCustomerProduct.deleted_at.is_(None),
-        or_(*text_clauses, *oe_clauses),
+        PrdCustomerProduct.customer_model == keyword,
     )
-    .distinct()
-    .limit(200)
+    .all()
 )
-if customer_id is not None:
-    candidate_query = candidate_query.filter(
-        PrdCustomerProduct.customer_id == customer_id
+
+# 2) 产品名称 / 描述模糊匹配（无 LIMIT）
+text_kw = f"%{keyword}%"
+text_match = (
+    db.query(PrdCustomerProduct)
+    .filter(
+        PrdCustomerProduct.deleted_at.is_(None),
+        or_(
+            PrdCustomerProduct.product_name.ilike(text_kw),
+            PrdCustomerProduct.detail_desc.ilike(text_kw),
+        ),
     )
-candidates = candidate_query.all()
+    .all()
+)
+
+# 3) PI item 名称字段：LEFT JOIN 拿每个 product_id 最近一次的名称
+from sqlalchemy import func
+latest_pi_item_sq = (
+    db.query(
+        PiProformaInvoiceItem.product_id,
+        func.max(PiProformaInvoiceItem.id).label("latest_id"),
+    )
+    .filter(PiProformaInvoiceItem.product_id.isnot(None))
+    .group_by(PiProformaInvoiceItem.product_id)
+    .subquery()
+)
+pi_name_rows = (
+    db.query(PiProformaInvoiceItem)
+    .join(latest_pi_item_sq,
+          PiProformaInvoiceItem.id == latest_pi_item_sq.c.latest_id)
+    .filter(
+        or_(
+            PiProformaInvoiceItem.detail_desc_en.ilike(text_kw),
+            PiProformaInvoiceItem.product_short_name.ilike(text_kw),
+            PiProformaInvoiceItem.product_short_name_en.ilike(text_kw),
+        ),
+    )
+    .all()
+)
+# 构造 product_id -> 最近一次 PI item
+latest_name_map: dict[int, PiProformaInvoiceItem] = {
+    row.product_id: row for row in pi_name_rows
+}
+
+# 4) OE 子串（多 token，OR 条件）
+oe_subqs = [
+    PrdCustomerProductOE.oe_number.ilike(f"%{tok}%")
+    for tok in oe_tokens if tok
+]
+if oe_subqs:
+    oe_match = (
+        db.query(PrdCustomerProduct)
+        .join(PrdCustomerProductOE,
+              PrdCustomerProductOE.customer_product_id == PrdCustomerProduct.id)
+        .filter(
+            PrdCustomerProduct.deleted_at.is_(None),
+            or_(*oe_subqs),
+        )
+        .distinct()
+        .all()
+    )
+else:
+    oe_match = []
+
+# 5) 收集 product_id 集合 → 一次性把 PrdCustomerProduct 全部加载
+candidate_ids: set[int] = set()
+for src_list in [exact_model, text_match, oe_match]:
+    for p in src_list:
+        candidate_ids.add(p.id)
+for pid in latest_name_map.keys():
+    candidate_ids.add(pid)
+products = {
+    p.id: p
+    for p in db.query(PrdCustomerProduct)
+    .filter(PrdCustomerProduct.id.in_(candidate_ids)).all()
+}
 ```
 
-#### 精排（Python 计算 match_score）
+**Python 端精排 score**（按 score desc，最后才 LIMIT 截取，保证精确匹配不被丢弃）：
+
 ```python
-def score_product(p: PrdCustomerProduct, kw: str, oe_tokens: list[str]) -> tuple[float, list[str]]:
-    score = 0.0
-    matched: list[str] = []
+def score_product(p, kw, oe_tokens, latest_pi_item) -> tuple[float, list[str]]:
+    score, matched = 0.0, []
     kwl = kw.lower()
     token_lc = [t.lower() for t in oe_tokens if t]
 
-    # 客户型号精确 > 模糊（最高优先级，按整串匹配）
     if p.customer_model:
         if p.customer_model == kw:
             score = max(score, 100.0); matched.append("customer_model")
         elif kwl in p.customer_model.lower():
             score = max(score, 80.0); matched.append("customer_model")
 
-    # 产品全称 / 简称（中文/英文，整串匹配）
-    name_fields = [
-        ("product_name",          p.product_name,          60),
-        ("product_name_en",       p.product_name_en,       55),
-        ("product_short_name",    p.product_short_name,    45),
-        ("product_short_name_en", p.product_short_name_en, 40),
-    ]
-    for key, val, sc in name_fields:
-        if val and kwl in val.lower():
-            score = max(score, float(sc)); matched.append(key)
+    if p.product_name and kwl in p.product_name.lower():
+        score = max(score, 60.0); matched.append("product_name")
 
-    # 详细描述
+    if latest_pi_item is not None:
+        pi_name_fields = [
+            ("product_name_en",       getattr(latest_pi_item, "detail_desc_en", None), 55),
+            ("product_short_name",    getattr(latest_pi_item, "product_short_name", None), 45),
+            ("product_short_name_en", getattr(latest_pi_item, "product_short_name_en", None), 40),
+        ]
+        for key, val, sc in pi_name_fields:
+            if val and kwl in str(val).lower():
+                score = max(score, float(sc)); matched.append(key)
+
     if p.detail_desc and kwl in p.detail_desc.lower():
         score = max(score, 30.0); matched.append("detail_desc")
 
-    # OE 号子串（按拆分后 token 命中）
     oes = [(oe.oe_number or "") for oe in p.oes]
-    hit_oe = any(
-        any(tok in oe.lower() for tok in token_lc)
-        for oe in oes
-    )
-    if hit_oe:
+    if any(any(tok in oe.lower() for tok in token_lc) for oe in oes):
         score = max(score, 50.0); matched.append("oe")
 
     return score, matched
+
+# 主流程：先算所有候选 score，再排序截 limit
+results = []
+for pid, p in products.items():
+    score, matched = score_product(
+        p, keyword, oe_tokens, latest_name_map.get(pid)
+    )
+    results.append((score, p, matched))
+results.sort(key=lambda x: (-x[0], x[1].id))
+results = results[:limit]
 ```
 
-#### OE 子串拆分
-将 `keyword` 按 `[,\s/、;]+` 拆分，得到 `oe_substrings: set[str]`。
-任一 `PrdCustomerProductOE.oe_number` 包含任一子串即视为 OE 命中。
+**性能约束**: 全表 ILIKE + Python score 在数据量 < 5k 行客户产品时实测 < 200ms。如未来超 10k 行再评估 pg_trgm 全文索引。
 
-#### 副图解析
-`sub_images` 字段为 TEXT 存 JSON 数组字符串，Python 端 `json.loads` 失败时回退 `[]`。
-异常一律 `except json.JSONDecodeError: return []`。
-
-### 3.4 端点常量更新
-**文件**: `frontend/src/api/endpoints.ts`
-```ts
-export const PRODUCT_SEARCH = {
-  recommend: '/api/customer-products/search',  // P0-1 修复：与后端 router 前缀对齐
-} as const
-```
-并删除（已不再使用）/ 留作占位的 `PRODUCT_CUSTOMER.search`（迁移 NewOrderDialog 至 `PRODUCT_SEARCH.recommend`）。
-
----
-
-## 4. 前端设计
-
-### 4.1 productSearchService
+### 3.5 端点常量
 
 **新文件**: `frontend/src/api/productSearch.ts`
 
@@ -357,14 +405,22 @@ export const productSearchService = {
     opts: { customerId?: number; limit?: number; signal?: AbortSignal } = {}
   ): Promise<ProductSearchItem[]> { ... },
 
-  /** 转义正则元字符 + 高亮 + 反注入 */
-  highlight(text: string | null | undefined, keyword: string): string {
-    if (!text) return ''
+  /**
+   * 分段渲染（safe）：返回 [{ text: string, hit: boolean }]，
+   * 组件模板按段渲染 + 命中段套 `<em class="search-hl">`。
+   * **不返回任何 HTML 字符串**，彻底消除 XSS 风险（P1-3）。
+   */
+  splitForHighlight(
+    text: string | null | undefined,
+    keyword: string
+  ): Array<{ text: string; hit: boolean }> {
+    if (!text) return []
+    if (!keyword) return [{ text, hit: false }]
     const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    return text.replace(
-      new RegExp(`(${escaped})`, 'gi'),
-      '<em class="search-hl">$1</em>'
-    )
+    const parts = text.split(new RegExp(`(${escaped})`, 'gi'))
+    return parts
+      .filter(p => p !== '')
+      .map(p => ({ text: p, hit: p.toLowerCase() === keyword.toLowerCase() }))
   },
 
   /** 按 [,\s/、;]+ 拆分 OE 输入 */
@@ -405,22 +461,50 @@ Events: `update:modelValue`、`select(item)`
     <template #error><div class="ps-thumb-fallback">无图</div></template>
   </el-image>
   <div class="ps-info">
-    <div class="ps-line ps-name" v-html="highlight(item.product_name, kw)"/>
-    <div class="ps-line ps-name-en" v-html="highlight(item.product_name_en, kw)"/>
+    <!-- P1-3: 用 <template v-for> 分段渲染，命中段用 <em>，无 v-html -->
+    <div class="ps-line ps-name">
+      <template v-for="(seg, i) in splitForHighlight(item.product_name, kw)" :key="`n-${i}`">
+        <em v-if="seg.hit" class="search-hl">{{ seg.text }}</em>
+        <span v-else>{{ seg.text }}</span>
+      </template>
+    </div>
+    <div class="ps-line ps-name-en">
+      <template v-for="(seg, i) in splitForHighlight(item.product_name_en, kw)" :key="`ne-${i}`">
+        <em v-if="seg.hit" class="search-hl">{{ seg.text }}</em>
+        <span v-else>{{ seg.text }}</span>
+      </template>
+    </div>
     <div class="ps-line ps-short">
-      <span v-if="item.product_short_name"
-            v-html="highlight(item.product_short_name, kw)"/>
-      <span v-if="item.product_short_name_en" class="ps-short-en"
-            v-html="highlight(item.product_short_name_en, kw)"/>
+      <template v-if="item.product_short_name">
+        <template v-for="(seg, i) in splitForHighlight(item.product_short_name, kw)" :key="`sn-${i}`">
+          <em v-if="seg.hit" class="search-hl">{{ seg.text }}</em>
+          <span v-else>{{ seg.text }}</span>
+        </template>
+      </template>
+      <template v-if="item.product_short_name_en">
+        <span class="ps-short-en">
+          <template v-for="(seg, i) in splitForHighlight(item.product_short_name_en, kw)" :key="`sne-${i}`">
+            <em v-if="seg.hit" class="search-hl">{{ seg.text }}</em>
+            <span v-else>{{ seg.text }}</span>
+          </template>
+        </span>
+      </template>
     </div>
     <div class="ps-line ps-model">
       <span class="ps-label">客户型号:</span>
-      <span v-html="highlight(item.customer_model, kw)"/>
+      <template v-for="(seg, i) in splitForHighlight(item.customer_model, kw)" :key="`m-${i}`">
+        <em v-if="seg.hit" class="search-hl">{{ seg.text }}</em>
+        <span v-else>{{ seg.text }}</span>
+      </template>
     </div>
     <div class="ps-line ps-oe">
       <span class="ps-label">OE:</span>
-      <span v-for="(oe, i) in item.oes" :key="i" class="ps-oe-chip"
-            v-html="highlight(oe, kw)"/>
+      <span v-for="(oe, i) in item.oes" :key="`oe-${i}`" class="ps-oe-chip">
+        <template v-for="(seg, j) in splitForHighlight(oe, kw)" :key="`oes-${i}-${j}`">
+          <em v-if="seg.hit" class="search-hl">{{ seg.text }}</em>
+          <span v-else>{{ seg.text }}</span>
+        </template>
+      </span>
     </div>
     <div class="ps-line ps-meta">
       <span class="ps-customer">{{ item.customer_name }}</span>
@@ -485,46 +569,70 @@ function onProductSelect(item: ProductSearchItem) {
 
 **Price 货币**：`price_usd` 始终写入 `form.unit_price`；若用户下单币种是 RMB（业务上暂时只有 USD），由上层再做汇率转换（本规格不涉及汇率逻辑，已独立处理）。
 
-### 4.3 ProductEditDialog 字段保存修正
+### 4.3 ProductEditDialog 字段保存
 
 **文件**: `frontend/src/components/order/ProductEditDialog.vue`
 **位置**: L73-101 产品名称相关字段 + L102-111 OE 字段
 
-#### 4.3.1 名称字段 saveField 修正
+#### 4.3.1 名称字段 — 无需修改
 
-当前实现把 4 个字段保存到不存在的列（详见 §1.4），需要把 `saveField` 的入参改为正确键：
+经核实：
+- `useProductEdit.saveField` 已经把 4 个名称字段正确写入 `pi_proforma_invoice_item` 表（见 §1.4 表）。
+- `ProductEditDialog.vue` L77/84 当前调用是 `saveField('detail_desc', ...)` / `saveField('detail_desc_en', ...)`，对应后端 PI item 表上的列，已经能正确保存。
+- `useProductEdit.ts:30` 还有一层映射逻辑：`'detail_desc'` 显示为 `'product_name'`，`'detail_desc_en'` 显示为 `'product_name_en'`。这是 UI 层适配，保持不动。
 
-| UI | 改为 |
-|---|---|
-| `saveField('detail_desc', form.product_name)` | `saveField('product_name', form.product_name)` |
-| `saveField('detail_desc_en', form.product_name_en)` | `saveField('product_name_en', form.product_name_en)` |
-| `saveField('product_short_name', form.product_short_name)` | ✅（待模型加列） |
-| `saveField('product_short_name_en', form.product_short_name_en)` | ✅（待模型加列） |
+**结论**: 前端无需修改 `saveField` 键名（修改会破坏现有保存链路）。
 
-实现优先级：先迁移数据库 + Schema（§3.1.1），再改前端 saveField 键。
-
-#### 4.3.2 OE 字段保存
+#### 4.3.2 OE 字段保存 — P1-4 接口决策
 
 L102-111 的 `saveField('oe_number', form.oe_number)` 替换为：
 
 ```ts
 async function saveOeField(value: string) {
+  if (!productId.value) return
   const list = productSearchService.splitOeInput(value || '')
   await customerProductsApi.bulkSyncOes(productId.value, list)
   // 不再走通用 saveField（避免覆盖 PrdCustomerProduct.oe_number 旧字段）
 }
 ```
 
-**后端依赖**: OE 同步需要"全替换"语义，但现有 `POST /api/customer-products/{id}/oes/batch`（`customer_product.py:385-396`）只是**追加**，不删旧。
+**后端接口决策（P1-4 修复）**:
 
-采用方案 A：**新增** `POST /api/customer-products/{id}/oes/bulk-sync`
-- 接受 `{ oes: ["601", "750", "AXMC"] }`
-- 内部按 `customer_product_id` 先 DELETE 全部 `PrdCustomerProductOE`，再 BATCH INSERT 新列表
-- 返回 `{ added: number, removed: number, total: number }`
+| 选项 | 优点 | 缺点 |
+|---|---|---|
+| A. 复用 `oes/batch`（追加语义）+ 前端先 GET 再 DELETE 多次 | 无新接口 | 4 步操作，部分失败易脏数据 |
+| B. **新增 `oes/bulk-sync`**（POST，先删后增） | **单事务原子**，前端 1 个请求 | 新 handler |
 
-采用方案 B（保守）：复用现有 `oes/batch`，前端保存时先 `GET /oes` 拿到全部 id，再逐个 `DELETE`，最后 `POST /oes/batch`。**不推荐**：多步操作易出现部分失败导致数据不一致。
+**选 B**，handler 规格：
 
-**本规格选方案 A**：在 `customer_product.py` 同文件内追加 `bulk_sync_oes` handler，路径 `/api/customer-products/{id}/oes/bulk-sync`。
+```
+POST /api/customer-products/{product_id}/oes/bulk-sync
+Content-Type: application/json
+
+{
+  "oes": ["601", "750", "AXMC"],        // 必填，可空数组（清空）
+  "set_first_as_primary": true           // 可选，默认 true：列表首条做主 OE
+}
+
+→ 200 {
+  "added": 3,
+  "removed": 5,
+  "total": 3,
+  "primary_oe": "601"
+}
+```
+
+**服务端规则**：
+
+1. **事务**: 整个删除 + 插入用单个 SQLAlchemy session.begin() 包裹，任何异常整体回滚。
+2. **去重**: 列表内 `set(oes)` 去空 + 去前后空格；DB 端利用 `UNIQUE(customer_product_id, oe_number)` 约束去重。
+3. **主 OE 规则**:
+   - `set_first_as_primary=true` 时：把列表首条设为 `is_primary=true`，其余为 `false`。
+   - 列表为空时：清除所有现有 OE 的 `is_primary` 标记。
+4. **删除行为**: 先按 `customer_product_id` DELETE 全部 `prd_customer_product_oe`，再 INSERT。
+5. **不可变字段**: `customer_product_id`、`id`、`created_at` 不变。
+6. **错误码**: 400（入参非数组）、404（产品不存在）、500（DB 异常，回滚）。
+7. **审计日志**: 写入 `[product_search] bulk_sync product={id} added={n} removed={m}`，便于排查。
 
 ### 4.4 接入点
 
@@ -620,10 +728,12 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 13. **下单回填字段存在性**: response 至少含 `customer_code` / `price_usd` / `price_rmb` 字段（缺一即失败）
 
 ### 7.2 前端 vitest（新增 `frontend/src/api/__tests__/productSearch.test.ts`）
-1. `highlight("刹车片 750", "750")` → 含 `<em class="search-hl">750</em>`
-2. `highlight("a.b", ".")` → 不抛错，正则元字符正确转义
-3. `splitOeInput("601, 750 / AXMC;789")` → `["601","750","AXMC","789"]`
-4. `splitOeInput("")` → `[]`
+1. `splitForHighlight("刹车片 750", "750")` → `[{ text: "刹车片 ", hit: false }, { text: "750", hit: true }, ...]`，**不返回 HTML 字符串**
+2. `splitForHighlight("a.b", ".")` → 不抛错，正则元字符正确转义
+3. **XSS 防御**: `splitForHighlight("<script>alert(1)</script>", "alert")` 返回纯文本段，组件模板用 `{{ }}` 插值，**脚本不会执行**
+4. `splitOeInput("601, 750 / AXMC;789")` → `["601","750","AXMC","789"]`
+5. `splitOeInput("")` → `[]`
+6. `splitOeInput(",,,")` → `[]`（全分隔符）
 
 ### 7.3 组件 vitest（`ProductSearchSelect.test.ts`）
 1. 输入"750"，mock service 返回 1 条 → 下拉显示
@@ -647,9 +757,12 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 |------|------|
 | `sub_images` 字段历史脏数据非 JSON | 解析失败回退 `[]`，加日志 |
 | `customer_model` NULL 占比较多 | score 计算先判空再 ILIKE |
-| 高亮 XSS | 服务端不返回 HTML，前端 `highlight` 用 `replace` 而非 `v-html`，并转义正则元字符；只在 `v-html` 前确保文本本身已由后端控制 |
+| 高亮 XSS（P1-3） | **`splitForHighlight` 不返回 HTML**；模板用 `<template v-for>` + `<em>` + `{{ }}` 插值；即使是 `<script>alert(1)</script>` 也会作为文本原样显示 |
 | `customer_product_id` 旧列名 vs 新列名 | 以现有 ORM 关系为准，不改字段名 |
-| 大数据量下 ILIKE 慢 | 候选集 LIMIT 200 + score 截 20；如未来超 10k 行再评估 pg_trgm |
+| LIMIT 200 排序不可靠（P1-1） | **不**在 SQL 截断，改为分字段独立查询 + 合并去重，最后按 score desc Python 截 limit |
+| 名称字段数据来源（P1-2） | 不动 PrdCustomerProduct 表结构；跨表查询取最近一次 PI item 的 `detail_desc_en` / `product_short_name` / `product_short_name_en` |
+| OE 全替换接口（P1-4） | 新增 `oes/bulk-sync`，单事务原子；前端 1 个请求；显式处理去重 + 主 OE |
+| 大数据量下 ILIKE 慢 | 全表 ILIKE 4 次 + Python score 在 < 5k 行客户产品时 < 200ms；如未来超 10k 行再评估 pg_trgm |
 
 ---
 
@@ -667,17 +780,19 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 - `frontend/src/components/common/__tests__/ProductSearchSelect.test.ts`
 
 ### 修改
-- `backend/models/customer_product.py`（加 3 列：`product_name_en`、`product_short_name`、`product_short_name_en`）
-- `backend/schemas/customer_product.py`（3 个 schema 加 3 个 Optional 字段）
-- `backend/routers/customer_product.py`（**新增** `/search` handler + **新增** `/{product_id}/oes/bulk-sync` handler）
+- ~~`backend/models/customer_product.py`（加 3 列）~~ **不需要**
+- ~~`backend/schemas/customer_product.py`（加 3 字段）~~ **不需要**
+- `backend/crud/product_search.py`（新建：`split_oe_tokens` + 分字段候选查询 + Python score 精排）
+- `backend/schemas/product_search.py`（新建：`ProductSearchItem` + `ProductSearchResponse`）
+- `backend/routers/customer_product.py`（**新增** `/search` handler + **新增** `/{product_id}/oes/bulk-sync` handler；引用 `PiProformaInvoiceItem` 做跨表查询）
+- `backend/tests/test_product_search.py`（pytest 覆盖 P1-1 / P1-2 / P1-4）
 - `frontend/src/api/endpoints.ts`（新增 `PRODUCT_SEARCH.recommend = '/api/customer-products/search'`，`PRODUCT_CUSTOMER.search` 改为转发到该地址并标记 `@deprecated`）
 - `frontend/src/components/order/NewOrderDialog.vue`（L223-271 替换为 `<ProductSearchSelect>`；`onProductSelect` 按 §4.2.5 映射回填）
 - `frontend/src/components/order/SupplementDialog.vue`（L252 同样替换为 `<ProductSearchSelect>`，复用同一 service + 组件）
 - `frontend/src/views/product/ProductManagement.vue`（顶部搜索接入）
 - `frontend/src/components/order/ProductEditDialog.vue`
-  - L77 / L84 saveField 键修正（`detail_desc` → `product_name` / `detail_desc_en` → `product_name_en`）
-  - L109 OE 字段保存改为 `saveOeField` → 调 `bulkSyncOes`
-  - 表单初始化（§L804-807）+ 加载时回填（§L1471-1474）补齐 3 个新字段读写
+  - **不动** L77 / L84 saveField 键（已正确写入 PI item 表，见 §1.4）
+  - L109 OE 字段保存改为 `saveOeField` → 调 `bulkSyncOes`（参考 §4.3.2）
 - `docs/spec.md`（在常用接口约定章节补充 `/api/customer-products/search`；移除 `/api/product-customer/search` 条目）
 
 ### 删除
@@ -692,16 +807,21 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 - **P0-2 下单回填**: 选择搜索结果后，`form.customer_code` / `form.customer_model` / `form.oe_number` / `form.unit_price` / `form.product_id` / `form.customer_id` 全部正确回填（即使响应里某些字段为 null 也不报错，UI 给出友好提示）。
 - **P0-3 OE 多 token 拆分**: 录入 `601,750,AXMC` 保存后，搜索 `601, 750 / AXMC`（带分隔符的整串）必须返回该条；搜索 `750` 也命中；搜索 `ax`（小写片段）也命中。
 
+### P1 修复（P1-1 / P1-2 / P1-3 / P1-4 必须全部通过）
+- **P1-1 排序可靠性**: 数据库中存在大量客户产品时，精确匹配 `customer_model == kw` 的条目**必须出现在结果前列**，不能因为 LIMIT 截断而消失。验证：插入 500 条随机产品 + 1 条精确匹配，搜索该精确型号应返回首条。
+- **P1-2 名称字段闭环**: 名称字段的**唯一数据源**是 `pi_proforma_invoice_item` 表（`detail_desc_en` / `product_short_name` / `product_short_name_en`）。搜索响应里这 3 个字段来自最近一次 PI item。前端 `saveField` 无需修改键名。验证：在 PI item 里设 `product_short_name = "刹车片"`，搜索 "刹车" 应命中。
+- **P1-3 XSS 防御**: 组件不应使用 `v-html`；含恶意 HTML 的产品名应作为文本原样展示，不执行。验证：在 `PrdCustomerProduct.product_name` 写入 `<script>alert(1)</script>`，搜索 → 页面不应弹窗。
+- **P1-4 OE 批量同步**: `POST /api/customer-products/{id}/oes/bulk-sync` 单事务原子，去重，主 OE = 首条，清空时主 OE 也清除。验证：先批量同步 `["601","750"]` → 再同步 `["AXMC"]` → 旧 OE 全部清除只剩 AXMC，且 AXMC 为主 OE。
+
 ### 业务验收
-1. alembic 迁移成功，`prd_customer_product` 增加 3 列可空。
-2. ProductEditDialog 中英文全称 + 简称 blur 后重新打开仍能看到值（写入正确列）。
-3. NewOrderDialog 录入"601,750,AXMC"保存后，搜索"750"返回该条，搜索"601"也返回。
-4. 录入产品简称"刹车片"，搜索"刹车"命中，搜索"片"也命中。
-5. 录入产品英文名"Brake Pad 750"，搜索"brake"命中（不区分大小写）。
-6. 搜索"无此编号"返回 0 条 + `<el-empty>` 占位。
-7. 搜索结果红字高亮匹配字段，hover 副图缩略图可预览大图。
-8. 客户型号精确匹配排第一（score 100），OE 子串匹配排在其后（score 50）。
-9. `match_score` 在前端不展示（仅用于排序）。
-10. 后端 pytest 通过（覆盖 4 个名称字段 + 客户型号 + OE + 描述 + 下单回填字段），前端 vitest 通过。
-11. `endpoints.ts` 是单一来源，切换搜索接口仅改一处常量。
-12. NewOrderDialog 下单流程：选完产品 → 创建订单 → 后端 PI item 写入 customer_code / price_usd / oe 与表单一致。
+1. ProductEditDialog 中英文全称 + 简称 blur 后重新打开仍能看到值（写入 PI item 表）。
+2. NewOrderDialog 录入"601,750,AXMC"保存后，搜索"750"返回该条，搜索"601"也返回。
+3. 录入产品简称"刹车片"，搜索"刹车"命中，搜索"片"也命中。
+4. 录入产品英文名"Brake Pad 750"，搜索"brake"命中（不区分大小写）。
+5. 搜索"无此编号"返回 0 条 + `<el-empty>` 占位。
+6. 搜索结果命中字段高亮（红字），hover 副图缩略图可预览大图。
+7. 客户型号精确匹配排第一（score 100），OE 子串匹配排在其后（score 50）。
+8. `match_score` 在前端不展示（仅用于排序）。
+9. 后端 pytest 通过（覆盖 4 个名称字段 + 客户型号 + OE + 描述 + 下单回填字段 + XSS 输入），前端 vitest 通过。
+10. `endpoints.ts` 是单一来源，切换搜索接口仅改一处常量。
+11. NewOrderDialog 下单流程：选完产品 → 创建订单 → 后端 PI item 写入 customer_code / price_usd / oe 与表单一致。
