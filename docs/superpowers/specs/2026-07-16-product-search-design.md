@@ -23,16 +23,35 @@
 
 ### 1.2 目标
 1. 提供统一、独立、可复用的产品搜索服务，覆盖下单、产品管理、未来模块。
-2. 匹配字段包含：**OE 号（关联表）**、**客户型号 customer_model（精确匹配优先）**、
-   **产品名称 product_name**、**详细描述 detail_desc**。
+2. 匹配字段包含：
+   - **OE 号（关联表 `prd_customer_product_oe`，子串匹配）**
+   - **客户型号 `customer_model`（精确匹配优先 score 100）**
+   - **产品名称 `product_name`（中文全称）**
+   - **产品英文全称 `product_name_en`**
+   - **产品中文简称 `product_short_name`**
+   - **产品英文简称 `product_short_name_en`**
+   - **详细描述 `detail_desc`**
 3. 保存 OE 号时按逗号/空格/斜杠/分号拆分多条入库，搜索时任一 OE 子串命中即可。
 4. 搜索结果展示：图片（主图 + 副图缩略）、匹配字段红字高亮、字段来源标注、客户名。
 5. 搜索接口与前端组件完全解耦，便于后续接 ES / pg_trgm 等。
+6. **修复现有 saveField 键错位**：把 UI 上的 4 个名称字段正确写入数据库新列。
 
 ### 1.3 非目标
 - 不引入 Elasticsearch / pg_trgm 扩展（YAGNI，未来按需）。
-- 不新增 `name_short_cn` / `name_short_en` 字段，靠 `product_name` / `detail_desc` 兜底。
 - 不重构 `PrdCustomerProduct.oe_number` 旧字段（已废弃，仅保留兼容）。
+
+### 1.4 现有中英文产品全称/简称字段的现状
+
+`frontend/src/components/order/ProductEditDialog.vue` L73-101 已引入 4 个产品名称相关字段：
+
+| UI 字段 | `form.*` | `saveField` 写入键 | 后端 `PrdCustomerProduct` 列 |
+|---|---|---|---|
+| 产品名称（中） | `form.product_name` | `detail_desc` | ✅ 有 `detail_desc` |
+| 产品名称（英） | `form.product_name_en` | `detail_desc_en` | ❌ 无 |
+| 简称（中） | `form.product_short_name` | `product_short_name` | ❌ 无 |
+| 简称（英） | `form.product_short_name_en` | `product_short_name_en` | ❌ 无 |
+
+意味着当前英文全称/中文简称/英文简称 blur 保存时**写到了不存在的列**，会丢数据。
 
 ---
 
@@ -95,6 +114,30 @@ def search_products(
     """
 ```
 
+### 3.1.1 数据库迁移（前置）
+
+需先在 `prd_customer_product` 表补齐三列：
+
+```python
+# alembic revision
+op.add_column("prd_customer_product",
+    sa.Column("product_name_en", sa.String(200), nullable=True))
+op.add_column("prd_customer_product",
+    sa.Column("product_short_name", sa.String(100), nullable=True))
+op.add_column("prd_customer_product",
+    sa.Column("product_short_name_en", sa.String(100), nullable=True))
+```
+
+模型同步：
+```python
+# backend/models/customer_product.py
+product_name_en = Column(String(200), comment="产品名称（英文）")
+product_short_name = Column(String(100), comment="产品简称（中文）")
+product_short_name_en = Column(String(100), comment="产品简称（英文）")
+```
+
+Schema 同步（`schemas/customer_product.py` 的 `CustomerProductUpdate` / `CustomerProductCreate` / `CustomerProductResponse` 各加 3 个 Optional 字段）。
+
 ### 3.2 Pydantic Schema
 
 **文件**: `backend/schemas/product_search.py`（新建）
@@ -105,13 +148,18 @@ class ProductSearchItem(BaseModel):
     customer_id: int
     customer_name: str
     customer_model: str | None
-    product_name: str | None
+    product_name: str | None          # 中文全称
+    product_name_en: str | None       # 英文全称
+    product_short_name: str | None    # 中文简称
+    product_short_name_en: str | None # 英文简称
     detail_desc: str | None
     brand: str | None
     image_url: str | None
     sub_images: list[str] = []
     oes: list[str] = []
     matched_in: list[Literal["customer_model", "product_name",
+                              "product_name_en", "product_short_name",
+                              "product_short_name_en",
                               "detail_desc", "oe"]] = []
     match_score: float
 
@@ -136,6 +184,9 @@ candidate_query = (
         or_(
             PrdCustomerProduct.customer_model.ilike(kw),
             PrdCustomerProduct.product_name.ilike(kw),
+            PrdCustomerProduct.product_name_en.ilike(kw),
+            PrdCustomerProduct.product_short_name.ilike(kw),
+            PrdCustomerProduct.product_short_name_en.ilike(kw),
             PrdCustomerProduct.detail_desc.ilike(kw),
             PrdCustomerProductOE.oe_number.ilike(kw),
         ),
@@ -155,18 +206,31 @@ candidates = candidate_query.all()
 def score_product(p: PrdCustomerProduct, kw: str, oe_substrings: set[str]) -> tuple[float, list[str]]:
     score = 0.0
     matched: list[str] = []
+    kwl = kw.lower()
 
+    # 客户型号精确 > 模糊（最高优先级）
     if p.customer_model:
         if p.customer_model == kw:
             score = max(score, 100.0); matched.append("customer_model")
-        elif kw.lower() in p.customer_model.lower():
+        elif kwl in p.customer_model.lower():
             score = max(score, 80.0); matched.append("customer_model")
 
-    if p.product_name and kw.lower() in p.product_name.lower():
-        score = max(score, 60.0); matched.append("product_name")
-    if p.detail_desc and kw.lower() in p.detail_desc.lower():
-        score = max(score, 40.0); matched.append("detail_desc")
+    # 产品全称 / 简称（中文/英文）
+    name_fields = [
+        ("product_name",          p.product_name,          60),
+        ("product_name_en",       p.product_name_en,       55),
+        ("product_short_name",    p.product_short_name,    45),
+        ("product_short_name_en", p.product_short_name_en, 40),
+    ]
+    for key, val, sc in name_fields:
+        if val and kwl in val.lower():
+            score = max(score, float(sc)); matched.append(key)
 
+    # 详细描述
+    if p.detail_desc and kwl in p.detail_desc.lower():
+        score = max(score, 30.0); matched.append("detail_desc")
+
+    # OE 号子串（关联表）
     oes = [oe.oe_number for oe in p.oes if oe.oe_number]
     if any(sub in (oe or "") for oe in oes for sub in oe_substrings):
         score = max(score, 50.0); matched.append("oe")
@@ -200,15 +264,23 @@ export const PRODUCT_SEARCH = {
 **新文件**: `frontend/src/api/productSearch.ts`
 
 ```ts
-export type MatchField = 'customer_model' | 'product_name'
-                      | 'detail_desc' | 'oe'
+export type MatchField = 'customer_model'
+                      | 'product_name'
+                      | 'product_name_en'
+                      | 'product_short_name'
+                      | 'product_short_name_en'
+                      | 'detail_desc'
+                      | 'oe'
 
 export interface ProductSearchItem {
   id: number
   customer_id: number
   customer_name: string
   customer_model: string | null
-  product_name: string | null
+  product_name: string | null          // 中文全称
+  product_name_en: string | null       // 英文全称
+  product_short_name: string | null    // 中文简称
+  product_short_name_en: string | null // 英文简称
   detail_desc: string | null
   brand: string | null
   image_url: string | null
@@ -278,6 +350,13 @@ Events: `update:modelValue`、`select(item)`
   </el-image>
   <div class="ps-info">
     <div class="ps-line ps-name" v-html="highlight(item.product_name, kw)"/>
+    <div class="ps-line ps-name-en" v-html="highlight(item.product_name_en, kw)"/>
+    <div class="ps-line ps-short">
+      <span v-if="item.product_short_name"
+            v-html="highlight(item.product_short_name, kw)"/>
+      <span v-if="item.product_short_name_en" class="ps-short-en"
+            v-html="highlight(item.product_short_name_en, kw)"/>
+    </div>
     <div class="ps-line ps-model">
       <span class="ps-label">客户型号:</span>
       <span v-html="highlight(item.customer_model, kw)"/>
@@ -300,6 +379,16 @@ Events: `update:modelValue`、`select(item)`
 </div>
 ```
 
+`sourceLabel(matched_in)` 返回人类可读字符串：
+- `['customer_model']` → "客户型号"
+- `['product_name']` → "产品名称"
+- `['product_name_en']` → "Product Name (EN)"
+- `['product_short_name']` → "产品简称"
+- `['product_short_name_en']` → "Short Name (EN)"
+- `['oe']` → "OE号"
+- `['detail_desc']` → "描述"
+- 多项同时 → 拼接，如 "客户型号 + OE号"
+
 #### 样式
 ```css
 .search-hl { color: #f56c6c; font-weight: 600; }
@@ -308,20 +397,33 @@ Events: `update:modelValue`、`select(item)`
 .ps-source { color: #909399; font-size: 12px; margin-left: 8px; }
 ```
 
-### 4.3 ProductEditDialog OE 字段保存
+### 4.3 ProductEditDialog 字段保存修正
 
 **文件**: `frontend/src/components/order/ProductEditDialog.vue`
-**位置**: `saveField('oe_number', ...)` L102-111
+**位置**: L73-101 产品名称相关字段 + L102-111 OE 字段
 
-替换逻辑：
+#### 4.3.1 名称字段 saveField 修正
+
+当前实现把 4 个字段保存到不存在的列（详见 §1.4），需要把 `saveField` 的入参改为正确键：
+
+| UI | 改为 |
+|---|---|
+| `saveField('detail_desc', form.product_name)` | `saveField('product_name', form.product_name)` |
+| `saveField('detail_desc_en', form.product_name_en)` | `saveField('product_name_en', form.product_name_en)` |
+| `saveField('product_short_name', form.product_short_name)` | ✅（待模型加列） |
+| `saveField('product_short_name_en', form.product_short_name_en)` | ✅（待模型加列） |
+
+实现优先级：先迁移数据库 + Schema（§3.1.1），再改前端 saveField 键。
+
+#### 4.3.2 OE 字段保存
+
+L102-111 的 `saveField('oe_number', form.oe_number)` 替换为：
+
 ```ts
-async function saveField(field: string, value: any) {
-  if (field === 'oe_number') {
-    const list = productSearchService.splitOeInput(value || '')
-    await customerProductsApi.bulkSyncOes(productId.value, list)
-    return  // 跳过通用 saveField（避免覆盖 PrdCustomerProduct.oe_number 旧字段）
-  }
-  // ...原逻辑
+async function saveOeField(value: string) {
+  const list = productSearchService.splitOeInput(value || '')
+  await customerProductsApi.bulkSyncOes(productId.value, list)
+  // 不再走通用 saveField（避免覆盖 PrdCustomerProduct.oe_number 旧字段）
 }
 ```
 
@@ -404,11 +506,14 @@ GET /api/product-customer/search?keyword=750&limit=20&customer_id=1
 ### 7.1 后端 pytest（新增 `backend/tests/test_product_search.py`）
 1. **精确 customer_model**: 插入 `customer_model="ABC-750"`，搜 `"ABC-750"` → score 100，matched_in 含 `customer_model`
 2. **部分 customer_model**: 搜 `"ABC"` → score 80
-3. **产品名匹配**: 搜 `"刹车片"`，`product_name="750 刹车片"` → score 60，matched_in 含 `product_name`
-4. **OE 子串匹配**: 插入 `oes=["601","750","AXMC"]`，搜 `"750"` → score 50，matched_in 含 `oe`
-5. **多匹配项排序**: 插入多条 candidate，断言按 score 降序
-6. **customer_id 过滤**: 仅返回指定客户产品
-7. **keyword 边界**: 空串 → 422；长度 101 → 422
+3. **产品中文全称匹配**: 搜 `"刹车片"`，`product_name="750 刹车片"` → score 60，matched_in 含 `product_name`
+4. **产品英文全称匹配**: `product_name_en="Brake Pad 750"`，搜 `"brake"` → score 55，matched_in 含 `product_name_en`
+5. **产品中文简称匹配**: `product_short_name="刹车片"`，搜 `"刹车"` → score 45
+6. **产品英文简称匹配**: `product_short_name_en="BP750"`，搜 `"bp"` → score 40
+7. **OE 子串匹配**: 插入 `oes=["601","750","AXMC"]`，搜 `"750"` → score 50，matched_in 含 `oe`
+8. **多匹配项排序**: 插入多条 candidate，断言按 score 降序
+9. **customer_id 过滤**: 仅返回指定客户产品
+10. **keyword 边界**: 空串 → 422；长度 101 → 422
 
 ### 7.2 前端 vitest（新增 `frontend/src/api/__tests__/productSearch.test.ts`）
 1. `highlight("刹车片 750", "750")` → 含 `<em class="search-hl">750</em>`
@@ -447,6 +552,7 @@ GET /api/product-customer/search?keyword=750&limit=20&customer_id=1
 ## 10. 文件清单
 
 ### 新建
+- `backend/migrations/versions/xxxx_add_product_name_en_short.py`（alembic 迁移，加 3 列）
 - `backend/crud/product_search.py`
 - `backend/schemas/product_search.py`
 - `backend/tests/test_product_search.py`
@@ -457,20 +563,30 @@ GET /api/product-customer/search?keyword=750&limit=20&customer_id=1
 - `frontend/src/components/common/__tests__/ProductSearchSelect.test.ts`
 
 ### 修改
-- `frontend/src/api/endpoints.ts`（新增 `PRODUCT_SEARCH`，废弃 `PRODUCT_CUSTOMER.search`）
-- `frontend/src/components/order/NewOrderDialog.vue`（L223-271 替换）
-- `frontend/src/views/product/ProductManagement.vue`（顶部搜索接入）
-- `frontend/src/components/order/ProductEditDialog.vue`（OE 拆分保存 + bulk-sync 调用）
+- `backend/models/customer_product.py`（加 3 列：`product_name_en`、`product_short_name`、`product_short_name_en`）
+- `backend/schemas/customer_product.py`（3 个 schema 加 3 个 Optional 字段）
 - `backend/routers/customer_product.py`（新增 `bulk_sync_oes` handler）
+- `frontend/src/api/endpoints.ts`（新增 `PRODUCT_SEARCH`，废弃 `PRODUCT_CUSTOMER.search`）
+- `frontend/src/components/order/NewOrderDialog.vue`（L223-271 替换为 `<ProductSearchSelect>`）
+- `frontend/src/views/product/ProductManagement.vue`（顶部搜索接入）
+- `frontend/src/components/order/ProductEditDialog.vue`
+  - L77 / L84 saveField 键修正（`detail_desc` → `product_name` / `detail_desc_en` → `product_name_en`）
+  - L109 OE 字段保存改为 `saveOeField` → 调 `bulkSyncOes`
+  - 表单初始化（§L804-807）+ 加载时回填（§L1471-1474）补齐 3 个新字段读写
 - `docs/spec.md`（在常用接口约定章节补充 `/api/product-customer/search`）
 
 ---
 
 ## 11. 验收标准
 
-1. NewOrderDialog 录入"601,750,AXMC"保存后，搜索"750"返回该条，搜索"601"也返回。
-2. 搜索"无此编号"返回 0 条 + `<el-empty>` 占位。
-3. 搜索结果红字高亮匹配字段，hover 副图缩略图可预览大图。
-4. `match_score` 在前端不展示（仅用于排序）。
-5. 后端 pytest 7/7 通过，前端 vitest 通过。
-6. `endpoints.ts` 是单一来源，切换搜索接口仅改一处常量。
+1. alembic 迁移成功，`prd_customer_product` 增加 3 列可空。
+2. ProductEditDialog 中英文全称 + 简称 blur 后重新打开仍能看到值（写入正确列）。
+3. NewOrderDialog 录入"601,750,AXMC"保存后，搜索"750"返回该条，搜索"601"也返回。
+4. 录入产品简称"刹车片"，搜索"刹车"命中，搜索"片"也命中。
+5. 录入产品英文名"Brake Pad 750"，搜索"brake"命中（不区分大小写）。
+6. 搜索"无此编号"返回 0 条 + `<el-empty>` 占位。
+7. 搜索结果红字高亮匹配字段，hover 副图缩略图可预览大图。
+8. 客户型号精确匹配排第一（score 100），OE 子串匹配排在其后（score 50）。
+9. `match_score` 在前端不展示（仅用于排序）。
+10. 后端 pytest 通过（覆盖 4 个名称字段 + 客户型号 + OE + 描述），前端 vitest 通过。
+11. `endpoints.ts` 是单一来源，切换搜索接口仅改一处常量。
