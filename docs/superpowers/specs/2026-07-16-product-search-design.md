@@ -159,7 +159,7 @@ def search_products(
 class ProductSearchItem(BaseModel):
     id: int                                  # PrdCustomerProduct.id
     customer_id: int
-    customer_name: str
+    customer_name: str | None
     # ---- 名称/型号 ----
     customer_model: str | None
     product_name: str | None                 # 中文全称
@@ -378,11 +378,21 @@ latest_pi_for_display = {
 # 覆盖：让展示用更完整的数据生效（用于响应 product_name_en / 简称）
 latest_name_map.update(latest_pi_for_display)
 
-# 7) 一次性把所有 PrdCustomerProduct 加载
+# 7) 一次性把所有 PrdCustomerProduct 加载（预加载关联，避免 N+1；过滤软删除）
+from sqlalchemy.orm import joinedload, selectinload
 products = {
     p.id: p
     for p in db.query(PrdCustomerProduct)
-    .filter(PrdCustomerProduct.id.in_(candidate_ids)).all()
+    .options(
+        joinedload(PrdCustomerProduct.customer),   # P2-3：预加载客户，避免 N+1
+        selectinload(PrdCustomerProduct.codes),   # P2-3：预加载编号列表
+        selectinload(PrdCustomerProduct.oes),     # P2-3：预加载 OE 列表
+    )
+    .filter(
+        PrdCustomerProduct.id.in_(candidate_ids),
+        PrdCustomerProduct.deleted_at.is_(None),   # P0-8：排除已删除客户产品
+    )
+    .all()
 }
 ```
 
@@ -491,7 +501,7 @@ def build_search_item(p, pi_item, matched: list[str], score: float) -> ProductSe
     return ProductSearchItem(
         id=p.id,
         customer_id=p.customer_id,
-        customer_name=p.customer.name if p.customer else None,
+        customer_name=p.customer.name if p.customer else "",
         customer_model=pi_customer_model or p.customer_model or "",
         product_name=pi_detail_desc or p.product_name or "",
         product_name_en=getattr(pi_item, "detail_desc_en", None) if pi_item else None,
@@ -504,7 +514,9 @@ def build_search_item(p, pi_item, matched: list[str], score: float) -> ProductSe
         price_usd=float(p.price_usd) if p.price_usd else None,
         oes=_build_oes(p),
         image_url=p.image_url or None,
-        sub_images=[],   # 从 p.sub_images JSON 解析
+        sub_images=(lambda s: (json.loads(s) if s else []) if isinstance(s, str) else [])(
+            p.sub_images
+        ),
         matched_in=resolved_matched,
         match_score=score,
     )
@@ -546,7 +558,7 @@ export type MatchField = 'customer_model'
 export interface ProductSearchItem {
   id: number                            // PrdCustomerProduct.id
   customer_id: number
-  customer_name: string
+  customer_name: string | null
   // 名称/型号
   customer_model: string | null
   product_name: string | null           // 中文全称
@@ -979,6 +991,12 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 14. **OE 命中也返回名称字段（P1-5）**: 先在 PI item 写入产品 A 的 `product_short_name="刹车片"`，再在客户产品表把 customer_model 改为唯一值，搜索该 customer_model → 响应里 product_short_name 仍是 "刹车片"
 15. **下单 product_id 写入**: 提交 PI 时 payload.items[0].product_id 不为 null，验证 `pi_proforma_invoice_item.product_id` 等于该值（P0-3）
 16. **下单 customer_model 写入**: payload.items[0].customer_model 不为 null，验证 PI item.customer_model 一致（P0-4）
+17. **仅 PI item detail_desc 命中（P0-6）**: `PrdCustomerProduct.product_name` 为 null，PI item.detail_desc="刹车片"，搜索 "刹车" → 命中，product_name 正确返回 "刹车片"
+18. **仅 PI item customer_model 命中（P0-6）**: `PrdCustomerProduct.customer_model` 为 null，PI item.customer_model="ABC-750"，搜索 "ABC-750" → 命中，customer_model 正确返回
+19. **已删除 PI item 不命中（P1-8）**: PI item 已软删除（`is_deleted=True`），搜索其 detail_desc → **不返回**
+20. **已删除 PrdCustomerProduct 不返回（P0-8）**: `PrdCustomerProduct.deleted_at` 已设，客户型号为 "DELETED"，搜索 "DELETED" → **不返回**
+21. **sub_images 解析**: PrdCustomerProduct.sub_images='["img2.jpg","img3.jpg"]'，搜索结果 item.sub_images 长度为 2；异常值 `"invalid json"` → 返回空数组，不抛错
+22. **matched_in 映射正确（P0-6 / P0-7）**: PI item.detail_desc 命中，matched_in 含 "product_name"（而非原始键 "detail_desc"）；PI item.customer_model 命中，matched_in 含 "customer_model"
 
 ### 7.2 前端 vitest（新增 `frontend/src/api/__tests__/productSearch.test.ts`）
 1. `splitForHighlight("刹车片 750", "750")` → `[{ text: "刹车片 ", hit: false }, { text: "750", hit: true }, ...]`，**不返回 HTML 字符串**
@@ -1019,13 +1037,19 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 | LIMIT 200 排序不可靠（P1-1） | **不**在 SQL 截断，改为分字段独立查询 + 合并去重，最后按 score desc Python 截 limit |
 | 名称字段数据来源（P1-2） | 不动 PrdCustomerProduct 表结构；跨表查询取最近一次 PI item 的 `detail_desc_en` / `product_short_name` / `product_short_name_en` |
 | OE 全替换接口（P1-4） | 新增 `oes/bulk-sync`，单事务原子；前端 1 个请求；显式处理去重 + 主 OE |
-| `customer_id` 过滤缺失（P0-1） | 4 组候选查询全部加 `if customer_id is not None` 过滤 PrdCustomerProduct.customer_id；PI name 过滤走 `pi_proforma_invoice_item.customer_id` |
+| `customer_id` 过滤缺失（P0-3） | 4 组候选查询全部加 `if customer_id is not None` 过滤 PrdCustomerProduct.customer_id；PI name 过滤走 `PiProformaInvoice.customer_id`（JOIN 主表） |
 | 下单 payload 缺 product_id / customer_model（P0-3） | 前端 `payload.items[0]` 必带 `product_id`；后端 `PIInvoiceItemCreate` schema 显式加 `customer_model` 字段（业务仅 USD，无需货币字段） |
 | 通过 OE/型号命中时无名称字段展示（P1-5） | 候选集确定后再统一加载"全部候选产品最近一次 PI item"作为展示用，**覆盖**原始 `latest_name_map` |
 | 价格币种混乱（P1-6） | 业务当前**仅支持 USD**：PI item 不保留 `price_usd`/`price_rmb`/`currency` 行级列；下单 `unit_price` 直接传 USD；未来扩展按 §4.2.5 第 6 步 |
+| PI item detail_desc/customer_model 未加入候选（P0-6） | `pi_name_match_q` 的 OR 条件必须含 `PiProformaInvoiceItem.detail_desc` 和 `.customer_model`；精排时 `_get_name_fields()` 已实现 PI item 优先 fallback |
+| 返回值 Schema 不符（P0-7） | 必须通过 `build_search_item()` 返回完整 `ProductSearchItem` 对象；`matched_in` 做键映射转换；`sub_images` 真实解析 JSON |
+| PrdCustomerProduct.deleted_at 未过滤（P0-8） | 最终产品加载 `.filter(PrdCustomerProduct.deleted_at.is_(None))`；避免已删除产品从 PI item 重新出现 |
+| 已删除 PI item 名称参与搜索（P1-8） | 两处 latest PI 子查询均加 `is_deleted == False`；JOIN 后额外兜底 `filter` |
+| customer_name 类型不一致（P2） | `ProductSearchItem.customer_name` 声明为 `str | None`；serializer 返回 `p.customer.name if p.customer else ""`，两者一致 |
+| N+1 查询风险（P2-3） | 最终产品加载时用 `joinedload`/`selectinload` 预加载 `customer`/`codes`/`oes`；不加则 20 条结果产生 60+ 条 SQL |
 | 回滚策略指向不存在接口（P2-1） | 引入 `USE_PRODUCT_SEARCH` feature flag，回滚到旧三件套，**不回滚**到旧 `/api/products/search`（功能不完整） |
 | AbortError/CanceledError（P2-2） | 用 `axios.isCancel(error)` 判定；客户端 `AbortController` 实际抛 `CanceledError` |
-| 大数据量下 ILIKE 慢 | 全表 ILIKE 4 次 + Python score 在 < 5k 行客户产品时 < 200ms；如未来超 10k 行再评估 pg_trgm |
+| 大数据量下 ILIKE 慢 | 全表 ILIKE 6 次 + Python score 在 < 5k 行客户产品时 < 200ms；如未来超 10k 行再评估 pg_trgm |
 | 路由顺序错配（P0-1 路由顺序） | 新增 `/search` handler 必须放在 `@router.get("/{product_id}")` 之前，FastAPI 按声明顺序匹配 |
 
 ---
@@ -1072,7 +1096,7 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 
 ## 11. 验收标准
 
-### P0 修复（P0-1 / P0-2 / P0-3 / P0-4 必须全部通过）
+### P0 修复（P0-1 / P0-2 / P0-3 / P0-4 / P0-6 / P0-7 / P0-8 必须全部通过）
 - **P0-1 接口路径**: 前端调用 `GET /api/customer-products/search`，后端 200；旧路径 `/api/product-customer/search` 不再被前端引用。
 - **P0-2 下单回填字段**: 选择搜索结果后，`form.customer_code` / `form.customer_model` / `form.oe_number` / `form.unit_price` / `form.product_id` / `form.customer_id` 全部正确回填（即使响应里某些字段为 null 也不报错，UI 给出友好提示）。
 - **P0-3 customer_id 过滤 + product_id 入 payload**:
@@ -1088,6 +1112,9 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 - **P1-4 OE 批量同步**: `POST /api/customer-products/{id}/oes/bulk-sync` 单事务原子，去重，主 OE = 首条，清空时主 OE 也清除。
 - **P1-5 非名称命中也返回名称字段**: 通过 OE / 客户型号 命中的产品，响应 `product_name_en` / `product_short_name*` **必须有值**（来自该产品最近一次 PI item）。验证：先在 PI item 里写入产品 A 的 `product_short_name = "刹车片"`，再在客户产品表把 customer_model 改为唯一值，搜索该 customer_model → 响应里 product_short_name 仍是 "刹车片"。
 - **P1-6 货币字段（方案 1：仅 USD）**: 响应**不返回** `currency` / `price_rmb`；搜索结果显示的"价格货币"由 PI 主表 `currency` 决定（默认 USD）；下单单 `unit_price` 按 USD 处理。**未来多币种扩展路径见 §4.2.5 第 6 步。**
+- **P1-7 detail_desc 精排**: `PrdCustomerProduct.detail_desc` 独立参与精排（score=30），避免仅命中详细描述的商品 score 为 0、matched_in 缺失。
+- **P1-8 已删除 PI item 过滤**: 两处 latest PI 子查询（`latest_pi_item_sq` + `latest_pi_all_sq`）均加 `is_deleted == False`；子查询 JOIN 后额外加兜底 `filter`；避免已软删除 PI 的名称参与搜索。
+- **P2-3 N+1 防护**: 最终加载 `PrdCustomerProduct` 时用 `joinedload(customer)` / `selectinload(codes)` / `selectinload(oes)` 预加载关联，20 条结果总共 4 条 SQL，而非 60+ 条。
 
 ### 业务验收
 1. ProductEditDialog 中英文全称 + 简称 blur 后重新打开仍能看到值（写入 PI item 表）。
