@@ -469,8 +469,23 @@ def _build_code(p) -> str | None:
 
 
 def _build_oes(p) -> list[str]:
-    """从 PrdCustomerProductOE 关联表取所有 OE 号"""
-    return [oe.oe_number for oe in (p.oes or []) if oe.oe_number]
+    """从 PrdCustomerProductOE 关联表取所有 OE 号，主 OE 优先排第一"""
+    records = sorted(
+        [oe for oe in (p.oes or []) if oe.oe_number],
+        key=lambda oe: not oe.is_primary,   # True > False，主 OE 排前
+    )
+    return [oe.oe_number for oe in records]
+
+
+def _parse_sub_images(value) -> list[str]:
+    """安全解析 sub_images JSON 字段，失败时返回空数组"""
+    if not isinstance(value, str) or not value:
+        return []
+    try:
+        data = json.loads(value)
+        return data if isinstance(data, list) else []
+    except json.JSONDecodeError:
+        return []
 
 
 def build_search_item(p, pi_item, matched: list[str], score: float) -> ProductSearchItem:
@@ -514,9 +529,7 @@ def build_search_item(p, pi_item, matched: list[str], score: float) -> ProductSe
         price_usd=float(p.price_usd) if p.price_usd else None,
         oes=_build_oes(p),
         image_url=p.image_url or None,
-        sub_images=(lambda s: (json.loads(s) if s else []) if isinstance(s, str) else [])(
-            p.sub_images
-        ),
+        sub_images=_parse_sub_images(p.sub_images),
         matched_in=resolved_matched,
         match_score=score,
     )
@@ -997,6 +1010,8 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 20. **已删除 PrdCustomerProduct 不返回（P0-8）**: `PrdCustomerProduct.deleted_at` 已设，客户型号为 "DELETED"，搜索 "DELETED" → **不返回**
 21. **sub_images 解析**: PrdCustomerProduct.sub_images='["img2.jpg","img3.jpg"]'，搜索结果 item.sub_images 长度为 2；异常值 `"invalid json"` → 返回空数组，不抛错
 22. **matched_in 映射正确（P0-6 / P0-7）**: PI item.detail_desc 命中，matched_in 含 "product_name"（而非原始键 "detail_desc"）；PI item.customer_model 命中，matched_in 含 "customer_model"
+23. **主 OE 优先排序（P2-4）**: PrdCustomerProductOE 记录中 `is_primary=True` 的 OE 必须出现在响应 `oes` 数组的第一位；前端 `oes[0]` 即为主 OE
+24. **sub_images JSON 异常防御（P1-10）**: `p.sub_images="invalid json"` → `_parse_sub_images` 返回 `[]`，不抛 `JSONDecodeError`
 
 ### 7.2 前端 vitest（新增 `frontend/src/api/__tests__/productSearch.test.ts`）
 1. `splitForHighlight("刹车片 750", "750")` → `[{ text: "刹车片 ", hit: false }, { text: "750", hit: true }, ...]`，**不返回 HTML 字符串**
@@ -1047,6 +1062,8 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 | 已删除 PI item 名称参与搜索（P1-8） | 两处 latest PI 子查询均加 `is_deleted == False`；JOIN 后额外兜底 `filter` |
 | customer_name 类型不一致（P2） | `ProductSearchItem.customer_name` 声明为 `str | None`；serializer 返回 `p.customer.name if p.customer else ""`，两者一致 |
 | N+1 查询风险（P2-3） | 最终产品加载时用 `joinedload`/`selectinload` 预加载 `customer`/`codes`/`oes`；不加则 20 条结果产生 60+ 条 SQL |
+| sub_images JSON 异常（P1-10） | `_parse_sub_images()` 捕获 `JSONDecodeError` 返回 `[]`；旧 lambda 实现会直接抛异常 |
+| 主 OE 排序不保证（P2-4） | `_build_oes()` 按 `is_primary` 排序后返回；不加则前端 `oes[0]` 可能不是主 OE |
 | 回滚策略指向不存在接口（P2-1） | 引入 `USE_PRODUCT_SEARCH` feature flag，回滚到旧三件套，**不回滚**到旧 `/api/products/search`（功能不完整） |
 | AbortError/CanceledError（P2-2） | 用 `axios.isCancel(error)` 判定；客户端 `AbortController` 实际抛 `CanceledError` |
 | 大数据量下 ILIKE 慢 | 全表 ILIKE 6 次 + Python score 在 < 5k 行客户产品时 < 200ms；如未来超 10k 行再评估 pg_trgm |
@@ -1115,6 +1132,8 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 - **P1-7 detail_desc 精排**: `PrdCustomerProduct.detail_desc` 独立参与精排（score=30），避免仅命中详细描述的商品 score 为 0、matched_in 缺失。
 - **P1-8 已删除 PI item 过滤**: 两处 latest PI 子查询（`latest_pi_item_sq` + `latest_pi_all_sq`）均加 `is_deleted == False`；子查询 JOIN 后额外加兜底 `filter`；避免已软删除 PI 的名称参与搜索。
 - **P2-3 N+1 防护**: 最终加载 `PrdCustomerProduct` 时用 `joinedload(customer)` / `selectinload(codes)` / `selectinload(oes)` 预加载关联，20 条结果总共 4 条 SQL，而非 60+ 条。
+- **P2-4 主 OE 优先**: `_build_oes()` 按 `is_primary` 排序后返回，确保 `oes[0]` 是主 OE；前端回填 `form.oe_number = item.oes[0]` 即主 OE。
+- **P1-10 sub_images JSON 异常**: `_parse_sub_images()` 捕获 `JSONDecodeError` 返回 `[]`，不抛异常。
 
 ### 业务验收
 1. ProductEditDialog 中英文全称 + 简称 blur 后重新打开仍能看到值（写入 PI item 表）。
