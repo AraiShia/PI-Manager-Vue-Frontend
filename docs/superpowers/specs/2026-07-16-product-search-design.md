@@ -35,7 +35,7 @@
 3. 保存 OE 号时按逗号/空格/斜杠/分号拆分多条入库，搜索时任一 OE 子串命中即可。
 4. 搜索结果展示：图片（主图 + 副图缩略）、匹配字段红字高亮、字段来源标注、客户名。
 5. 搜索接口与前端组件完全解耦，便于后续接 ES / pg_trgm 等。
-6. **修复现有 saveField 键错位**：把 UI 上的 4 个名称字段正确写入数据库新列。
+6. **修复当前 saveField 路径并不通**：经核实 PI item 表本来就有 `detail_desc_en` / `product_short_name*` 4 列，前端保存链路是通的，**根本不需要额外迁移**。spec 已撤回 §3.1.1 的数据库迁移提案，避免误导实施人员。
 
 ### 1.3 非目标
 - 不引入 Elasticsearch / pg_trgm 扩展（YAGNI，未来按需）。
@@ -103,7 +103,24 @@
 **文件**: `backend/routers/customer_product.py`
 **前缀**: `/api/customer-products`（已存在，沿用）
 
-**新增** `/search` handler（注：原 `routers/product_customer.py` 已清理删除，不影响本路径）：
+⚠️ **P0-1 路由顺序修复（关键）**：`customer_product.py` 已存在 `@router.get("/{product_id}")` 动态路由（Line 195）。FastAPI 按声明顺序匹配，**新 `/search` handler 必须放在 `/{product_id}` 之前**，否则请求 `/api/customer-products/search` 会被错配为 `product_id="search"` → 触发 422 参数类型错误。
+
+**handler 顺序（实现时严格遵守）**：
+```python
+# 1️⃣ 静态路径优先
+@router.get("/search", response_model=ProductSearchResponse)   # ← 新增（P0-1 强制放在这里）
+def search_products(...):
+    ...
+
+@router.get("/bulk-sync", ...)  # 任何其他静态路径
+
+# 2️⃣ 然后是动态路径
+@router.get("/{product_id}", ...)
+def get_customer_product_by_id(...):
+    ...
+```
+
+**新增** `/search` handler：
 
 ```python
 @router.get("/search", response_model=ProductSearchResponse)
@@ -150,9 +167,9 @@ class ProductSearchItem(BaseModel):
     # ---- 下单回填关键字段（P0-2 修复）----
     customer_code: str | None                # 客户产品编号（PrdCustomerProductCode.primary_code）
     product_code: str | None                 # 系统产品编号（PrdCustomerProduct.system_code，备用）
-    price_usd: float | None                  # PrdCustomerProduct.price_usd
-    price_rmb: float | None                  # PrdCustomerProduct.price_rmb
-    currency: Optional[str] = None           # P1-6：主价格币种（'USD' / 'RMB' / null）
+    price_usd: float | None                  # PrdCustomerProduct.price_usd（USD 单价，作为 PI item.unit_price 回填）
+    # price_rmb 当前不返回给前端：业务仅支持 USD；PI item 不保留 price_rmb/price_usd 行级字段，
+    # 全部以 unit_price（USD）存储。需要 RMB 时再扩展模型。
     # ---- 图片 / OE ----
     image_url: str | None
     sub_images: list[str] = []
@@ -267,6 +284,8 @@ pi_name_match_q = (
     db.query(PiProformaInvoiceItem)
     .join(latest_pi_item_sq,
           PiProformaInvoiceItem.id == latest_pi_item_sq.c.latest_id)
+    # P1-3 修正：PI item 没有 customer_id 列；通过 PI 主表的 customer_id 过滤
+    .join(PiProformaInvoice, PiProformaInvoice.id == PiProformaInvoiceItem.pi_id)
     .filter(
         or_(
             PiProformaInvoiceItem.detail_desc_en.ilike(text_kw),
@@ -277,7 +296,7 @@ pi_name_match_q = (
 )
 if customer_id is not None:
     pi_name_match_q = pi_name_match_q.filter(
-        PiProformaInvoiceItem.customer_id == customer_id
+        PiProformaInvoice.customer_id == customer_id
     )
 pi_name_match = pi_name_match_q.all()
 latest_name_map: dict[int, PiProformaInvoiceItem] = {
@@ -319,6 +338,10 @@ for src_list in [exact_model, text_match, oe_match]:
     for p in src_list:
         candidate_ids.add(p.id)
 candidate_ids |= set(latest_name_map.keys())
+
+# P2-2 保护：候选集为空时直接返回空结果，跳过下方所有 SQL
+if not candidate_ids:
+    return ProductSearchResponse(results=[], total=0)
 
 # 6) P1-5：对所有候选产品，统一加载"最近一次 PI item"作为展示用
 # 用独立的 latest_pi_subquery（不限名称匹配）
@@ -426,9 +449,8 @@ export interface ProductSearchItem {
   // 下单回填关键字段
   customer_code: string | null          // 主客户产品编号
   product_code: string | null           // 系统产品编号（备用）
-  price_usd: number | null
-  price_rmb: number | null
-  currency: 'USD' | 'RMB' | null        // P1-6：标识该产品的主价格币种
+  price_usd: number | null              // USD 单价（业务当前唯一货币）
+  // price_rmb / currency 不返回：业务仅支持 USD，需要 RMB 时再扩展模型 + 接口
   // 图片 / OE
   image_url: string | null
   sub_images: string[]
@@ -581,7 +603,7 @@ Events: `update:modelValue`、`select(item)`
 .ps-source { color: #909399; font-size: 12px; margin-left: 8px; }
 ```
 
-### 4.2.5 NewOrderDialog 订单回填映射（P0-2 / P0-3 修复）
+### 4.2.5 NewOrderDialog 订单回填映射（P0-2 / P0-3 + 价格简化）
 
 `NewOrderDialog.vue` 当前实现的下单 payload（L873-884）：
 ```ts
@@ -595,31 +617,41 @@ const payload = {
     customer_model: form.customer_model || undefined,
     oe_number: form.oe_number || undefined,
     // ⚠️ 缺失 product_id（P0-3）
+    // ⚠️ 没有货币字段（P1-6 推荐方案 1：业务仅 USD，本字段不需要）
   }],
   payment_stages: [],
 }
 ```
-**问题（已核实）**：
-- `product_id` 未送进 `items[0]`，即使 `form.product_id` 已回填（§4.2.5）也会被丢弃；后端 `create_pi_item` 不会写 `pi_proforma_invoice_item.product_id`，破坏"搜索结果 → 客户产品"的关联。
-- `customer_model` 在 `PIInvoiceItemCreate`（`schemas/pi.py:13`）里**不存在**，会被 Pydantic 静默丢弃。
 
-**修复**：
+**P1-6 决策（已采纳）：方案 1 — 只 USD，简化**。
 
-1. **前端 payload 必带 `product_id`**（P0-3）：
+经核实 `backend/models/pi.py:27-110`，`PiProformaInvoiceItem` 模型当前**没有** `currency` / `price_usd` / `price_rmb` 行级列：
+- 货币只在 PI 主表 `PiProformaInvoice.currency` 存储（Line 14）
+- 价格用 `PiProformaInvoiceItem.unit_price`（Line 37，所有行共用 USD 报价语义）
+- 这套设计在业务中是**故意的一致选择**：订单行用 USD 报价、采购侧 RMB 转账各自处理
+
+**结论**：
+- ❌ 不新增 PI item 行级价格/货币列（破坏既有简洁设计）
+- ❌ 不在 `ProductSearchItem` 返回 `price_rmb` / `currency`
+- ✅ 仍要求 `unit_price`（USD 单价）作为订单行单价
+- ✅ `PIInvoiceItemCreate` schema 仅需加 `customer_model` / `product_id`（本来 `product_id` 已声明，仅缺 customer_model）
+
+**修复（最小改动）**：
+
+1. **前端 payload**：
    ```ts
    items: [{
-     product_id: form.product_id ?? null,   // 必须送
+     product_id: form.product_id ?? null,         // P0-3 必填
      quantity: form.quantity,
-     unit_price: form.unit_price,
+     unit_price: form.unit_price,                  // USD 单价
      customer_code: form.customer_code,
-     customer_model: form.customer_model || undefined,
+     customer_model: form.customer_model || undefined,  // P0-4
      oe_number: form.oe_number || undefined,
      detail_desc: form.detail_desc || undefined,
-     currency: form.currency || 'USD',
    }],
    ```
 
-2. **后端 schema 扩展（P0-3 + P0-2）**：在 `PIInvoiceItemCreate`（`backend/schemas/pi.py`）中显式声明：
+2. **后端 schema 扩展**（`backend/schemas/pi.py:13`）：
    ```python
    class PIInvoiceItemCreate(BaseModel):
        product_id: Optional[int] = None
@@ -627,45 +659,35 @@ const payload = {
        unit_price: float
        oe_number: Optional[str] = None
        customer_code: Optional[str] = None
-       customer_model: Optional[str] = None    # ✅ 新增（之前缺失）
+       customer_model: Optional[str] = None     # ✅ 新增
        detail_desc: Optional[str] = None
-       currency: Optional[str] = "USD"          # ✅ 新增（货币）
-       price_rmb: Optional[float] = None         # ✅ 新增（PI item 行级 RMB）
-       price_usd: Optional[float] = None         # ✅ 新增（PI item 行级 USD，避免用 PrdCustomerProduct 默认值）
        remark: Optional[str] = None
+       # ❌ 不加 currency / price_usd / price_rmb
    ```
 
-3. **create_pi 写入 `customer_model` + 货币**：在 `crud/pi.py:48-61` 构造 `PiProformaInvoiceItem` 时补：
+3. **create_pi 写入 `customer_model`**（`crud/pi.py:48-61`）：
    ```python
    db_item = PiProformaInvoiceItem(
        ...
        product_id=item.product_id,
-       customer_model=item.customer_model,
-       currency=item.currency or "USD",
-       # 入参价格优先，否则回退到 PrdCustomerProduct 同名字段
-       price_usd=item.price_usd or (
-           customer_product.price_usd if customer_product else None
-       ),
-       price_rmb=item.price_rmb or (
-           customer_product.price_rmb if customer_product else None
-       ),
+       customer_model=item.customer_model,        # ✅ 写入
+       # 不写 price_usd / price_rmb / currency（PI item 不保留这些）
        ...
    )
    ```
-   注意 `price_usd` / `price_rmb` 可能与 `item.unit_price` 同源；前置规格把 `form.unit_price = item.price_usd` 写入即可，本字段为冗余但用于报表展示。
 
-4. **§4.2.5 表单回填映射表（更新版）**：
+4. **§4.2.5 表单回填映射表（最终版）**：
 
 | 表单字段 | 取值来源 | 备注 |
 |---|---|---|
 | `form.customer_code` | `item.customer_code \|\| item.product_code \|\| ''` | |
 | `form.customer_model` | `item.customer_model \|\| ''` | |
 | `form.oe_number` | `item.oes[0] \|\| ''` | OE 关联表首行（主 OE 优先） |
-| `form.unit_price` | `item.price_usd ?? 0` | USD 单价（P1-6） |
-| `form.currency` | `'USD'`（订单行 PI item 报价基准货币；将来如业务切 RMB，把这一行换成根据 `item.currency` 判定） | 与 `item.price_rmb` 互斥：本次提交只用 price_usd + currency=USD |
+| `form.unit_price` | `item.price_usd ?? 0` | USD 单价（业务唯一币种） |
 | `form.product_id` | `item.id` | **P0-3 必填** |
 | `form.customer_id` | `item.customer_id` | |
 | `form.detail_desc` | `item.detail_desc \|\| item.product_name \|\| ''` | |
+| ~~`form.currency`~~ | ❌ 不存在 | 业务仅 USD，不需要前端字段 |
 
 5. **onProductSelect 实现**：
    ```ts
@@ -676,26 +698,18 @@ const payload = {
      form.customer_code  = item.customer_code || item.product_code || ''
      form.customer_model = item.customer_model || ''
      form.oe_number      = item.oes[0] || ''
-     form.unit_price     = item.price_usd ?? 0
-     form.currency       = 'USD'                // 暂固定 USD，P1-6 见下文
+     form.unit_price     = item.price_usd ?? 0  // USD
      form.detail_desc    = item.detail_desc || item.product_name || ''
    }
    ```
 
+6. **未来扩展**: 如果将来业务需要多币种，按以下步骤扩展（**不在本次实现范围**）：
+   - alembic 迁移加 3 列到 `pi_proforma_invoice_item`：`currency` / `price_usd` / `price_rmb`
+   - 更新 `PIInvoiceItemCreate` schema + `create_pi_invoice` CRUD
+   - 在 `ProductSearchItem` 加 `currency` 字段
+   - onProductSelect 用 `form.unit_price = item.currency === 'RMB' ? price_rmb * rate : price_usd` 决定
+
 **回填校验**：如果 `form.customer_code` 为空，前端提示用户"该产品未设客户编号，请手动填写"，不阻断；保存时若 `customer_code` 为空 → 后端 Pydantic 不报错，但 PI item 行的 product_id 与 customer_code 至少要有一个（业务约定）。
-
-### 4.2.6 价格与货币（P1-6 决策）
-
-**业务现状**：采购 Dialog 已经统一为 RMB（见独立 spec），但**订单行 PI item** 仍需要 USD 单价作为对客报价货币。
-
-**决策**：
-
-- **订单行 `unit_price` = USD 单价**。本接口的 `item.price_usd` 是 USD 报价，写到 `pi_unit_price` 后用于对客 PI 单呈现。
-- **`item.price_rmb` 保留在响应中**（不动 schema），用于采购侧按需读取。当前 NewOrderDialog 不读 `price_rmb`，仅读 `price_usd`。
-- **响应里多增 `currency` 字段**（"USD" / "RMB" / null），标识该产品的主价格币种，让前端能正确换算（未来切换 RMB 业务后无需改动搜索接口）。
-- 实现：第 §4.2.5 的 `PIInvoiceItemCreate.currency` 字段，搜索响应里 `ProductSearchItem.currency: 'USD' | 'RMB' | null`（默认 `'USD'`）。
-
-**明确删除 §4.2.5 旧说法中"price_rmb 业务上暂时只有 USD，所以固定写入 price_usd"的注释**——改为"按响应 currency 决定写哪个价格字段"。
 
 ### 4.3 ProductEditDialog 字段保存
 
@@ -807,8 +821,6 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
       "customer_code": "A01S01240001",
       "product_code": "A01S01240001",
       "price_usd": 12.5,
-      "price_rmb": 88.0,
-      "currency": "USD",
       "image_url": "/static/uploads/123_main.jpg",
       "sub_images": ["/static/uploads/123_2.jpg"],
       "oes": ["601", "750", "AXMC"],
@@ -854,7 +866,7 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 10. **多匹配项排序**: 插入多条 candidate，断言按 score 降序
 11. **customer_id 过滤（P0-1）**: 插入客户 A、B 各一条相同型号的产品，`customer_id=A` 搜索返回**只含 A 的那条**
 12. **keyword 边界**: 空串 → 422；长度 101 → 422
-13. **下单回填字段存在性**: response 至少含 `customer_code` / `price_usd` / `price_rmb` / `currency` 字段（缺一即失败）
+13. **下单回填字段存在性**: response 至少含 `customer_code` / `price_usd` 字段（缺一即失败）；**不应**返回 `price_rmb` / `currency` 字段（P1-6 方案 1：业务仅支持 USD）
 14. **OE 命中也返回名称字段（P1-5）**: 先在 PI item 写入产品 A 的 `product_short_name="刹车片"`，再在客户产品表把 customer_model 改为唯一值，搜索该 customer_model → 响应里 product_short_name 仍是 "刹车片"
 15. **下单 product_id 写入**: 提交 PI 时 payload.items[0].product_id 不为 null，验证 `pi_proforma_invoice_item.product_id` 等于该值（P0-3）
 16. **下单 customer_model 写入**: payload.items[0].customer_model 不为 null，验证 PI item.customer_model 一致（P0-4）
@@ -899,19 +911,19 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 | 名称字段数据来源（P1-2） | 不动 PrdCustomerProduct 表结构；跨表查询取最近一次 PI item 的 `detail_desc_en` / `product_short_name` / `product_short_name_en` |
 | OE 全替换接口（P1-4） | 新增 `oes/bulk-sync`，单事务原子；前端 1 个请求；显式处理去重 + 主 OE |
 | `customer_id` 过滤缺失（P0-1） | 4 组候选查询全部加 `if customer_id is not None` 过滤 PrdCustomerProduct.customer_id；PI name 过滤走 `pi_proforma_invoice_item.customer_id` |
-| 下单 payload 缺 product_id / customer_model（P0-3） | 前端 `payload.items[0]` 必带 `product_id`；后端 `PIInvoiceItemCreate` schema 显式加 `customer_model` / `currency` / `price_usd` / `price_rmb` 字段 |
+| 下单 payload 缺 product_id / customer_model（P0-3） | 前端 `payload.items[0]` 必带 `product_id`；后端 `PIInvoiceItemCreate` schema 显式加 `customer_model` 字段（业务仅 USD，无需货币字段） |
 | 通过 OE/型号命中时无名称字段展示（P1-5） | 候选集确定后再统一加载"全部候选产品最近一次 PI item"作为展示用，**覆盖**原始 `latest_name_map` |
-| 价格币种混乱（P1-6） | 响应加 `currency: 'USD' \| 'RMB' \| null`；前端 `form.unit_price = price_usd`（USD 报价），保留 `price_rmb` 用于采购侧 |
+| 价格币种混乱（P1-6） | 业务当前**仅支持 USD**：PI item 不保留 `price_usd`/`price_rmb`/`currency` 行级列；下单 `unit_price` 直接传 USD；未来扩展按 §4.2.5 第 6 步 |
 | 回滚策略指向不存在接口（P2-1） | 引入 `USE_PRODUCT_SEARCH` feature flag，回滚到旧三件套，**不回滚**到旧 `/api/products/search`（功能不完整） |
 | AbortError/CanceledError（P2-2） | 用 `axios.isCancel(error)` 判定；客户端 `AbortController` 实际抛 `CanceledError` |
 | 大数据量下 ILIKE 慢 | 全表 ILIKE 4 次 + Python score 在 < 5k 行客户产品时 < 200ms；如未来超 10k 行再评估 pg_trgm |
+| 路由顺序错配（P0-1 路由顺序） | 新增 `/search` handler 必须放在 `@router.get("/{product_id}")` 之前，FastAPI 按声明顺序匹配 |
 
 ---
 
 ## 10. 文件清单
 
 ### 新建
-- `backend/migrations/versions/xxxx_add_product_name_en_short.py`（alembic 迁移，加 3 列）
 - `backend/crud/product_search.py`
 - `backend/schemas/product_search.py`
 - `backend/tests/test_product_search.py`
@@ -922,19 +934,21 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 - `frontend/src/components/common/__tests__/ProductSearchSelect.test.ts`
 - `frontend/src/config/featureFlags.ts`（`USE_PRODUCT_SEARCH: true`，回滚开关）
 
+> ⚠️ **不**做 alembic 迁移：`prd_customer_product` 表结构已满足需求，名称字段实际存在 `pi_proforma_invoice_item` 表（无需迁移）。
+
 ### 修改
 - ~~`backend/models/customer_product.py`（加 3 列）~~ **不需要**
 - ~~`backend/schemas/customer_product.py`（加 3 字段）~~ **不需要**
 - `backend/crud/product_search.py`（新建：`split_oe_tokens` + 分字段候选查询 + Python score 精排）
 - `backend/schemas/product_search.py`（新建：`ProductSearchItem` + `ProductSearchResponse`）
 - `backend/routers/customer_product.py`（**新增** `/search` handler + **新增** `/{product_id}/oes/bulk-sync` handler；引用 `PiProformaInvoiceItem` 做跨表查询）
-- `backend/schemas/pi.py`（`PIInvoiceItemCreate` 加 `customer_model` / `currency` / `price_usd` / `price_rmb` 字段）
-- `backend/crud/pi.py`（`create_pi_invoice` 写入 `customer_model` / `currency` / `price_usd` / `price_rmb`）
+- `backend/schemas/pi.py`（`PIInvoiceItemCreate` 加 `customer_model` 字段；**不加** currency/price_usd/price_rmb 行级字段）
+- `backend/crud/pi.py`（`create_pi_invoice` 写入 `customer_model`；**不写** PI item 行级货币/价格列）
 - `backend/tests/test_product_search.py`（pytest 覆盖 P0-1 / P0-3 / P0-4 / P1-1 / P1-2 / P1-3 / P1-4 / P1-5）
 - `frontend/src/api/endpoints.ts`（新增 `PRODUCT_SEARCH.recommend = '/api/customer-products/search'`，`PRODUCT_CUSTOMER.search` 改为转发到该地址并标记 `@deprecated`）
 - `frontend/src/components/order/NewOrderDialog.vue`：
-  - L223-271 替换为 `<ProductSearchSelect>`；`onProductSelect` 按 §4.2.5 映射回填
-  - 下单 `payload.items[0]` 必须含 `product_id` / `customer_model` / `currency`（P0-3 / P0-4）
+  - L223-271 替换为 `<ProductSearchSelect>`；`onProductSelect` 按 §4.2.5 映射回填（**不涉及 currency**，业务仅 USD）
+  - 下单 `payload.items[0]` 必须含 `product_id` / `customer_model`（P0-3 / P0-4）
 - `frontend/src/components/order/SupplementDialog.vue`（L252 同样替换为 `<ProductSearchSelect>`，复用同一 service + 组件）
 - `frontend/src/views/product/ProductManagement.vue`（顶部搜索接入）
 - `frontend/src/components/order/ProductEditDialog.vue`
@@ -951,7 +965,7 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 
 ### P0 修复（P0-1 / P0-2 / P0-3 / P0-4 必须全部通过）
 - **P0-1 接口路径**: 前端调用 `GET /api/customer-products/search`，后端 200；旧路径 `/api/product-customer/search` 不再被前端引用。
-- **P0-2 下单回填字段**: 选择搜索结果后，`form.customer_code` / `form.customer_model` / `form.oe_number` / `form.unit_price` / `form.product_id` / `form.customer_id` / `form.currency` 全部正确回填（即使响应里某些字段为 null 也不报错，UI 给出友好提示）。
+- **P0-2 下单回填字段**: 选择搜索结果后，`form.customer_code` / `form.customer_model` / `form.oe_number` / `form.unit_price` / `form.product_id` / `form.customer_id` 全部正确回填（即使响应里某些字段为 null 也不报错，UI 给出友好提示）。
 - **P0-3 customer_id 过滤 + product_id 入 payload**:
   - **customer_id 过滤**: 搜索时传 `customer_id` 参数，4 类候选都被过滤。验证：插入客户 A、B 各一条相同型号的产品，`customer_id=A` 搜索返回只含 A 的那条。
   - **OE 多 token 拆分**: 录入 `601,750,AXMC` 保存后，搜索 `601, 750 / AXMC`（带分隔符的整串）必须返回该条；搜索 `750` 也命中；搜索 `ax`（小写片段）也命中。
@@ -964,7 +978,7 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 - **P1-3 XSS 防御**: 组件不应使用 `v-html`；含恶意 HTML 的产品名应作为文本原样展示，不执行。验证：在 `PrdCustomerProduct.product_name` 写入 `<script>alert(1)</script>`，搜索 → 页面不应弹窗。
 - **P1-4 OE 批量同步**: `POST /api/customer-products/{id}/oes/bulk-sync` 单事务原子，去重，主 OE = 首条，清空时主 OE 也清除。
 - **P1-5 非名称命中也返回名称字段**: 通过 OE / 客户型号 命中的产品，响应 `product_name_en` / `product_short_name*` **必须有值**（来自该产品最近一次 PI item）。验证：先在 PI item 里写入产品 A 的 `product_short_name = "刹车片"`，再在客户产品表把 customer_model 改为唯一值，搜索该 customer_model → 响应里 product_short_name 仍是 "刹车片"。
-- **P1-6 货币字段**: 响应必须含 `currency: 'USD' | 'RMB' | null`；前端根据 currency 决定回填 `form.unit_price`（USD 用 price_usd，RMB 用 price_rmb → 换算成 USD）。当前实现：`form.unit_price = price_usd ?? 0`，`form.currency = 'USD'` 写死。
+- **P1-6 货币字段（方案 1：仅 USD）**: 响应**不返回** `currency` / `price_rmb`；搜索结果显示的"价格货币"由 PI 主表 `currency` 决定（默认 USD）；下单单 `unit_price` 按 USD 处理。**未来多币种扩展路径见 §4.2.5 第 6 步。**
 
 ### 业务验收
 1. ProductEditDialog 中英文全称 + 简称 blur 后重新打开仍能看到值（写入 PI item 表）。
@@ -977,5 +991,5 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 8. `match_score` 在前端不展示（仅用于排序）。
 9. 后端 pytest 通过（覆盖 4 个名称字段 + 客户型号 + OE + 描述 + 下单回填字段 + XSS 输入 + customer_id 过滤 + product_id 写入），前端 vitest 通过。
 10. `endpoints.ts` 是单一来源，切换搜索接口仅改一处常量。
-11. NewOrderDialog 下单流程：选完产品 → 创建订单 → 后端 PI item 写入 `customer_code` / `customer_model` / `price_usd` / `oe_number` / **`product_id`** 与表单一致。
+11. NewOrderDialog 下单流程：选完产品 → 创建订单 → 后端 PI item 写入 `customer_code` / `customer_model` / `unit_price` / `oe_number` / **`product_id`** 与表单一致。
 12. `USE_PRODUCT_SEARCH` feature flag 切到 false 后，搜索降级到旧三件套（不期望工作，但页面不崩）。
