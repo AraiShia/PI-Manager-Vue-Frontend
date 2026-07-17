@@ -988,33 +988,33 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 ## 7. 测试
 
 ### 7.1 后端 pytest（新增 `backend/tests/test_product_search.py`）
-1. **精确 customer_model**: 插入 `customer_model="ABC-750"`，搜 `"ABC-750"` → score 100，matched_in 含 `customer_model`
-2. **部分 customer_model**: 搜 `"ABC"` → score 80
-3. **产品中文全称匹配**: 搜 `"刹车片"`，`product_name="750 刹车片"` → score 60，matched_in 含 `product_name`
-4. **产品英文全称匹配**（PI item 路径）: 在 `pi_proforma_invoice_item` 表插入 `detail_desc_en="Brake Pad 750"`，关联到某 PrdCustomerProduct，搜 `"brake"` → 命中
-5. **产品中文简称匹配**（PI item 路径）: 在 PI item 插入 `product_short_name="刹车片"`，搜 `"刹车"` → 命中
-6. **产品英文简称匹配**（PI item 路径）: 在 PI item 插入 `product_short_name_en="BP750"`，搜 `"bp"` → 命中
-7. **OE 子串匹配（单 token）**: 插入 `oes=["601","750","AXMC"]`，搜 `"750"` → score 50，matched_in 含 `oe`
-8. **OE 多 token 拆分匹配**: 插入 `oes=["601","750","AXMC"]`，搜 `"601, 750 / AXMC"` → 必须返回该条
-9. **OE 部分 token 命中**: 插入 `oes=["601","750","AXMC"]`，搜 `"ax"` → 命中（大小写不敏感子串）
-10. **多匹配项排序**: 插入多条 candidate，断言按 score 降序
-11. **customer_id 过滤（P0-1）**: 插入客户 A、B 各一条相同型号的产品，`customer_id=A` 搜索返回**只含 A 的那条**
-12. **keyword 边界**: 空串 → 422；长度 101 → 422
-13. **下单回填字段存在性**: response 至少含 `customer_code` / `price_usd` 字段（缺一即失败）；**不应**返回 `price_rmb` / `currency` 字段（P1-6 方案 1：业务仅支持 USD）
-14. **OE 命中也返回名称字段（P1-5）**: 先在 PI item 写入产品 A 的 `product_short_name="刹车片"`，再在客户产品表把 customer_model 改为唯一值，搜索该 customer_model → 响应里 product_short_name 仍是 "刹车片"
-15. **下单 product_id 写入**: 提交 PI 时 payload.items[0].product_id 不为 null，验证 `pi_proforma_invoice_item.product_id` 等于该值（P0-3）
-16. **下单 customer_model 写入**: payload.items[0].customer_model 不为 null，验证 PI item.customer_model 一致（P0-4）
-17. **仅 PI item detail_desc 命中（P0-6）**: `PrdCustomerProduct.product_name` 为 null，PI item.detail_desc="刹车片"，搜索 "刹车" → 命中，product_name 正确返回 "刹车片"
-18. **仅 PI item customer_model 命中（P0-6）**: `PrdCustomerProduct.customer_model` 为 null，PI item.customer_model="ABC-750"，搜索 "ABC-750" → 命中，customer_model 正确返回
-19. **已删除 PI item 不命中（P1-8）**: PI item 已软删除（`is_deleted=True`），搜索其 detail_desc → **不返回**
-20. **已删除 PrdCustomerProduct 不返回（P0-8）**: `PrdCustomerProduct.deleted_at` 已设，客户型号为 "DELETED"，搜索 "DELETED" → **不返回**
-21. **sub_images 解析**: PrdCustomerProduct.sub_images='["img2.jpg","img3.jpg"]'，搜索结果 item.sub_images 长度为 2；异常值 `"invalid json"` → 返回空数组，不抛错
-22. **matched_in 映射正确（P0-6 / P0-7）**: PI item.detail_desc 命中，matched_in 含 "product_name"（而非原始键 "detail_desc"）；PI item.customer_model 命中，matched_in 含 "customer_model"
-23. **主 OE 优先排序（P2-4）**: PrdCustomerProductOE 记录中 `is_primary=True` 的 OE 必须出现在响应 `oes` 数组的第一位；前端 `oes[0]` 即为主 OE
-24. **sub_images JSON 异常防御（P1-10）**: `p.sub_images="invalid json"` → `_parse_sub_images` 返回 `[]`，不抛 `JSONDecodeError`
-25. **集成：路由不被截获**: `GET /api/customer-products/search` → 不触发 `/{product_id}` 路径，返回 200；`GET /api/customer-products/search?keyword=test` → 有结果
-26. **集成：Schema 校验通过**: 响应 JSON 通过 `ProductSearchResponse` Pydantic 校验，`customer_name` 为空时返回空字符串而非 None
-27. **集成：oes[0] 是主 OE**: `PrdCustomerProductOE` 中 `is_primary=True` 的记录出现在 `oes[0]`
+1. **精确 customer_model**: `customer_model="ABC-750"`，搜 `"ABC-750"` → score=100，matched_in 含 `customer_model`
+2. **模糊 customer_model**: 搜 `"ABC"` → score=80
+3. **产品中文全称**: `product_name="750 刹车片"`，搜 `"刹车"` → score=60，matched_in 含 `product_name`
+4. **PI item detail_desc_en**: PI item 插入 `detail_desc_en="Brake Pad 750"`，搜 `"brake"` → 命中，matched_in 含 `product_name_en`
+5. **PI item product_short_name**: 搜 `"刹车"` → 命中
+6. **PI item product_short_name_en**: 搜 `"bp"` → 命中
+7. **OE 单 token 子串**: `oes=["601","750","AXMC"]`，搜 `"750"` → score=50，matched_in 含 `oe`
+8. **OE 多 token 整串**: 搜 `"601, 750 / AXMC"` → 必须返回该条
+9. **OE 部分 token**: 搜 `"ax"` → 命中（大小写不敏感）
+10. **排序**: 多条候选 → 按 score desc
+11. **customer_id 过滤**: 客户 A、B 各一条同型号，`customer_id=A` → 仅返回 A 的那条
+12. **keyword 边界**: 空串→422，长度 101→422
+13. **响应字段**: 含 `customer_code` / `price_usd`，不含 `price_rmb` / `currency`
+14. **OE 命中也返回名称字段**: OE 命中后 `product_short_name` 有值（来自最近 PI item）
+15. **下单 product_id 写入**: `payload.items[0].product_id` → `pi_proforma_invoice_item.product_id` 非空
+16. **下单 customer_model 写入**: `payload.items[0].customer_model` → PI item 记录一致
+17. **仅 PI item detail_desc 命中**: `PrdCustomerProduct.product_name=null`，PI item.detail_desc="刹车片"，搜 "刹车" → 命中，`product_name="刹车片"`
+18. **仅 PI item customer_model 命中**: `PrdCustomerProduct.customer_model=null`，PI item.customer_model="ABC-750"，搜 "ABC-750" → 命中
+19. **已删除 PI item 不命中**: `is_deleted=True`，搜其 detail_desc → 不返回
+20. **已删除 PrdCustomerProduct 不返回**: `deleted_at` 已设，搜其型号 → 不返回
+21. **sub_images 正常解析**: `'["img2.jpg","img3.jpg"]'` → `length=2`
+22. **sub_images JSON 异常**: `"invalid json"` → `[]`，不抛异常
+23. **sub_images 非字符串过滤**: `[123, null]` → `[]`
+24. **matched_in 映射**: PI item.detail_desc 命中 → matched_in 含 `"product_name"`；PI item.customer_model 命中 → 含 `"customer_model"`
+25. **主 OE 优先**: `is_primary=True` 的 OE 出现在 `oes[0]`
+26. **路由不被截获**: `GET /api/customer-products/search?keyword=test` → 200，有结果
+27. **Schema 校验**: 响应 JSON 通过 `ProductSearchResponse` Pydantic 校验，`customer_name=""` 而非 None
 
 ### 7.2 前端 vitest（新增 `frontend/src/api/__tests__/productSearch.test.ts`）
 1. `splitForHighlight("刹车片 750", "750")` → `[{ text: "刹车片 ", hit: false }, { text: "750", hit: true }, ...]`，**不返回 HTML 字符串**
@@ -1116,38 +1116,48 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 
 ## 11. 验收标准
 
-### P0 修复（P0-1 / P0-2 / P0-3 / P0-4 / P0-6 / P0-7 / P0-8 必须全部通过）
-- **P0-1 接口路径**: 前端调用 `GET /api/customer-products/search`，后端 200；旧路径 `/api/product-customer/search` 不再被前端引用。
-- **P0-2 下单回填字段**: 选择搜索结果后，`form.customer_code` / `form.customer_model` / `form.oe_number` / `form.unit_price` / `form.product_id` / `form.customer_id` 全部正确回填（即使响应里某些字段为 null 也不报错，UI 给出友好提示）。
-- **P0-3 customer_id 过滤 + product_id 入 payload**:
-  - **customer_id 过滤**: 搜索时传 `customer_id` 参数，4 类候选都被过滤。验证：插入客户 A、B 各一条相同型号的产品，`customer_id=A` 搜索返回只含 A 的那条。
-  - **OE 多 token 拆分**: 录入 `601,750,AXMC` 保存后，搜索 `601, 750 / AXMC`（带分隔符的整串）必须返回该条；搜索 `750` 也命中；搜索 `ax`（小写片段）也命中。
-  - **product_id 入 payload**: 下单提交 `payload.items[0]` 必须含 `product_id`，后端 `crud.pi.create_pi_invoice` 必须写入 `pi_proforma_invoice_item.product_id`。
-- **P0-4 customer_model 入 payload**: `PIInvoiceItemCreate` schema 必须显式声明 `customer_model` 字段；下单后 PI item 的 `customer_model` 与表单一致。
+### 功能验收（必须全部通过）
 
-### P1 修复（P1-1 / P1-2 / P1-3 / P1-4 / P1-5 / P1-6 必须全部通过）
-- **P1-1 排序可靠性**: 数据库中存在大量客户产品时，精确匹配 `customer_model == kw` 的条目**必须出现在结果前列**，不能因为 LIMIT 截断而消失。验证：插入 500 条随机产品 + 1 条精确匹配，搜索该精确型号应返回首条。
-- **P1-2 名称字段闭环**: 名称字段的**唯一数据源**是 `pi_proforma_invoice_item` 表（`detail_desc_en` / `product_short_name` / `product_short_name_en`）。搜索响应里这 3 个字段来自最近一次 PI item。前端 `saveField` 无需修改键名。验证：在 PI item 里设 `product_short_name = "刹车片"`，搜索 "刹车" 应命中。
-- **P1-3 XSS 防御**: 组件不应使用 `v-html`；含恶意 HTML 的产品名应作为文本原样展示，不执行。验证：在 `PrdCustomerProduct.product_name` 写入 `<script>alert(1)</script>`，搜索 → 页面不应弹窗。
-- **P1-4 OE 批量同步**: `POST /api/customer-products/{id}/oes/bulk-sync` 单事务原子，去重，主 OE = 首条，清空时主 OE 也清除。
-- **P1-5 非名称命中也返回名称字段**: 通过 OE / 客户型号 命中的产品，响应 `product_name_en` / `product_short_name*` **必须有值**（来自该产品最近一次 PI item）。验证：先在 PI item 里写入产品 A 的 `product_short_name = "刹车片"`，再在客户产品表把 customer_model 改为唯一值，搜索该 customer_model → 响应里 product_short_name 仍是 "刹车片"。
-- **P1-6 货币字段（方案 1：仅 USD）**: 响应**不返回** `currency` / `price_rmb`；搜索结果显示的"价格货币"由 PI 主表 `currency` 决定（默认 USD）；下单单 `unit_price` 按 USD 处理。**未来多币种扩展路径见 §4.2.5 第 6 步。**
-- **P1-7 detail_desc 精排**: `PrdCustomerProduct.detail_desc` 独立参与精排（score=30），避免仅命中详细描述的商品 score 为 0、matched_in 缺失。
-- **P1-8 已删除 PI item 过滤**: 两处 latest PI 子查询（`latest_pi_item_sq` + `latest_pi_all_sq`）均加 `is_deleted == False`；子查询 JOIN 后额外加兜底 `filter`；避免已软删除 PI 的名称参与搜索。
-- **P2-3 N+1 防护**: 最终加载 `PrdCustomerProduct` 时用 `joinedload(customer)` / `selectinload(codes)` / `selectinload(oes)` 预加载关联，20 条结果总共 4 条 SQL，而非 60+ 条。
-- **P2-4 主 OE 优先**: `_build_oes()` 按 `is_primary` 排序后返回，确保 `oes[0]` 是主 OE；前端回填 `form.oe_number = item.oes[0]` 即主 OE。
-- **P1-10 sub_images JSON 异常**: `_parse_sub_images()` 捕获 `JSONDecodeError` 返回 `[]`；JSON 合法但含非字符串元素时被过滤（`[123, null]` → `[]`）。
+#### P0 — 实现阻断项
+- **P0-1 接口路径**: `GET /api/customer-products/search` → 200；`GET /api/customer-products/search?keyword=test` → 有结果。`/search` 必须放在 `/{product_id}` 之前（FastAPI 路由顺序）。
+- **P0-2 下单回填字段**: 选搜索结果后 `form.customer_code / customer_model / oe_number / unit_price / product_id / customer_id` 全部正确回填；响应 null 不报错。
+- **P0-3 customer_id 过滤**: 4 组候选查询均按 `customer_id` 过滤；同型号产品跨客户搜索返回只含指定客户的记录。
+- **P0-4 product_id 入 payload**: `payload.items[0]` 含 `product_id`；`create_pi_invoice` 写入 `pi_proforma_invoice_item.product_id`。
+- **P0-5 product_name / customer_model PI item 优先**: `product_name` 优先取 `pi_item.detail_desc`；`customer_model` 优先取 `pi_item.customer_model`；fallback 到 PrdCustomerProduct 同名字段。
+- **P0-6 候选含 PI item detail_desc / customer_model**: `pi_name_match_q` OR 条件含 `PiProformaInvoiceItem.detail_desc` 和 `.customer_model`。
+- **P0-7 返回值符合 Schema**: `build_search_item()` 返回完整 `ProductSearchItem`；`matched_in` 做键映射转换；`sub_images` 真实解析 JSON。
+- **P0-8 deleted_at 过滤**: 最终产品加载加 `.filter(PrdCustomerProduct.deleted_at.is_(None))`。
 
-### 业务验收
-1. ProductEditDialog 中英文全称 + 简称 blur 后重新打开仍能看到值（写入 PI item 表）。
-2. NewOrderDialog 录入"601,750,AXMC"保存后，搜索"750"返回该条，搜索"601"也返回。
-3. 录入产品简称"刹车片"，搜索"刹车"命中，搜索"片"也命中。
-4. 录入产品英文名"Brake Pad 750"，搜索"brake"命中（不区分大小写）。
-5. 搜索"无此编号"返回 0 条 + `<el-empty>` 占位。
-6. 搜索结果命中字段高亮（红字），hover 副图缩略图可预览大图。
-7. 客户型号精确匹配排第一（score 100），OE 子串匹配排在其后（score 50）。
-8. `match_score` 在前端不展示（仅用于排序）。
-9. 后端 pytest 通过（覆盖 4 个名称字段 + 客户型号 + OE + 描述 + 下单回填字段 + XSS 输入 + customer_id 过滤 + product_id 写入），前端 vitest 通过。
-10. `endpoints.ts` 是单一来源，切换搜索接口仅改一处常量。
-11. NewOrderDialog 下单流程：选完产品 → 创建订单 → 后端 PI item 写入 `customer_code` / `customer_model` / `unit_price` / `oe_number` / **`product_id`** 与表单一致。
-12. `USE_PRODUCT_SEARCH` feature flag 切到 false 后，搜索降级到旧三件套（不期望工作，但页面不崩）。
+#### P1 — 质量要求
+- **P1-1 排序可靠性**: 精确型号匹配不受 LIMIT 截断影响；插入 500 条随机 + 1 条精确 → 搜索精确型号返回首条。
+- **P1-2 名称字段闭环**: 4 个 PI item 字段（`detail_desc` / `detail_desc_en` / `product_short_name` / `product_short_name_en`）全部参与精排。
+- **P1-3 XSS 防御**: `splitForHighlight` 不返回 HTML；`v-html` 在模板中零使用；恶意输入作为纯文本展示。
+- **P1-4 OE 批量同步**: `POST /api/customer-products/{id}/oes/bulk-sync` 单事务原子；去重；主 OE = 首条；清空时清除主 OE 标记。
+- **P1-5 非名称命中返回名称**: OE / 客户型号命中的产品，响应含 `product_name_en` / `product_short_name*`（来自该产品最近一次 PI item）。
+- **P1-6 货币（方案 1: 仅 USD）**: 响应不返回 `currency` / `price_rmb`；`unit_price` 按 USD 写入。
+- **P1-7 detail_desc 精排**: `PrdCustomerProduct.detail_desc` 独立计分（score=30），matched_in 含 `detail_desc`。
+- **P1-8 已删除 PI item 过滤**: 两处 latest PI 子查询均加 `is_deleted == False`；JOIN 后加兜底 filter。
+- **P1-9 字段覆盖完整**: `customer_code` 从 `PrdCustomerProductCode` 取 `is_primary=true` 的 `product_code`；`oes[0]` 是主 OE。
+- **P1-10 sub_images 安全解析**: `json.loads` 异常捕获返回 `[]`；JSON 合法但含非字符串元素时被过滤。
+- **P1-11 sub_images 元素类型过滤**: `[123, null]` → `[]`；`["a.jpg", "b.png"]` → `["a.jpg", "b.png"]`。
+
+#### 集成测试
+- **P2-1 feature flag 回滚**: `USE_PRODUCT_SEARCH=false` → 降级到旧三件套，页面不崩。
+- **P2-2 取消请求**: `axios.isCancel(error)` 判定静默忽略，不写 ElMessage。
+- **P2-3 N+1 防护**: `joinedload`/`selectinload` 预加载 `customer/codes/oes`；20 条结果 ≤ 4 条 SQL。
+- **P2-4 主 OE 优先**: `_build_oes()` 按 `is_primary` 排序，`oes[0]` 为主 OE。
+- **P2-5 集成校验**: 路由不被截获；响应通过 `ProductSearchResponse` Pydantic 校验；`oes[0]` 是主 OE。
+
+#### 业务验收
+- ProductEditDialog 中英文全称 + 简称 blur 后重新打开仍能看到值（写入 PI item 表）。
+- NewOrderDialog 录入"601,750,AXMC"保存后，搜索"750"返回该条，搜索"601"也返回。
+- 录入产品简称"刹车片"，搜索"刹车"命中，搜索"片"也命中。
+- 录入产品英文名"Brake Pad 750"，搜索"brake"命中（不区分大小写）。
+- 搜索"无此编号"返回 0 条 + `<el-empty>` 占位。
+- 搜索结果命中字段高亮（红字），hover 副图缩略图可预览大图。
+- 客户型号精确匹配排第一（score 100），OE 子串匹配排在其后（score 50）。
+- `match_score` 在前端不展示（仅用于排序）。
+- pytest + vitest 全部通过。
+- `endpoints.ts` 是单一来源，切换搜索接口仅改一处常量。
+- NewOrderDialog 下单流程：选完产品 → 创建订单 → 后端 PI item 写入 `customer_code` / `customer_model` / `unit_price` / `oe_number` / `product_id` 与表单一致。
+- `USE_PRODUCT_SEARCH` feature flag 切到 false 后，搜索降级到旧三件套，页面不崩。
