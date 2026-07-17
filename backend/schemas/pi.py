@@ -16,6 +16,7 @@ class PIInvoiceItemCreate(BaseModel):
     unit_price: float
     oe_number: Optional[str] = None
     customer_code: Optional[str] = None
+    customer_model: Optional[str] = None     # 2026-07-17 搜索服务接入
     detail_desc: Optional[str] = None
     remark: Optional[str] = None
 
