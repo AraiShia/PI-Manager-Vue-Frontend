@@ -1,8 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, config } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import ElementPlus from 'element-plus'
 import ProductSearchSelect from '../ProductSearchSelect.vue'
+
+// Stub Element Plus components
+config.global.stubs = {
+  'el-select': {
+    template: '<select class="el-select"><slot /></select>',
+    props: ['modelValue', 'placeholder', 'clearable', 'disabled', 'filterable', 'remote', 'loading'],
+  },
+  'el-option': {
+    template: '<option class="el-option"><slot /></option>',
+    props: ['label', 'value'],
+  },
+  'el-image': {
+    template: '<img class="el-image" />',
+    props: ['src'],
+  },
+}
 
 // Mock customerProduct API
 vi.mock('@/api/customerProduct', () => ({
@@ -48,9 +63,6 @@ describe('ProductSearchSelect', () => {
   it('renders el-select component', async () => {
     const wrapper = mount(ProductSearchSelect, {
       props: { modelValue: null },
-      global: {
-        plugins: [ElementPlus],
-      },
     })
     await nextTick()
     expect(wrapper.find('.el-select').exists()).toBe(true)
@@ -59,9 +71,6 @@ describe('ProductSearchSelect', () => {
   it('renders with selected item', async () => {
     const wrapper = mount(ProductSearchSelect, {
       props: { modelValue: mockResults[0] },
-      global: {
-        plugins: [ElementPlus],
-      },
     })
     await nextTick()
     expect(wrapper.find('.el-select').exists()).toBe(true)
@@ -70,9 +79,6 @@ describe('ProductSearchSelect', () => {
   it('renders disabled state', async () => {
     const wrapper = mount(ProductSearchSelect, {
       props: { modelValue: null, disabled: true },
-      global: {
-        plugins: [ElementPlus],
-      },
     })
     await nextTick()
     expect(wrapper.find('.el-select').exists()).toBe(true)
@@ -82,9 +88,6 @@ describe('ProductSearchSelect', () => {
     const customPlaceholder = 'Search product'
     const wrapper = mount(ProductSearchSelect, {
       props: { modelValue: null, placeholder: customPlaceholder },
-      global: {
-        plugins: [ElementPlus],
-      },
     })
     await nextTick()
     expect(wrapper.find('.el-select').exists()).toBe(true)
