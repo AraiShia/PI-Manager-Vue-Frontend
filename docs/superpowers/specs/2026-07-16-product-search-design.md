@@ -478,12 +478,12 @@ def _build_oes(p) -> list[str]:
 
 
 def _parse_sub_images(value) -> list[str]:
-    """安全解析 sub_images JSON 字段，失败时返回空数组"""
+    """安全解析 sub_images JSON 字段，失败时返回空数组；过滤非字符串元素"""
     if not isinstance(value, str) or not value:
         return []
     try:
         data = json.loads(value)
-        return data if isinstance(data, list) else []
+        return [item for item in data if isinstance(item, str)]
     except json.JSONDecodeError:
         return []
 
@@ -1012,6 +1012,9 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 22. **matched_in 映射正确（P0-6 / P0-7）**: PI item.detail_desc 命中，matched_in 含 "product_name"（而非原始键 "detail_desc"）；PI item.customer_model 命中，matched_in 含 "customer_model"
 23. **主 OE 优先排序（P2-4）**: PrdCustomerProductOE 记录中 `is_primary=True` 的 OE 必须出现在响应 `oes` 数组的第一位；前端 `oes[0]` 即为主 OE
 24. **sub_images JSON 异常防御（P1-10）**: `p.sub_images="invalid json"` → `_parse_sub_images` 返回 `[]`，不抛 `JSONDecodeError`
+25. **集成：路由不被截获**: `GET /api/customer-products/search` → 不触发 `/{product_id}` 路径，返回 200；`GET /api/customer-products/search?keyword=test` → 有结果
+26. **集成：Schema 校验通过**: 响应 JSON 通过 `ProductSearchResponse` Pydantic 校验，`customer_name` 为空时返回空字符串而非 None
+27. **集成：oes[0] 是主 OE**: `PrdCustomerProductOE` 中 `is_primary=True` 的记录出现在 `oes[0]`
 
 ### 7.2 前端 vitest（新增 `frontend/src/api/__tests__/productSearch.test.ts`）
 1. `splitForHighlight("刹车片 750", "750")` → `[{ text: "刹车片 ", hit: false }, { text: "750", hit: true }, ...]`，**不返回 HTML 字符串**
@@ -1133,7 +1136,7 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 - **P1-8 已删除 PI item 过滤**: 两处 latest PI 子查询（`latest_pi_item_sq` + `latest_pi_all_sq`）均加 `is_deleted == False`；子查询 JOIN 后额外加兜底 `filter`；避免已软删除 PI 的名称参与搜索。
 - **P2-3 N+1 防护**: 最终加载 `PrdCustomerProduct` 时用 `joinedload(customer)` / `selectinload(codes)` / `selectinload(oes)` 预加载关联，20 条结果总共 4 条 SQL，而非 60+ 条。
 - **P2-4 主 OE 优先**: `_build_oes()` 按 `is_primary` 排序后返回，确保 `oes[0]` 是主 OE；前端回填 `form.oe_number = item.oes[0]` 即主 OE。
-- **P1-10 sub_images JSON 异常**: `_parse_sub_images()` 捕获 `JSONDecodeError` 返回 `[]`，不抛异常。
+- **P1-10 sub_images JSON 异常**: `_parse_sub_images()` 捕获 `JSONDecodeError` 返回 `[]`；JSON 合法但含非字符串元素时被过滤（`[123, null]` → `[]`）。
 
 ### 业务验收
 1. ProductEditDialog 中英文全称 + 简称 blur 后重新打开仍能看到值（写入 PI item 表）。
