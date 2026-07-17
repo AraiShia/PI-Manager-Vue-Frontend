@@ -280,7 +280,10 @@ latest_pi_item_sq = (
         PiProformaInvoiceItem.product_id,
         func.max(PiProformaInvoiceItem.id).label("latest_id"),
     )
-    .filter(PiProformaInvoiceItem.product_id.isnot(None))
+    .filter(
+        PiProformaInvoiceItem.product_id.isnot(None),
+        PiProformaInvoiceItem.is_deleted == False,   # P1-8：排除已删除 PI item
+    )
     .group_by(PiProformaInvoiceItem.product_id)
     .subquery()
 )
@@ -292,9 +295,12 @@ pi_name_match_q = (
     .join(PiProformaInvoice, PiProformaInvoice.id == PiProformaInvoiceItem.pi_id)
     .filter(
         or_(
-            PiProformaInvoiceItem.detail_desc_en.ilike(text_kw),
-            PiProformaInvoiceItem.product_short_name.ilike(text_kw),
-            PiProformaInvoiceItem.product_short_name_en.ilike(text_kw),
+            # P0-6：中文名称（detail_desc）和客户型号（customer_model）来自 PI item
+            PiProformaInvoiceItem.detail_desc.ilike(text_kw),      # → matched_in: product_name
+            PiProformaInvoiceItem.customer_model.ilike(text_kw),   # → matched_in: customer_model
+            PiProformaInvoiceItem.detail_desc_en.ilike(text_kw),  # → matched_in: product_name_en
+            PiProformaInvoiceItem.product_short_name.ilike(text_kw),    # → matched_in: product_short_name
+            PiProformaInvoiceItem.product_short_name_en.ilike(text_kw), # → matched_in: product_short_name_en
         ),
     )
 )
@@ -354,7 +360,10 @@ latest_pi_all_sq = (
         PiProformaInvoiceItem.product_id,
         func.max(PiProformaInvoiceItem.id).label("latest_id"),
     )
-    .filter(PiProformaInvoiceItem.product_id.in_(candidate_ids))
+    .filter(
+        PiProformaInvoiceItem.product_id.in_(candidate_ids),
+        PiProformaInvoiceItem.is_deleted == False,  # P1-8：排除已删除 PI item
+    )
     .group_by(PiProformaInvoiceItem.product_id)
     .subquery()
 )
@@ -363,6 +372,7 @@ latest_pi_for_display = {
     for row in db.query(PiProformaInvoiceItem)
     .join(latest_pi_all_sq,
           PiProformaInvoiceItem.id == latest_pi_all_sq.c.latest_id)
+    .filter(PiProformaInvoiceItem.is_deleted == False)  # P1-8：兜底
     .all()
 }
 # 覆盖：让展示用更完整的数据生效（用于响应 product_name_en / 简称）
@@ -427,15 +437,78 @@ def score_product(p, kw, oe_tokens, latest_pi_item) -> tuple[float, list[str]]:
             if val and kwl in str(val).lower():
                 score = max(score, float(sc)); matched.append(key)
 
-    # detail_desc（P0：PI item.detail_desc 已合并到 product_name，上面已处理）
-    # 不再单独匹配 PrdCustomerProduct.detail_desc（避免重复）
+    # P1-7：PrdCustomerProduct.detail_desc（独立列，非 PI item.detail_desc）也参与匹配
+    if p.detail_desc and kwl in p.detail_desc.lower():
+        score = max(score, 30.0); matched.append("detail_desc")
 
     oes = [(oe.oe_number or "") for oe in p.oes]
     if any(any(tok in oe.lower() for tok in token_lc) for oe in oes):
         score = max(score, 50.0); matched.append("oe")
 
     return score, matched
-```
+
+
+# P0-7：返回值 Serializer — 返回完整的 ProductSearchItem，与 Schema 对齐
+def _build_code(p) -> str | None:
+    """从 PrdCustomerProductCode 关联表取主编号"""
+    codes = p.codes  # SQLAlchemy relationship
+    if not codes:
+        return None
+    primary = next((c for c in codes if c.is_primary), None)
+    return primary.product_code if primary else (codes[0].product_code if codes else None)
+
+
+def _build_oes(p) -> list[str]:
+    """从 PrdCustomerProductOE 关联表取所有 OE 号"""
+    return [oe.oe_number for oe in (p.oes or []) if oe.oe_number]
+
+
+def build_search_item(p, pi_item, matched: list[str], score: float) -> ProductSearchItem:
+    """
+    统一构造返回对象：来源清晰，字段不缺失。
+    注意：matched_in 来源映射：
+      PiProformaInvoiceItem.detail_desc    -> product_name（响应字段）
+      PiProformaInvoiceItem.customer_model -> customer_model（响应字段）
+      PiProformaInvoiceItem.detail_desc_en -> product_name_en
+      PiProformaInvoiceItem.product_short_name  -> product_short_name
+      PiProformaInvoiceItem.product_short_name_en -> product_short_name_en
+      PrdCustomerProduct.detail_desc              -> detail_desc（响应字段）
+    """
+    pi_name_map = {
+        "detail_desc":            "product_name",   # PI item 中文全称
+        "customer_model":         "customer_model", # PI item 客户型号
+        "detail_desc_en":        "product_name_en",
+        "product_short_name":     "product_short_name",
+        "product_short_name_en":  "product_short_name_en",
+    }
+    resolved_matched: list[str] = []
+    for m in matched:
+        resolved_matched.append(pi_name_map.get(m, m))  # 统一 key 名
+
+    pi_detail_desc = getattr(pi_item, "detail_desc", None) if pi_item else None
+    pi_customer_model = getattr(pi_item, "customer_model", None) if pi_item else None
+
+    return ProductSearchItem(
+        id=p.id,
+        customer_id=p.customer_id,
+        customer_name=p.customer.name if p.customer else None,
+        customer_model=pi_customer_model or p.customer_model or "",
+        product_name=pi_detail_desc or p.product_name or "",
+        product_name_en=getattr(pi_item, "detail_desc_en", None) if pi_item else None,
+        product_short_name=getattr(pi_item, "product_short_name", None) if pi_item else None,
+        product_short_name_en=getattr(pi_item, "product_short_name_en", None) if pi_item else None,
+        detail_desc=p.detail_desc or "",
+        brand=p.brand,
+        customer_code=_build_code(p),
+        product_code=p.system_code or None,
+        price_usd=float(p.price_usd) if p.price_usd else None,
+        oes=_build_oes(p),
+        image_url=p.image_url or None,
+        sub_images=[],   # 从 p.sub_images JSON 解析
+        matched_in=resolved_matched,
+        match_score=score,
+    )
+
 
 # 主流程：先算所有候选 score，再排序截 limit
 results = []
@@ -448,9 +521,12 @@ results.sort(key=lambda x: (-x[0], x[1].id))
 total = len(results)                                    # P1-2：截取前的全部候选数量
 results = results[:limit]
 return ProductSearchResponse(
-        results=[{"product": p, "matched": m} for _, p, m in results],
-        total=total,
-    )
+    results=[
+        build_search_item(p, latest_name_map.get(p.id), matched, score)
+        for score, p, matched in results
+    ],
+    total=total,
+)
 
 **性能约束**: 全表 ILIKE + Python score 在数据量 < 5k 行客户产品时实测 < 200ms。如未来超 10k 行再评估 pg_trgm 全文索引。
 
