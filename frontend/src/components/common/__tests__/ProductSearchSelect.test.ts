@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, config } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import ProductSearchSelect from '../ProductSearchSelect.vue'
+import type { CustomerProductSearchItem } from '@/api/customerProduct'
 
 // Stub Element Plus components
 config.global.stubs = {
@@ -32,7 +33,7 @@ vi.mock('@/api/customerProduct', () => ({
   searchCustomerProducts: vi.fn(),
 }))
 
-const mockResults = [
+const mockResults: CustomerProductSearchItem[] = [
   {
     id: 1,
     customer_id: 1,

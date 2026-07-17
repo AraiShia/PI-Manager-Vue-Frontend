@@ -184,6 +184,7 @@ const selectedProduct = ref<CustomerProductSearchItem | null>(null)
 
 const singleForm = reactive({
   search_keyword: '',
+  product_id: null as number | null,
   customer_code: '',
   customer_model: '',
   oe_number: '',
@@ -229,6 +230,7 @@ function formatAmount(amount: number): string {
 // onProductSelect
 function onProductSelect(item: CustomerProductSearchItem) {
   selectedProduct.value = item
+  singleForm.product_id = item.id
   singleForm.customer_code = item.customer_code || item.customer_model || ''
   singleForm.customer_model = item.customer_model || ''
   singleForm.oe_number = item.oes[0] || ''
@@ -238,6 +240,7 @@ function onProductSelect(item: CustomerProductSearchItem) {
 
 function onSearchClear() {
   selectedProduct.value = null
+  singleForm.product_id = null
   singleForm.customer_code = ''
   singleForm.customer_model = ''
   singleForm.oe_number = ''
@@ -330,6 +333,7 @@ async function submitSingle() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items: [{
+            product_id: singleForm.product_id ?? undefined,
             product_code: singleForm.customer_code,
             customer_code: singleForm.customer_code,
             customer_model: singleForm.customer_model || undefined,
@@ -413,6 +417,7 @@ async function submitExcel() {
 function onClose() {
   singleFormRef.value?.resetFields()
   singleForm.search_keyword = ''
+  singleForm.product_id = null
   singleForm.customer_code = ''
   singleForm.customer_model = ''
   singleForm.oe_number = ''

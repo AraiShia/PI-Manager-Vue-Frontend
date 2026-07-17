@@ -90,6 +90,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   (e: 'update:modelValue', v: CustomerProductSearchItem | null): void
   (e: 'select', v: CustomerProductSearchItem): void
+  (e: 'clear'): void
 }>()
 
 const selectedItem = ref(props.modelValue ?? null)
@@ -97,6 +98,8 @@ const options = ref<CustomerProductSearchItem[]>([])
 const loading = ref(false)
 const keyword = ref('')
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+let abortController: AbortController | null = null
+let requestSeq = 0
 
 watch(
   () => props.modelValue,
@@ -119,13 +122,25 @@ function labelOf(item: CustomerProductSearchItem): string {
 async function onQuery(query: string) {
   keyword.value = query
   if (searchTimer) clearTimeout(searchTimer)
+  
+  // 取消正在执行的请求
+  if (abortController) {
+    abortController.abort()
+    abortController = null
+  }
+  requestSeq++
+  
   if (!query || query.trim().length < 1) {
     options.value = []
     loading.value = false
     return
   }
   loading.value = true
+  
+  const currentSeq = requestSeq
+  
   searchTimer = setTimeout(async () => {
+    abortController = new AbortController()
     try {
       const { searchCustomerProducts } = await import('@/api/customerProduct')
       const results = await searchCustomerProducts({
@@ -133,11 +148,18 @@ async function onQuery(query: string) {
         customerId: props.customerId,
         limit: 20,
       })
-      options.value = results
+      // 检查是否是最新请求，避免旧请求覆盖新结果
+      if (currentSeq === requestSeq) {
+        options.value = results
+      }
     } catch {
-      options.value = []
+      if (currentSeq === requestSeq) {
+        options.value = []
+      }
     } finally {
-      loading.value = false
+      if (currentSeq === requestSeq) {
+        loading.value = false
+      }
     }
   }, 150)
 }
@@ -149,10 +171,23 @@ function onSelect(item: CustomerProductSearchItem) {
 }
 
 function onClear() {
+  // 取消正在执行的请求，避免清空后旧请求覆盖结果
+  if (abortController) {
+    abortController.abort()
+    abortController = null
+  }
+  requestSeq++
+  if (searchTimer) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
+  
   selectedItem.value = null
   options.value = []
   keyword.value = ''
+  loading.value = false
   emit('update:modelValue', null)
+  emit('clear')
 }
 </script>
 

@@ -1251,46 +1251,69 @@ async def supplement_order_items(
     
     for item_data in request.items:
         try:
-            # 尝试匹配产品
+            # 统一字段读取：前端可能用 quantity 或 qty；优先 product_id 匹配
+            product_id = item_data.get('product_id')
             product_code = item_data.get('product_code', '')
+            customer_code = item_data.get('customer_code', '') or product_code
+            customer_model = item_data.get('customer_model')
             oe_number = item_data.get('oe_number', '')
+            quantity = item_data.get('quantity') or item_data.get('qty') or 1
+            unit_price = item_data.get('unit_price') or 0
             customer_id = order.customer_id
-            
-            # 查找是否已存在产品
+
+            # 查找产品：优先按 product_id（搜索选中），其次按 customer_code / system_code
+            from models.customer_product import PrdCustomerProduct
             existing_product = None
-            if product_code:
-                from models.customer_product import PrdCustomerProduct
+
+            if product_id:
                 existing_product = db.query(PrdCustomerProduct).filter(
-                    PrdCustomerProduct.system_code == product_code
+                    PrdCustomerProduct.id == product_id,
+                    PrdCustomerProduct.customer_id == customer_id,
                 ).first()
-            
+
+            if not existing_product and customer_code:
+                existing_product = db.query(PrdCustomerProduct).filter(
+                    PrdCustomerProduct.customer_id == customer_id,
+                    PrdCustomerProduct.system_code == customer_code,
+                ).first()
+
+            if not existing_product and product_code:
+                existing_product = db.query(PrdCustomerProduct).filter(
+                    PrdCustomerProduct.customer_id == customer_id,
+                    PrdCustomerProduct.system_code == product_code,
+                ).first()
+
             if existing_product:
                 # 产品已存在，创建订单项
+                # 回填：前端未传 customer_model/detail_desc 时使用产品已有值
+                item_customer_model = customer_model or existing_product.customer_model
+                item_detail_desc = item_data.get('detail_desc') or existing_product.detail_desc or existing_product.product_name
                 order_item = PiProformaInvoiceItem(
-                    order_id=order_id,
+                    pi_id=order_id,
                     product_id=existing_product.id,
-                    quantity=item_data.get('qty', 1),
-                    unit_price=item_data.get('unit_price') or 0,
-                    amount=item_data.get('amount', 0),
-                    profit_margin=profit_margin,
-                    exchange_rate=exchange_rate,
+                    oe_number=oe_number,
+                    customer_code=customer_code,
+                    customer_model=item_customer_model,
+                    detail_desc=item_detail_desc,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                    total_price=Decimal(str(quantity)) * Decimal(str(unit_price)),
                 )
                 db.add(order_item)
                 created_count += 1
             else:
                 # Phase 5: 直接创建 PrdCustomerProduct 正式产品
-                from models.customer_product import PrdCustomerProduct
                 from crud.customer_product import _generate_system_code
-                detail_desc = item_data.get('detail_desc', '') or product_code
+                detail_desc = item_data.get('detail_desc', '') or customer_code or product_code
                 category_code = item_data.get('category_id')
                 system_code = _generate_system_code(db, customer_id, category_code)
                 new_product = PrdCustomerProduct(
                     customer_id=customer_id,
                     product_name=detail_desc,
-                    customer_model=oe_number or product_code,
+                    customer_model=customer_model or oe_number or product_code,
                     detail_desc=detail_desc,
                     category_id=category_code,
-                    price_usd=item_data.get('unit_price'),
+                    price_usd=unit_price,
                     is_active=True,
                     system_code=system_code,
                     is_temporary=False,
@@ -1299,11 +1322,11 @@ async def supplement_order_items(
                 db.flush()
 
                 # 创建客户产品编号记录（用于搜索匹配）
-                if product_code:
+                if customer_code:
                     from models.customer_product_code import PrdCustomerProductCode
                     cp_code = PrdCustomerProductCode(
                         customer_product_id=new_product.id,
-                        product_code=product_code,
+                        product_code=customer_code,
                         is_primary=True
                     )
                     db.add(cp_code)
@@ -1319,13 +1342,15 @@ async def supplement_order_items(
                     db.add(cp_oe)
 
                 order_item = PiProformaInvoiceItem(
-                    order_id=order_id,
+                    pi_id=order_id,
                     product_id=new_product.id,
-                    quantity=item_data.get('qty', 1),
-                    unit_price=item_data.get('unit_price') or 0,
-                    amount=item_data.get('amount', 0),
-                    profit_margin=profit_margin,
-                    exchange_rate=exchange_rate,
+                    oe_number=oe_number,
+                    customer_code=customer_code,
+                    customer_model=customer_model,
+                    detail_desc=item_data.get('detail_desc'),
+                    quantity=quantity,
+                    unit_price=unit_price,
+                    total_price=Decimal(str(quantity)) * Decimal(str(unit_price)),
                 )
                 db.add(order_item)
                 created_count += 1

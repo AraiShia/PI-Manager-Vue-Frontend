@@ -629,7 +629,17 @@ async function submitNewCustomer() {
   })
 }
 
+function clearProductFields() {
+  form.product_id = null
+  form.customer_code = ''
+  form.customer_model = ''
+  form.oe_number = ''
+  form.detail_desc = ''
+  form.unit_price = 0
+}
+
 function onCustomerChange() {
+  clearProductFields()
   selectedProduct.value = null
 }
 
@@ -932,6 +942,7 @@ async function onSubmitExcel() {
 
 function resetAll() {
   form.customer_id = null
+  form.product_id = null
   form.customer_code = ''
   form.customer_model = ''
   form.oe_number = ''

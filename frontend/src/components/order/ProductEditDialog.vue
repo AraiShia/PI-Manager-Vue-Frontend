@@ -1951,23 +1951,31 @@ async function onSaveClick() {
       ['cartons_per_unit', form.cartons_per_unit],
       ['pack_spec', form.pack_spec],
     ]
-    await Promise.all(fieldsToSave.map(([field, value]) => saveField(field, value)))
-    const failedField = fieldsToSave.find(([field]) => fieldStates.value[field]?.status === 'error')
-    if (failedField) {
-      ElMessage.error('部分字段保存失败，请检查标红字段')
-      return
-    }
-    // 同步 OE 列表（如果用户修改了 OE 字段）
-    if (form.oe_number) {
-      const productId = item.value?.product_id
-      if (productId) {
-        try {
-          await productsApi.bulkSyncOes(productId, splitOeInput(form.oe_number))
-        } catch {
-          // OE 同步失败不影响主保存流程，仅警告
-          console.warn('[ProductEditDialog] OE 同步失败')
-        }
+    // 先同步 OE，再保存其他字段，避免字段已保存但 OE 失败的中间态
+    let oeSynced = false
+    const productId = item.value?.product_id
+    if (productId) {
+      try {
+        await productsApi.bulkSyncOes(productId, splitOeInput(form.oe_number || ''))
+        oeSynced = true
+      } catch {
+        // OE 同步失败时不保存其他字段，保留脏状态
+        ElMessage.error('OE 同步失败，保存已中止')
+        saving.value = false
+        return
       }
+    }
+    await Promise.all(fieldsToSave.map(([field, value]) => saveField(field, value)))
+    const failedFields = fieldsToSave.filter(([field]) => fieldStates.value[field]?.status === 'error')
+    if (failedFields.length > 0) {
+      // OE 已成功，字段部分失败：明确告知，避免误判
+      const fieldNames = failedFields.map(([field]) => field).join('、')
+      if (oeSynced) {
+        ElMessage.warning(`OE 已保存，但以下字段保存失败：${fieldNames}。请检查标红字段后重试`)
+      } else {
+        ElMessage.error(`以下字段保存失败：${fieldNames}。请检查标红字段`)
+      }
+      return
     }
     initialFormSnapshot.value = createFormSnapshot()
     ElMessage.success('保存成功')
