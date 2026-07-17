@@ -426,6 +426,7 @@ import {
 } from '@/utils/columnVisibility'
 import {
   detectTemporaryPi,
+  findFormalRecordMissingItems,
   getFormalRecordTooltip,
   isFormalRecordRequiredAction,
 } from '@/utils/formalRecord'
@@ -636,6 +637,23 @@ async function loadFormalRecordStatus() {
 async function onSaveFormalRecord() {
   const orderId = store.currentOrder?.id
   if (!orderId) return
+
+  const missingItems = findFormalRecordMissingItems(store.detailItems as Array<Record<string, unknown>>)
+  if (missingItems.length > 0) {
+    const details = missingItems
+      .map((item) => `第 ${item.index} 个商品「${item.name}」：${item.fields.join('、')}`)
+      .join('\n')
+    try {
+      await ElMessageBox.alert(
+        `以下商品尚未填写完整，无法保存正式纪录：\n${details}`,
+        '无法保存正式纪录',
+        { type: 'error', confirmButtonText: '知道了' }
+      )
+    } catch {
+      // alert 关闭时无需处理
+    }
+    return
+  }
 
   try {
     await ElMessageBox.confirm(
