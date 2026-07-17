@@ -75,8 +75,13 @@ export const PRODUCT_CATEGORIES = {
   nextCode: '/api/product-categories/next-code',
 } as const
 
+export const PRODUCT_SEARCH = {
+  recommend: '/api/customer-products/search',
+} as const
+
+/** @deprecated 旧路由已被移除；保留仅供历史代码兼容，新代码请用 PRODUCT_SEARCH。*/
 export const PRODUCT_CUSTOMER = {
-  search: '/api/product-customer/search',
+  search: PRODUCT_SEARCH.recommend,
 } as const
 
 // ----- 订单 / PI -----

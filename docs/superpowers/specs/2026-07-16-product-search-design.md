@@ -12,12 +12,13 @@
 ### 1.1 现状
 - `frontend/src/components/order/NewOrderDialog.vue` L223-271 现有搜索链由
   `el-radio-group(searchMode)` + `el-autocomplete` + `el-select` 三件套组成，
-  互相冗余，命中字段无高亮，结果不含图片，且 `searchProducts` 实际请求了
-  `/api/customer-products/search`（字符串硬编码，未走 `endpoints.ts` 常量）。
+  互相冗余，命中字段无高亮，结果不含图片。
+- `frontend/src/components/order/SupplementDialog.vue` L252 也调用同一搜索逻辑。
+- 两处都引用 `endpoints.ts` 的 `PRODUCT_CUSTOMER.search` = `/api/product-customer/search`，
+  **该路由后端根本不存在**（404），导致搜索下拉始终为空、用户只能手动输入（实际是静默兜底）。
 - `frontend/src/views/product/ProductManagement.vue` 顶部有独立的产品搜索框，未复用同一搜索服务。
-- 后端 `/api/customer-products/search` **已存在**（`backend/routers/customer_product.py:26`，
-  `APIRouter(prefix="/api/customer-products")`），但只返回 `PrdProduct` 单表 ILIKE 结果，
-  不识别 `customer_model`、不关联 `PrdCustomerProductOE`、不返回订单回填所需的 `customer_code` / `price_*`。
+- 后端 `/api/customer-products/...`（`routers/customer_product.py`）**已有 list/by-oe/by-code/by-system-code/{id}/codes/oes/batch 等 handler**，**但没有 `/search`**。
+- 后端 `/api/product-customers/...`（`routers/product_customer.py`，`PrdProductCustomer` 关联表）**前端零引用**，本次清理删除。
 - 产品 OE 号在 `PrdCustomerProduct.oe_number` 列以字符串存储（已废弃字段），
   现真正使用的是关联表 `PrdCustomerProductOE`（一行一条 OE）。
 
@@ -93,12 +94,12 @@
 
 ## 3. 后端设计
 
-### 3.1 路由（增强现有）
+### 3.1 路由（新增）
 
 **文件**: `backend/routers/customer_product.py`
 **前缀**: `/api/customer-products`（已存在，沿用）
 
-替换现有 `/search` handler 为增强版：
+**新增** `/search` handler（注：原 `routers/product_customer.py` 已清理删除，不影响本路径）：
 
 ```python
 @router.get("/search", response_model=ProductSearchResponse)
@@ -109,7 +110,7 @@ def search_products(
     db: Session = Depends(get_db),
 ):
     """
-    多字段模糊搜索（增强版）：
+    多字段模糊搜索：
     - customer_model 精确匹配 (score 100) > ILIKE (score 80)
     - product_name ILIKE (score 60) > detail_desc ILIKE (score 40)
     - 任一 PrdCustomerProductOE.oe_number ILIKE (score 50)
@@ -514,10 +515,16 @@ async function saveOeField(value: string) {
 }
 ```
 
-**后端依赖**: `POST /api/customer-products/{id}/oes/bulk-sync`
+**后端依赖**: OE 同步需要"全替换"语义，但现有 `POST /api/customer-products/{id}/oes/batch`（`customer_product.py:385-396`）只是**追加**，不删旧。
+
+采用方案 A：**新增** `POST /api/customer-products/{id}/oes/bulk-sync`
 - 接受 `{ oes: ["601", "750", "AXMC"] }`
-- 内部先按 `customer_product_id` 删旧，再批量插入新
+- 内部按 `customer_product_id` 先 DELETE 全部 `PrdCustomerProductOE`，再 BATCH INSERT 新列表
 - 返回 `{ added: number, removed: number, total: number }`
+
+采用方案 B（保守）：复用现有 `oes/batch`，前端保存时先 `GET /oes` 拿到全部 id，再逐个 `DELETE`，最后 `POST /oes/batch`。**不推荐**：多步操作易出现部分失败导致数据不一致。
+
+**本规格选方案 A**：在 `customer_product.py` 同文件内追加 `bulk_sync_oes` handler，路径 `/api/customer-products/{id}/oes/bulk-sync`。
 
 ### 4.4 接入点
 
@@ -662,15 +669,19 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 ### 修改
 - `backend/models/customer_product.py`（加 3 列：`product_name_en`、`product_short_name`、`product_short_name_en`）
 - `backend/schemas/customer_product.py`（3 个 schema 加 3 个 Optional 字段）
-- `backend/routers/customer_product.py`（新增 `bulk_sync_oes` handler）
-- `frontend/src/api/endpoints.ts`（新增 `PRODUCT_SEARCH`，废弃 `PRODUCT_CUSTOMER.search`）
-- `frontend/src/components/order/NewOrderDialog.vue`（L223-271 替换为 `<ProductSearchSelect>`）
+- `backend/routers/customer_product.py`（**新增** `/search` handler + **新增** `/{product_id}/oes/bulk-sync` handler）
+- `frontend/src/api/endpoints.ts`（新增 `PRODUCT_SEARCH.recommend = '/api/customer-products/search'`，`PRODUCT_CUSTOMER.search` 改为转发到该地址并标记 `@deprecated`）
+- `frontend/src/components/order/NewOrderDialog.vue`（L223-271 替换为 `<ProductSearchSelect>`；`onProductSelect` 按 §4.2.5 映射回填）
+- `frontend/src/components/order/SupplementDialog.vue`（L252 同样替换为 `<ProductSearchSelect>`，复用同一 service + 组件）
 - `frontend/src/views/product/ProductManagement.vue`（顶部搜索接入）
 - `frontend/src/components/order/ProductEditDialog.vue`
   - L77 / L84 saveField 键修正（`detail_desc` → `product_name` / `detail_desc_en` → `product_name_en`）
   - L109 OE 字段保存改为 `saveOeField` → 调 `bulkSyncOes`
   - 表单初始化（§L804-807）+ 加载时回填（§L1471-1474）补齐 3 个新字段读写
-- `docs/spec.md`（在常用接口约定章节补充 `/api/customer-products/search`）
+- `docs/spec.md`（在常用接口约定章节补充 `/api/customer-products/search`；移除 `/api/product-customer/search` 条目）
+
+### 删除
+- `backend/routers/product_customer.py`（**已删除**，前端零引用；底层 `PrdProductCustomer` 模型仍由其他模块间接使用，**不删除 model/crud/schema**，避免破坏面扩大）
 
 ---
 
