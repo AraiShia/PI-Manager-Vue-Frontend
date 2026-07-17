@@ -243,6 +243,8 @@ ArCustomerPayment 客户收款
 |---|---|---|
 | `GET` | `/api/customer-products` | 客户产品列表 |
 | `GET` | `/api/customer-products/{id}` | 单个客户产品 |
+| `GET` | `/api/customer-products/search` | 搜索客户产品（OE号/客户型号/产品名称，支持 customer_id 过滤） |
+| `POST` | `/api/customer-products/{id}/oes/bulk-sync` | 差量同步一个客户产品的 OE 号列表 |
 | `POST` | `/api/customer-products` | 创建客户产品 |
 | `PUT` | `/api/customer-products/{id}` | 更新客户产品 |
 | `DELETE` | `/api/customer-products/{id}` | 删除客户产品 |
@@ -267,6 +269,16 @@ ArCustomerPayment 客户收款
   "page_size": 50
 }
 ```
+
+### 5.3.1 产品搜索服务字段说明
+
+| 字段 | 来源 | 说明 |
+|---|---|---|
+| `product_name` | PI item.detail_desc > PrdCustomerProduct.product_name | 用户最近编辑的产品名称，优先取 PI item |
+| `customer_model` | PI item.customer_model > PrdCustomerProduct.customer_model | 用户最近编辑的客户型号，优先取 PI item |
+| `oes` | PrdCustomerProductOE | 主 OE 排第一；bulk-sync 时有序去重 |
+| `matched_in` | 搜索命中字段 | 数组，指示该结果命中了哪些字段 |
+| `match_score` | 加权分 | customer_model 精确=100，模糊=80；OE=50；product_name=60；detail_desc=30 |
 
 对应 `PRODUCT_CATEGORIES`：
 
