@@ -48,8 +48,9 @@ class PiProformaInvoiceItem(Base):
     # === 2026-06-17 方案B: 业务回写字段(21个) ===
     # 采购(P0 同步,来自 po_purchase_order_item)
     purchase_price = Column(DECIMAL(15, 4), nullable=True)           # 采购单价
+    labeling_fee = Column(DECIMAL(15, 4), nullable=True)             # 贴标费
     shipping_fee = Column(DECIMAL(15, 4), nullable=True)              # 运费
-    misc_fee = Column(DECIMAL(15, 4), nullable=True)                  # 杂费 = labeling_fee + tax_fee + freight
+    misc_fee = Column(DECIMAL(15, 4), nullable=True)                  # 杂费 = labeling_fee + shipping_fee + tax_fee
     total_order_amount = Column(DECIMAL(15, 4), nullable=True)        # 采购总金额
     supplier_name = Column(String(200), nullable=True)                # 供应商名称
     shop_url = Column(String(500), nullable=True)                     # 1688链接 (线下line_1688_url / 线上product_url仅1688)

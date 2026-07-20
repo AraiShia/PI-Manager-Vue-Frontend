@@ -40,7 +40,7 @@ describe('purchaseSync utilities', () => {
     expect(result.total_cost).toBe(117)
   })
 
-  it('maps freight+shipping into shipping_fee and labeling+tax into misc_fee for PI item', () => {
+  it('maps freight+shipping into shipping_fee and labeling+shipping+tax into misc_fee for PI item', () => {
     const fields = pickPurchaseSyncFields(
       {
         purchase_price: 80,
@@ -57,7 +57,7 @@ describe('purchaseSync utilities', () => {
     expect(fields).toEqual({
       purchase_price: 80,
       shipping_fee: 12,
-      misc_fee: 5,
+      misc_fee: 10,
       total_order_amount: 97,
       supplier_name: 'Acme',
       shop_url: 'https://example.com',

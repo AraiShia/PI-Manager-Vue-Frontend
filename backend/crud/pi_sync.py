@@ -137,7 +137,7 @@ def _sync_pi_item_from_po(
     同步字段 (共12个):
     - purchase_price: 采购单价 (来自 po_item.unit_price)
     - shipping_fee: 发货费 (来自 po_item.shipping_fee)
-    - misc_fee: 杂费 = labeling_fee + tax_fee + freight (计算得出)
+    - misc_fee: 杂费 = labeling_fee + shipping_fee + tax_fee (计算得出)
     - total_order_amount: 采购总金额 (来自 po_item.total_price)
     - supplier_name: 供应商名称 (来自 sup_supplier.supplier_name)
     - shop_url: 1688链接 (来自 po_item.line_1688_url)
@@ -156,16 +156,17 @@ def _sync_pi_item_from_po(
     try:
         # === 基础价格字段 ===
         sync_pi_item_field(pi_item, "purchase_price", po_item.unit_price, "po_item.unit_price")
+        sync_pi_item_field(pi_item, "labeling_fee", po_item.labeling_fee, "po_item.labeling_fee")
         sync_pi_item_field(pi_item, "shipping_fee", po_item.shipping_fee, "po_item.shipping_fee")
 
-        # 杂费计算: misc_fee = labeling_fee + tax_fee + freight (发货费)
+        # 杂费计算: misc_fee = labeling_fee + shipping_fee + tax_fee
         # 2026-06-18 明确化: 三项费用汇总
         misc = float(po_item.labeling_fee or 0) + \
-               float(po_item.tax_fee or 0) + \
-               float(getattr(po_item, 'freight', 0) or 0)
+               float(po_item.shipping_fee or 0) + \
+               float(po_item.tax_fee or 0)
         sync_pi_item_field(
             pi_item, "misc_fee", misc,
-            "po_item.labeling_fee+tax_fee+freight"
+            "po_item.labeling_fee+shipping_fee+tax_fee"
         )
 
         # 总金额
@@ -229,7 +230,7 @@ def _sync_pi_item_from_po(
                 "pi_item_id": pi_item.id,
                 "po_item_id": po_item.id,
                 "fields_updated": [
-                    "purchase_price", "shipping_fee", "misc_fee",
+                    "purchase_price", "labeling_fee", "shipping_fee", "misc_fee",
                     "total_order_amount", "supplier_name", "shop_url",
                     "delivery_date", "factory_code", "purchase_option_name",
                     "brand", "last_synced_at"
@@ -402,11 +403,15 @@ def _sync_pi_item_from_1688(
             )
 
         # === 采购费用同步 ===
-        # ProductEditDialog 中的 misc_fee 对应贴标费、税费和运费的汇总，
+        # ProductEditDialog 中的 misc_fee 对应贴标费、发货费和税费的汇总，
         # shipping_fee 则单独对应 PurchaseDialog 的发货费字段。
         sync_pi_item_field(
             pi_item, "purchase_price", record.unit_price,
             "po_1688_purchase.unit_price"
+        )
+        sync_pi_item_field(
+            pi_item, "labeling_fee", record.labeling_fee,
+            "po_1688_purchase.labeling_fee"
         )
         sync_pi_item_field(
             pi_item, "shipping_fee", record.shipping_fee,
@@ -414,12 +419,12 @@ def _sync_pi_item_from_1688(
         )
         misc_fee = (
             float(record.labeling_fee or 0)
+            + float(record.shipping_fee or 0)
             + float(record.tax_fee or 0)
-            + float(record.freight or 0)
         )
         sync_pi_item_field(
             pi_item, "misc_fee", misc_fee,
-            "po_1688_purchase.labeling_fee+tax_fee+freight"
+            "po_1688_purchase.labeling_fee+shipping_fee+tax_fee"
         )
 
         # === purchase_option_name 不再从采购同步 ===
@@ -443,7 +448,7 @@ def _sync_pi_item_from_1688(
                 "po_1688_id": record.id,
                 "fields_updated": (
                     (["shop_url"] if platform == "1688" else [])
-                    + ["purchase_price", "shipping_fee", "misc_fee", "last_synced_at"]
+                    + ["purchase_price", "labeling_fee", "shipping_fee", "misc_fee", "last_synced_at"]
                 )
             })
 

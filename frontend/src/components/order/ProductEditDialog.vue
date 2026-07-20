@@ -253,10 +253,10 @@
               </div>
               <div class="purchase-cost-cell cost-cell">
                 <el-input
-                  v-model="form.misc_fee"
+                  v-model="form.labeling_fee"
                   type="number"
                   style="width: 100%"
-                  @blur="saveField('misc_fee', form.misc_fee)"
+                  @blur="saveField('labeling_fee', form.labeling_fee)"
                 >
                   <template #prefix>¥</template>
                 </el-input>
@@ -748,6 +748,7 @@ interface ProductEditForm {
   purchase_currency: 'RMB' | 'USD'
   exchange_rate: number
   profit_margin: number
+  labeling_fee: number
   misc_fee: number
   shipping_fee: number
   invoice_status: string
@@ -825,6 +826,7 @@ const form = reactive<ProductEditForm>({
   purchase_currency: 'RMB',
   exchange_rate: 6.8,
   profit_margin: 25,
+  labeling_fee: 0,
   misc_fee: 0,
   shipping_fee: 0,
   invoice_status: '',
@@ -910,7 +912,7 @@ const purchaseAmount = computed(() => {
   // 采购币种为人民币时，需要除以汇率折算成 USD（与客户报价币种对齐）
   const price = Number(form.purchase_price || 0)
   const qty = Number(form.quantity || 0)
-  const misc = Number(form.misc_fee || 0)
+  const misc = Number(form.labeling_fee || 0)
   const shipping = Number(form.shipping_fee || 0)
   const rate = Number(form.exchange_rate || 6.8)
   const subtotal = (price * qty + misc + shipping)
@@ -1396,7 +1398,7 @@ watch(
     form.unit_price,
     form.quantity,
     form.shipping_fee,
-    form.misc_fee,
+    form.labeling_fee,
   ],
   () => {
     if (!item.value) return
@@ -1520,6 +1522,7 @@ function initFromItem(source: ProductEditItem) {
   form.purchase_currency = (source as any).purchase_currency === 'USD' ? 'USD' : 'RMB'
   form.exchange_rate = (source as any).exchange_rate ?? 6.8
   form.profit_margin = (source as any).profit_margin ?? 25
+  form.labeling_fee = (source as any).labeling_fee ?? source.misc_fee ?? 0
   form.misc_fee = source.misc_fee || 0
   form.shipping_fee = source.shipping_fee || 0
   form.invoice_status = source.invoice_status || ''

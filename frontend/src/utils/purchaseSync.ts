@@ -58,7 +58,7 @@ export function pickPurchaseSyncFields(
   return {
     purchase_price: fees.purchase_price,
     shipping_fee: fees.shipping_fee + fees.freight,
-    misc_fee: fees.labeling_fee + fees.tax_fee,
+    misc_fee: fees.labeling_fee + fees.shipping_fee + fees.tax_fee,
     total_order_amount: fees.total_cost,
     supplier_name: (source.supplier_name ?? fallbackSupplierName).toString(),
     shop_url: (source.shop_url ?? fallbackShopUrl).toString(),

@@ -1259,6 +1259,9 @@ def update_pi_item(db: Session, item_id: int, update_data: dict) -> PiProformaIn
         print(f"[DEBUG] update_pi_item: 更新 purchase_option_name={update_data['purchase_option_name']}")
 
     # ---- F组: 其他可编辑字段（编辑订单产品 Dialog / 表格内联） ----
+    if 'labeling_fee' in update_data and update_data['labeling_fee'] is not None:
+        db_item.labeling_fee = float(update_data['labeling_fee'])
+        print(f"[DEBUG] update_pi_item: 更新 labeling_fee={update_data['labeling_fee']}")
     if 'shipping_fee' in update_data and update_data['shipping_fee'] is not None:
         db_item.shipping_fee = float(update_data['shipping_fee'])
         print(f"[DEBUG] update_pi_item: 更新 shipping_fee={update_data['shipping_fee']}")
@@ -1714,4 +1717,3 @@ def formal_record_exists(pi_no: str) -> bool:
     """检查正式纪录是否存在"""
     records_dir = _get_formal_records_dir()
     return (records_dir / f"{pi_no}.json").exists()
-

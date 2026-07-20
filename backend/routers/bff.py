@@ -563,7 +563,7 @@ def _build_order_detail_item(
         purchase_price=purchase_price,
         shipping_fee=_to_float(item.shipping_fee),
         misc_fee=_to_float(item.misc_fee),
-        labeling_fee=_to_float(latest_1688.labeling_fee) if latest_1688 else 0.0,
+        labeling_fee=_to_float(item.labeling_fee) if item.labeling_fee is not None else (_to_float(latest_1688.labeling_fee) if latest_1688 else 0.0),
         tax_fee=_to_float(latest_1688.tax_fee) if latest_1688 else 0.0,
         freight=_to_float(latest_1688.freight) if latest_1688 else 0.0,
         total_cost=round(purchase_price * quantity + shipping_fee + misc_fee, 2),
