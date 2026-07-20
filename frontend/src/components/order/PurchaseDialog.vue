@@ -34,14 +34,9 @@
             <el-input-number v-model="row.tax_fee" :min="0" :precision="2" size="small" @change="recalcTotal($index)" />
           </template>
         </el-table-column>
-        <el-table-column label="发货费" width="90">
-          <template #default="{ row, $index }">
-            <el-input-number v-model="row.shipping_fee" :min="0" :precision="2" size="small" @change="recalcTotal($index)" />
-          </template>
-        </el-table-column>
         <el-table-column label="运费" width="90">
           <template #default="{ row, $index }">
-            <el-input-number v-model="row.freight" :min="0" :precision="2" size="small" @change="recalcTotal($index)" />
+            <el-input-number v-model="row.shipping_fee" :min="0" :precision="2" size="small" @change="recalcTotal($index)" />
           </template>
         </el-table-column>
         <el-table-column label="总金额" width="120">
@@ -310,7 +305,7 @@ function open(
     labeling_fee: item.labeling_fee ?? item.misc_fee ?? 0,
     tax_fee: item.tax_fee ?? 0,
     shipping_fee: item.shipping_fee ?? 0,
-    freight: item.freight ?? 0,
+    freight: 0,
     link: urls[item.product_id!]?.[0] || '',
     _urlOptions: urls[item.product_id!] || [],
     _total: 0,
@@ -489,8 +484,8 @@ async function loadInitialPrices() {
         item.unit_price = record.unit_price ?? item.purchase_price ?? 0
         item.labeling_fee = record.labeling_fee ?? 0
         item.tax_fee = record.tax_fee ?? 0
-        item.shipping_fee = record.shipping_fee ?? 0
-        item.freight = record.freight ?? 0
+        item.shipping_fee = record.shipping_fee ?? record.freight ?? 0
+        item.freight = 0
         // 历史供应商名称 → 1688 店铺名称（如果当前为空）
         if (record.supplier_name && !shopName.value) {
           shopName.value = record.supplier_name
@@ -546,8 +541,7 @@ function recalcTotal(index: number) {
     (item.unit_price || 0) * (item.quantity || 0) +
     (item.labeling_fee || 0) +
     (item.tax_fee || 0) +
-    (item.shipping_fee || 0) +
-    (item.freight || 0)
+    (item.shipping_fee || 0)
 }
 
 function formatMoney(amount: number): string {
@@ -613,7 +607,6 @@ async function onSubmit() {
         labeling_fee: item.labeling_fee || 0,
         tax_fee: item.tax_fee || 0,
         shipping_fee: item.shipping_fee || 0,
-        freight: item.freight || 0,
         remark: '',
       })),
     }
