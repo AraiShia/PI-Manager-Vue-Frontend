@@ -228,10 +228,11 @@ function onClear() {
   align-items: baseline;
   gap: 4px;
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  padding: 2px 0;
 }
 
 .ps-name {
@@ -257,6 +258,12 @@ function onClear() {
 .ps-oe-list {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+:deep(.el-select-dropdown__item) {
+  height: auto !important;
+  padding: 0 !important;
+  line-height: normal !important;
 }
 
 :deep(.search-hl) {
