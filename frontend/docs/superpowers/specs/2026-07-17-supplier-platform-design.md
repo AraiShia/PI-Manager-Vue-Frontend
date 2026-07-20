@@ -181,12 +181,28 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
     )
     # ... commit / refresh / enrich ...
 
+def _validate_platform_fields_update(db_supplier: SupSupplier, supplier_update: SupplierUpdate):
+    """更新时平台字段校验
+
+    校验规则：使用“数据库旧值 + 本次更新值”合并后的最终值进行校验，
+    不能仅校验请求对象，否则会误判或放过非法数据。
+
+    例如：请求只传了 supplier_name、未传 platform 和 shop_link，
+    应合并为 db_supplier.platform + None → 最终 platform 非空则仍需 shop_link。
+    """
+    final_platform = supplier_update.platform if supplier_update.platform is not None else db_supplier.platform
+    final_shop_link = supplier_update.shop_link if supplier_update.shop_link is not None else db_supplier.shop_link
+
+    if final_platform == '1688' and not (final_shop_link and final_shop_link.strip()):
+        raise ValueError('1688 供应商必须填写店铺链接')
+
+
 def update_supplier(db: Session, supplier_id: int, supplier_update: SupplierUpdate) -> SupSupplier:
     db_supplier = get_supplier(db, supplier_id)
     if not db_supplier:
         return None
     _validate_platform_fields_update(db_supplier, supplier_update)  # 新增校验
-    # ... 现有 update 逻辑 ...
+    # ... 现有 update 逻辑（for key, value in update_data.items(): setattr(db_supplier, key, value)）...
 ```
 
 ### `backend/crud/supplier.py` — get_suppliers 返回新字段
@@ -241,8 +257,12 @@ def find_or_create_supplier_by_name(
 
     匹配策略：
     1. 若 platform 非空：按 (dept_id, platform, supplier_name) 精确查找
-    2. 若未找到且 platform 非空：创建新记录，platform/shop_link 等透传
-    3. 历史数据 platform=NULL 处理：仅在 platform 非空时才复用，
+    2. 命中后检查平台必填字段是否完整：
+       - 1688 缺少 shop_link → 用传入值补充，回写数据库，返回完整记录
+       - 1688 缺少 shop_link 且传入值也为 None → 视为平台信息不完整，**不允许复用**，抛出业务错误要求前端补充
+       - 其他平台字段缺失 → 自动补齐后返回
+    3. 若未找到：创建新记录，platform/shop_link 等透传
+    4. 历史数据 platform=NULL 处理：仅在 platform 非空时才复用，
        避免 1688 名称与历史线下同名供应商误匹配
     """
     if not supplier_name or not supplier_name.strip():
@@ -252,6 +272,27 @@ def find_or_create_supplier_by_name(
     if platform:
         existing = get_supplier_by_name_and_platform(db, supplier_name, platform, dept_id)
         if existing:
+            # 检查 1688 必填字段
+            if platform == '1688' and not (existing.shop_link or shop_link):
+                raise ValueError('1688 供应商必须填写店铺链接，可在供应商详情中补充后重试')
+            # 补齐缺失的平台字段
+            updated = False
+            if shop_link and not existing.shop_link:
+                existing.shop_link = shop_link
+                updated = True
+            if wechat_id and not existing.wechat_id:
+                existing.wechat_id = wechat_id
+                updated = True
+            if wechat_nickname and not existing.wechat_nickname:
+                existing.wechat_nickname = wechat_nickname
+                updated = True
+            if is_dropship is not None and existing.is_dropship != is_dropship:
+                existing.is_dropship = is_dropship
+                updated = True
+            if updated:
+                db.add(existing)
+                db.commit()
+                db.refresh(existing)
             return existing
 
     create_payload = SupplierCreate(
@@ -579,16 +620,23 @@ async function save() {
 
 ### 采购提交示例
 
+前端提交线上采购时**必须显式赋值所有平台字段**，避免 getattr 获取 None 导致后端校验失败：
+
 ```typescript
 // PurchaseDialog 提交线上采购
 if (platform.value === '1688') {
-  payload.supplier_name = shopName.value
+  payload.supplier_name = shopName.value      // 1688 店铺名（必填）
   payload.platform = '1688'
-  // ... 其他字段
+  payload.shop_link = linkUrl.value           // 1688 店铺链接（必填，后端校验）
+  payload.wechat_id = wechatId.value || null  // 1688 微信号（选填）
+  // ...
 } else if (platform.value === 'wechat') {
-  payload.supplier_name = wechatId.value  // 微信号
+  payload.supplier_name = wechatId.value      // 微信供应商名称 = 微信号（必填）
   payload.platform = 'wechat'
-  // ... 其他字段
+  payload.wechat_id = wechatId.value          // 微信号（必填，后端校验）
+  payload.wechat_nickname = wechatNickname.value || null  // 微信昵称（选填）
+  payload.is_dropship = dropshipEnabled.value || false
+  // ...
 }
 await purchaseApi.createOnlinePurchase(payload)
 ```
@@ -618,9 +666,38 @@ def test_response_includes_platform_fields():
     assert response.platform == 'wechat'
     assert response.wechat_nickname == 'nick'
 
-def test_find_or_create_with_platform():
-    supplier = find_or_create_supplier_by_name(db, '1688 店 A', platform='1688', shop_link='https://...')
+def test_find_or_create_creates_new():
+    supplier = find_or_create_supplier_by_name(db, '1688 店 A', platform='1688', shop_link='https://...1688.com/...')
     assert supplier.platform == '1688'
+    assert supplier.shop_link == 'https://...1688.com/...'
+
+def test_find_or_create_hits_existing_and_fills_missing_fields():
+    # 已有 1688 供应商但缺少 shop_link，本次传入 shop_link，补齐后返回
+    existing = create_supplier(db, SupplierCreate(supplier_name='1688 店 B', platform='1688'))
+    assert existing.shop_link is None
+    result = find_or_create_supplier_by_name(db, '1688 店 B', platform='1688', shop_link='https://shop.1688.com')
+    assert result.id == existing.id
+    assert result.shop_link == 'https://shop.1688.com'  # 已补齐
+
+def test_find_or_create_hits_existing_without_shop_link_raises():
+    # 已有 1688 供应商缺少 shop_link，本次也没传，返回业务错误
+    existing = create_supplier(db, SupplierCreate(supplier_name='1688 店 C', platform='1688'))
+    with pytest.raises(ValueError, match='店铺链接'):
+        find_or_create_supplier_by_name(db, '1688 店 C', platform='1688')
+
+def test_update_partial_1688_merges_and_validates():
+    # 部分更新：只传 supplier_name、未传 shop_link；平台已是 1688，旧值也无 shop_link → 应报错
+    existing = create_supplier(db, SupplierCreate(supplier_name='1688 店 D', platform='1688'))
+    update = SupplierUpdate(supplier_name='1688 店 D（新）')
+    with pytest.raises(ValueError, match='店铺链接'):
+        update_supplier(db, existing.id, update)
+
+def test_update_fills_shop_link():
+    # 部分更新：shop_link 补全
+    existing = create_supplier(db, SupplierCreate(supplier_name='1688 店 E', platform='1688'))
+    update = SupplierUpdate(shop_link='https://shop.1688.com')
+    result = update_supplier(db, existing.id, update)
+    assert result.shop_link == 'https://shop.1688.com'
 ```
 
 ## 成功标准
