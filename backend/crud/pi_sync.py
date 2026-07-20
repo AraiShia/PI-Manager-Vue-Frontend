@@ -401,6 +401,27 @@ def _sync_pi_item_from_1688(
                 f"(pi_item={pi_item.id})"
             )
 
+        # === 采购费用同步 ===
+        # ProductEditDialog 中的 misc_fee 对应贴标费、税费和运费的汇总，
+        # shipping_fee 则单独对应 PurchaseDialog 的发货费字段。
+        sync_pi_item_field(
+            pi_item, "purchase_price", record.unit_price,
+            "po_1688_purchase.unit_price"
+        )
+        sync_pi_item_field(
+            pi_item, "shipping_fee", record.shipping_fee,
+            "po_1688_purchase.shipping_fee"
+        )
+        misc_fee = (
+            float(record.labeling_fee or 0)
+            + float(record.tax_fee or 0)
+            + float(record.freight or 0)
+        )
+        sync_pi_item_field(
+            pi_item, "misc_fee", misc_fee,
+            "po_1688_purchase.labeling_fee+tax_fee+freight"
+        )
+
         # === purchase_option_name 不再从采购同步 ===
         # 2026-06-23：该字段只能从产品编辑 Dialog（OrderSummaryEditDialog）维护，
         # 1688 备注 / 微信聊天备注 不再覆盖 purchase_option_name，
@@ -420,7 +441,10 @@ def _sync_pi_item_from_1688(
                 "platform": platform,
                 "pi_item_id": pi_item.id,
                 "po_1688_id": record.id,
-                "fields_updated": ["shop_url"] if platform == "1688" else []
+                "fields_updated": (
+                    (["shop_url"] if platform == "1688" else [])
+                    + ["purchase_price", "shipping_fee", "misc_fee", "last_synced_at"]
+                )
             })
 
         _safe_commit(db, "sync_pi_item_from_1688")

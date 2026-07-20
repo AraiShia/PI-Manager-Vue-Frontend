@@ -304,15 +304,18 @@ function open(
   // 初始化产品数据
   items.value = orderItems.map((item) => ({
     ...item,
-    unit_price: item.purchase_price || 0,
-    labeling_fee: 0,
-    tax_fee: 0,
-    shipping_fee: 0,
-    freight: 0,
+    unit_price: item.purchase_price ?? 0,
+    // ProductEditDialog 的 misc_fee 是贴标费、税费和运费的汇总。
+    // 没有历史 1688 明细时，先将已有杂费放入贴标费列，避免费用丢失。
+    labeling_fee: item.labeling_fee ?? item.misc_fee ?? 0,
+    tax_fee: item.tax_fee ?? 0,
+    shipping_fee: item.shipping_fee ?? 0,
+    freight: item.freight ?? 0,
     link: urls[item.product_id!]?.[0] || '',
     _urlOptions: urls[item.product_id!] || [],
     _total: 0,
   }))
+  items.value.forEach((_, index) => recalcTotal(index))
 
   // 顶层 1688 店铺名称预填
   if (prefillShopName) {
@@ -479,13 +482,15 @@ async function loadInitialPrices() {
     // 1.1) 最近采购记录（采购价/费用/链接兜底）
     if (latestRes.status === 'fulfilled') {
       const res = latestRes.value
-      if (res.data.code === 200 && res.data.data?.record) {
-        const record = res.data.data.record
-        item.unit_price = record.unit_price || item.purchase_price || 0
-        item.labeling_fee = record.labeling_fee || 0
-        item.tax_fee = record.tax_fee || 0
-        item.shipping_fee = record.shipping_fee || 0
-        item.freight = record.freight || 0
+      // 兼容后端当前 { success, record } 与旧版 { code, data: { record } } 响应。
+      const payload = res.data as typeof res.data & { record?: any }
+      const record = payload.record ?? payload.data?.record
+      if ((payload.success === true || payload.code === 200) && record) {
+        item.unit_price = record.unit_price ?? item.purchase_price ?? 0
+        item.labeling_fee = record.labeling_fee ?? 0
+        item.tax_fee = record.tax_fee ?? 0
+        item.shipping_fee = record.shipping_fee ?? 0
+        item.freight = record.freight ?? 0
         // 历史供应商名称 → 1688 店铺名称（如果当前为空）
         if (record.supplier_name && !shopName.value) {
           shopName.value = record.supplier_name
