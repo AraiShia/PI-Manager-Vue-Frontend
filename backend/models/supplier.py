@@ -1,11 +1,11 @@
-from sqlalchemy import Column, String, Integer, DECIMAL, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Integer, DECIMAL, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from app.database import Base
 from datetime import datetime
 
 class SupSupplier(Base):
     __tablename__ = "sup_supplier"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     dept_id = Column(String(10), nullable=False)
     supplier_code = Column(String(50), nullable=False, unique=True)
@@ -20,6 +20,12 @@ class SupSupplier(Base):
     status = Column(Integer, default=1)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    # 平台分类字段（2026-07-17 新增）；platform NULL = 历史数据
+    platform = Column(String(20), nullable=True)
+    shop_link = Column(String(500), nullable=True)
+    wechat_id = Column(String(100), nullable=True)
+    wechat_nickname = Column(String(100), nullable=True)
+    is_dropship = Column(Boolean, default=False, nullable=False, server_default='0')
 
     contacts = relationship("SupSupplierContact", back_populates="supplier", lazy="select")
 

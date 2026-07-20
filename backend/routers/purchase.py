@@ -12,6 +12,8 @@ from schemas.purchase import (
     Po1688PurchaseItem, Po1688PurchaseBatchCreate
 )
 from models.purchase import Po1688Purchase
+from models import SupSupplier
+
 router = APIRouter(prefix="/api/purchase-orders", tags=["采购管理"])
 @router.post("", response_model=PurchaseOrderResponse, include_in_schema=False)
 @router.post("/", response_model=PurchaseOrderResponse)
@@ -93,14 +95,12 @@ def inbound_purchase(po_id: int, db: Session = Depends(get_db)):
 
 @router.post("/1688")
 def create_1688_purchase_api(purchase_data: PurchaseOrderCreate, db: Session = Depends(get_db)):
-    """[2026-06-17 计划] 按 supplier_id 分组生成采购单, 同时记录 1688 采购明细
+    """2026-07-20：1688 线上采购（同时记录 1688 采购明细）
 
-    [2026-06-23 修复] 入参改用 PurchaseOrderCreate 而不是 Po1688PurchaseBatchCreate：
-    - Po1688PurchaseBatchCreate.items 用的是 Po1688PurchaseItem（无 quantity 字段），
-      FastAPI 解析时会丢弃前端的 quantity → PurchaseOrderCreate 校验报
-      "items.0.quantity Field required"
-    - PurchaseOrderCreate 字段更全，能完整接收前端发来的 items 数组
-    - 1688 采购明细通过从 items 中提取 1688 字段构造，单独走 create_1688_purchase_batch
+    业务校验（2026-07-20 补充）：
+    - supplier_id 与 supplier_name 均缺失/空白 → 422
+    - supplier_id 关联时校验：供应商存在、dept_id 一致、platform 非 NULL、platform 一致
+    - 所有 CRUD 层 ValueError 在路由层统一转换为 HTTPException(422)
     """
     # 兼容 dict 与 pydantic
     if hasattr(purchase_data, "model_dump"):
@@ -109,6 +109,40 @@ def create_1688_purchase_api(purchase_data: PurchaseOrderCreate, db: Session = D
         data = purchase_data.dict()
     else:
         data = dict(purchase_data)
+
+    # ── 业务校验层 ───────────────────────────────────────────────
+    # 1. supplier_name 空白校验（None.strip() 会抛 AttributeError，必须先判 None）
+    supplier_name_raw = data.get("supplier_name")
+    has_supplier_name = bool(supplier_name_raw and str(supplier_name_raw).strip())
+
+    if not data.get("supplier_id") and not has_supplier_name:
+        raise HTTPException(
+            status_code=422,
+            detail="supplier_id 或 supplier_name（非空）至少填写一个"
+        )
+
+    # 2. supplier_id 关联时校验供应商/部门/平台一致性
+    supplier_id = data.get("supplier_id")
+    dept_id = data.get("dept_id") or "S"
+    platform = data.get("platform")  # PurchaseOrderCreate 当前无此字段，兼容 dict 读取
+
+    if supplier_id:
+        supplier = db.query(SupSupplier).filter(SupSupplier.id == supplier_id).first()
+        if not supplier:
+            raise HTTPException(status_code=422, detail="供应商不存在")
+        # 2.1 部门一致性
+        if supplier.dept_id != dept_id:
+            msg = f'所选供应商部门为 {supplier.dept_id}，与本次采购部门 {dept_id} 不一致，请选择本部门供应商或通过"新建供应商"创建'
+            raise HTTPException(status_code=422, detail=msg)
+        # 2.2 NULL 平台供应商禁止用于线上采购
+        if supplier.platform is None:
+            msg = f'所选供应商（{supplier.supplier_name}）尚未分配平台，无法关联到线上采购。请先在"供应商管理"中为该供应商设置平台类型。'
+            raise HTTPException(status_code=422, detail=msg)
+        # 2.3 平台一致性
+        if platform and supplier.platform != platform:
+            msg = f'所选供应商平台为 {supplier.platform}，与本次采购平台 {platform} 不一致，请重新选择或使用"新建供应商"流程'
+            raise HTTPException(status_code=422, detail=msg)
+    # ── 业务校验层 end ─────────────────────────────────────────
 
     # 1) 1688 采购明细：从完整 items 中提取 1688 维度字段
     created_records: list = []
@@ -134,7 +168,7 @@ def create_1688_purchase_api(purchase_data: PurchaseOrderCreate, db: Session = D
                 gross_weight=it.get("gross_weight"),
             ))
         batch = Po1688PurchaseBatchCreate(
-            dept_id=data.get("dept_id"),
+            dept_id=dept_id,
             po_id=data.get("po_id"),
             pi_id=data.get("pi_id"),
             screenshot=data.get("screenshot"),
@@ -144,15 +178,16 @@ def create_1688_purchase_api(purchase_data: PurchaseOrderCreate, db: Session = D
         try:
             created_records = create_1688_purchase_batch(db, batch)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            # CRUD 层业务错误统一转 422
+            raise HTTPException(status_code=422, detail=str(e))
 
-    # 2) 按 supplier_id 分组生成采购单（用完整 data 走 PurchaseOrderCreate 校验）
+    # 2) 按 supplier_id 分组生成采购单
     try:
         payload = PurchaseOrderCreate(**data)
         purchase_orders = create_grouped_purchase_orders(db, payload)
     except ValueError as e:
-        # 缺少 supplier_id / 供应商不存在 / PI 不存在等校验失败 → 400
-        raise HTTPException(status_code=400, detail=str(e))
+        # CRUD 层业务错误（supplier 不存在 / PI 不存在等）→ 422
+        raise HTTPException(status_code=422, detail=str(e))
 
     return {
         "success": True,

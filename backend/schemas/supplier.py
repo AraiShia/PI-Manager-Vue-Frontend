@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Literal
 
 class SupplierBase(BaseModel):
     dept_id: str
@@ -20,6 +20,12 @@ class SupplierCreate(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     address: Optional[str] = None
+    # 平台分类字段（2026-07-17 新增）
+    platform: Optional[Literal['1688', 'wechat', 'offline']] = None
+    shop_link: Optional[str] = None
+    wechat_id: Optional[str] = None
+    wechat_nickname: Optional[str] = None
+    is_dropship: Optional[bool] = False
 
 class SupplierUpdate(BaseModel):
     supplier_name: Optional[str] = None
@@ -33,6 +39,12 @@ class SupplierUpdate(BaseModel):
     return_policy: Optional[str] = None
     payment_terms: Optional[str] = None
     status: Optional[int] = None
+    # 平台分类字段（2026-07-17 新增）
+    platform: Optional[Literal['1688', 'wechat', 'offline']] = None
+    shop_link: Optional[str] = None
+    wechat_id: Optional[str] = None
+    wechat_nickname: Optional[str] = None
+    is_dropship: Optional[bool] = None
 
 class SupplierResponse(SupplierBase):
     id: int
@@ -42,6 +54,12 @@ class SupplierResponse(SupplierBase):
     phone: Optional[str] = None
     email: Optional[str] = None
     address: Optional[str] = None
+    # 平台分类字段（2026-07-17 新增，前端读取并回填表单）
+    platform: Optional[str] = None
+    shop_link: Optional[str] = None
+    wechat_id: Optional[str] = None
+    wechat_nickname: Optional[str] = None
+    is_dropship: Optional[bool] = None
 
     class Config:
         from_attributes = True

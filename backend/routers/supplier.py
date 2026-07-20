@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Literal
 from app.database import get_db
 from crud.supplier import (
     create_supplier, get_supplier, get_suppliers, update_supplier, delete_supplier, batch_create_suppliers,
@@ -14,12 +14,17 @@ router = APIRouter(prefix="/api/suppliers", tags=["供应商管理"])
 
 
 class FindOrCreateSupplierRequest(BaseModel):
-    """2026-06-23：线上采购（1688 店铺/微信昵称）按名称查找或创建供应商"""
+    """2026-07-17：线上采购（1688 店铺/微信昵称）按 dept_id+platform+name 查找或创建供应商"""
     supplier_name: str
     dept_id: Optional[str] = "S"
     contact_person: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    platform: Literal['1688', 'wechat', 'offline']   # 必填，缺失返回 422
+    shop_link: Optional[str] = None      # 新增：1688 店铺链接
+    wechat_id: Optional[str] = None      # 新增：微信号
+    wechat_nickname: Optional[str] = None  # 新增：微信昵称
+    is_dropship: Optional[bool] = None   # 新增：是否代发
 
 
 class FindOrCreateSupplierResponse(BaseModel):
@@ -34,45 +39,52 @@ def find_or_create_supplier_api(
     payload: FindOrCreateSupplierRequest,
     db: Session = Depends(get_db)
 ):
-    """2026-06-23：按名称查找或创建供应商（用于线上采购自动建立 supplier_id）"""
+    """2026-07-17：按 dept_id+platform+name 查找或创建供应商（用于线上采购自动建立 supplier_id）
+
+    校验失败统一返回 422（HTTPException），避免 FastAPI 默认 500 误判。
+    """
+    # supplier_name 纯空白拦截（None.strip() 会抛 AttributeError，必须先判 None）
     if not payload.supplier_name or not payload.supplier_name.strip():
-        raise HTTPException(status_code=400, detail="supplier_name 不能为空")
+        raise HTTPException(status_code=422, detail="supplier_name 不能为空")
 
     dept_id = payload.dept_id or "S"
 
-    # 先查是否已存在
-    from crud.supplier import get_supplier_by_name
-    existing = get_supplier_by_name(db, payload.supplier_name.strip(), dept_id)
-    if existing:
-        return FindOrCreateSupplierResponse(
-            id=existing.id,
-            supplier_name=existing.supplier_name,
-            supplier_code=existing.supplier_code,
-            created=False,
+    try:
+        result = find_or_create_supplier_by_name(
+            db,
+            supplier_name=payload.supplier_name,
+            platform=payload.platform,  # Literal 必填，路由层无需二次校验
+            dept_id=dept_id,
+            contact_person=payload.contact_person,
+            phone=payload.phone,
+            address=payload.address,
+            shop_link=payload.shop_link,
+            wechat_id=payload.wechat_id,
+            wechat_nickname=payload.wechat_nickname,
+            is_dropship=payload.is_dropship,
         )
+    except ValueError as e:
+        # 平台校验 / 1688 shop_link 缺失等业务错误统一 422
+        raise HTTPException(status_code=422, detail=str(e))
 
-    # 创建新供应商
-    new_supplier = find_or_create_supplier_by_name(
-        db,
-        supplier_name=payload.supplier_name,
-        dept_id=dept_id,
-        contact_person=payload.contact_person,
-        phone=payload.phone,
-        address=payload.address,
-    )
-    if not new_supplier:
+    if result is None:
         raise HTTPException(status_code=500, detail="创建供应商失败")
 
+    new_supplier, created = result
     return FindOrCreateSupplierResponse(
         id=new_supplier.id,
         supplier_name=new_supplier.supplier_name,
         supplier_code=new_supplier.supplier_code,
-        created=True,
+        created=created,
     )
 
 @router.post("/", response_model=SupplierResponse)
 def create_supplier_api(supplier: SupplierCreate, dept_id: str = "S", db: Session = Depends(get_db)):
-    return create_supplier(db, supplier, dept_id)
+    try:
+        return create_supplier(db, supplier, dept_id)
+    except ValueError as e:
+        # 平台必填字段校验失败 → 422
+        raise HTTPException(status_code=422, detail=str(e))
 
 @router.get("/", response_model=list[SupplierResponse])
 def read_suppliers(skip: int = 0, limit: int = 100, keyword: Optional[str] = None, db: Session = Depends(get_db)):
@@ -95,7 +107,11 @@ def read_supplier(supplier_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{supplier_id}", response_model=SupplierResponse)
 def update_supplier_api(supplier_id: int, supplier: SupplierUpdate, db: Session = Depends(get_db)):
-    db_supplier = update_supplier(db, supplier_id, supplier)
+    try:
+        db_supplier = update_supplier(db, supplier_id, supplier)
+    except ValueError as e:
+        # 平台变更锁定 / 1688 shop_link 缺失等业务错误统一 422
+        raise HTTPException(status_code=422, detail=str(e))
     if db_supplier is None:
         raise HTTPException(status_code=404, detail="供应商不存在")
     return db_supplier

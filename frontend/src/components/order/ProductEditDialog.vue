@@ -244,7 +244,7 @@
               </div>
               <div class="purchase-cost-cell cost-cell" data-required-field="purchase_price">
                 <el-input
-                  v-model="form.purchase_price"
+                  v-model.number="form.purchase_price"
                   type="number"
                   style="width: 100%"
                   @blur="saveField('purchase_price', form.purchase_price)"
@@ -254,7 +254,7 @@
               </div>
               <div class="purchase-cost-cell cost-cell">
                 <el-input
-                  v-model="form.labeling_fee"
+                  v-model.number="form.labeling_fee"
                   type="number"
                   style="width: 100%"
                   @blur="saveField('labeling_fee', form.labeling_fee)"
@@ -264,7 +264,7 @@
               </div>
               <div class="purchase-cost-cell cost-cell">
                 <el-input
-                  v-model="form.shipping_fee"
+                  v-model.number="form.shipping_fee"
                   type="number"
                   style="width: 100%"
                   @blur="saveField('shipping_fee', form.shipping_fee)"
@@ -273,7 +273,7 @@
                 </el-input>
               </div>
               <div class="purchase-cost-cell cost-cell amount-cell">
-                ¥{{ formatMoney(form.purchase_price * form.quantity + (form.misc_fee || 0) + (form.shipping_fee || 0)) }}
+                ¥{{ formatMoney(Number(form.purchase_price || 0) * Number(form.quantity || 0) + Number(form.misc_fee || 0) + Number(form.shipping_fee || 0)) }}
               </div>
             <div class="sales-detail-cell">
               <FieldInput

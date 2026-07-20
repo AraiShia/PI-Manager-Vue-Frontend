@@ -256,8 +256,12 @@ def find_or_create_supplier_by_name(
     wechat_id: Optional[str] = None,
     wechat_nickname: Optional[str] = None,
     is_dropship: Optional[bool] = None,
-) -> SupSupplier:
+) -> tuple[SupSupplier, bool]:
     """线上采购按 dept_id + platform + supplier_name 查找或创建供应商
+
+    返回 (supplier, created)：
+    - created=True  → 本次调用新创建了供应商
+    - created=False → 命中已有供应商（可能已补齐缺失字段）
 
     前提：platform 必须非空，调用方应确保线上采购必传 platform。
 
@@ -271,14 +275,18 @@ def find_or_create_supplier_by_name(
         return None
     supplier_name = supplier_name.strip()
 
+    # 运行时校验 platform：Python 类型标注不会阻止 None/空串，必须强制三元校验
+    if platform not in ('1688', 'wechat', 'offline'):
+        raise ValueError('无效或缺失的供应商平台：必须是 1688 / wechat / offline')
+
     if platform:
         existing = get_supplier_by_name_and_platform(db, supplier_name, platform, dept_id)
         if existing:
             # 检查 1688 必填字段
             if platform == '1688' and not (existing.shop_link or shop_link):
                 raise ValueError('1688 供应商必须填写店铺链接，可在供应商详情中补充后重试')
-            # 补齐缺失字段并返回
-            return _fill_and_return(db, existing,
+            # 补齐缺失字段并返回（created=False 表示复用）
+            return _fill_and_return(db, existing, False,
                 shop_link=shop_link, wechat_id=wechat_id,
                 wechat_nickname=wechat_nickname, is_dropship=is_dropship)
 
@@ -287,28 +295,29 @@ def find_or_create_supplier_by_name(
         return _do_create_supplier(db, supplier_name, dept_id, platform,
             contact_person, phone, address, shop_link, wechat_id, wechat_nickname, is_dropship)
     except Exception as exc:
-        # 并发冲突：唯一约束违反，重新查询并复用
+        # 并发冲突：唯一约束违反，重新查询并复用（created=False）
         if 'UNIQUE constraint' in str(exc) or 'duplicate' in str(exc).lower():
             db.rollback()
             existing = get_supplier_by_name_and_platform(db, supplier_name, platform, dept_id)
             if existing:
                 if platform == '1688' and not existing.shop_link and not shop_link:
                     raise ValueError('1688 供应商缺少店铺链接，可在供应商详情中补充后重试')
-                return _fill_and_return(db, existing,
+                return _fill_and_return(db, existing, False,
                     shop_link=shop_link, wechat_id=wechat_id,
                     wechat_nickname=wechat_nickname, is_dropship=is_dropship)
         raise
 
 
-def _do_create_supplier(...全部参数...) -> SupSupplier:
-    """实际创建供应商，内部不处理冲突"""
+def _do_create_supplier(...全部参数...) -> tuple[SupSupplier, bool]:
+    """实际创建供应商，内部不处理冲突；返回 (supplier, True)"""
     _validate_platform_fields_create(...)  # 复用已有校验逻辑
     create_payload = SupplierCreate(...)
-    return create_supplier(db, create_payload, dept_id)
+    supplier = create_supplier(db, create_payload, dept_id)
+    return (supplier, True)
 
 
-def _fill_and_return(db, existing, **kwargs):
-    """命中后补齐缺失字段并返回"""
+def _fill_and_return(db, existing, created: bool, **kwargs) -> tuple[SupSupplier, bool]:
+    """补齐缺失字段并返回；created 参数决定返回的 created 值"""
     updated = False
     for field, value in kwargs.items():
         if value and getattr(existing, field) is None:
@@ -318,7 +327,7 @@ def _fill_and_return(db, existing, **kwargs):
         db.add(existing)
         db.commit()
         db.refresh(existing)
-    return existing
+    return (existing, created)
 ```
 
 ### `backend/routers/supplier.py` — find-or-create 接受 platform
@@ -341,21 +350,38 @@ def find_or_create_supplier_api(
     payload: FindOrCreateSupplierRequest,
     db: Session = Depends(get_db)
 ):
-    # ... 现有逻辑 ...
-    new_supplier = find_or_create_supplier_by_name(
-        db,
-        supplier_name=payload.supplier_name,
-        dept_id=dept_id,
-        contact_person=payload.contact_person,
-        phone=payload.phone,
-        address=payload.address,
-        platform=payload.platform,
-        shop_link=payload.shop_link,
-        wechat_id=payload.wechat_id,
-        wechat_nickname=payload.wechat_nickname,
-        is_dropship=payload.is_dropship,
+    # 空白名称拦截（None.strip() 会抛 AttributeError，必须先判 None）
+    if not payload.supplier_name or not payload.supplier_name.strip():
+        raise HTTPException(status_code=422, detail="supplier_name 不能为空")
+
+    try:
+        result = find_or_create_supplier_by_name(
+            db,
+            supplier_name=payload.supplier_name,
+            platform=payload.platform,  # Literal 必填，路由层无需二次校验
+            dept_id=payload.dept_id or "S",
+            contact_person=payload.contact_person,
+            phone=payload.phone,
+            address=payload.address,
+            shop_link=payload.shop_link,
+            wechat_id=payload.wechat_id,
+            wechat_nickname=payload.wechat_nickname,
+            is_dropship=payload.is_dropship,
+        )
+    except ValueError as e:
+        # 平台校验 / 1688 shop_link 缺失等业务错误统一 422
+        raise HTTPException(status_code=422, detail=str(e))
+
+    if not result:
+        raise HTTPException(status_code=500, detail="创建供应商失败")
+
+    new_supplier, created = result
+    return FindOrCreateSupplierResponse(
+        id=new_supplier.id,
+        supplier_name=new_supplier.supplier_name,
+        supplier_code=new_supplier.supplier_code,
+        created=created,
     )
-    # ...
 ```
 
 ### `backend/routers/purchase.py`（或对应的采购路由）— 线上采购自动 find-or-create
@@ -363,28 +389,43 @@ def find_or_create_supplier_api(
 线上采购的 `createOnlinePurchase` 入口：
 
 ```python
-from typing import Optional
+from fastapi import HTTPException
 
-# 1. 两者都缺失时直接拒绝
-if not payload.supplier_id and not payload.supplier_name:
-    raise ValueError('supplier_id 或 supplier_name 至少填写一个')
+# 1. 两者都缺失或名称为纯空白时直接拒绝
+# 注意：'   '.strip() == ''，所以必须用 strip 后再判 bool，避免纯空白绕过
+has_supplier_name = bool(payload.supplier_name and payload.supplier_name.strip())
+if not payload.supplier_id and not has_supplier_name:
+    raise HTTPException(
+        status_code=422,
+        detail='supplier_id 或 supplier_name（非空）至少填写一个'
+    )
 
-# 2. 传入 supplier_id 时，校验平台一致性
+# 2. 传入 supplier_id 时，校验供应商、部门、平台一致性
 if payload.supplier_id:
     supplier = db.query(SupSupplier).filter(SupSupplier.id == payload.supplier_id).first()
     if not supplier:
-        raise ValueError('供应商不存在')
-    # 策略：platform IS NULL 视为"未知平台"，线上采购禁止直接关联
-    # 历史供应商必须先补录平台（通过供应商编辑表单），才能用于线上采购
-    if supplier.platform is None:
-        raise ValueError(
-            f'所选供应商（{supplier.supplier_name}）尚未分配平台，无法关联到线上采购。'
-            '请先在"供应商管理"中为该供应商设置平台类型。'
+        raise HTTPException(status_code=422, detail='供应商不存在')
+    # 2.1 部门一致性校验：防止跨部门误关联
+    if supplier.dept_id != payload.dept_id:
+        raise HTTPException(
+            status_code=422,
+            detail=f'所选供应商部门为 {supplier.dept_id}，与本次采购部门 {payload.dept_id} 不一致，'
+                   '请选择本部门供应商或通过"新建供应商"创建'
         )
+    # 2.2 平台校验：platform IS NULL 视为"未知平台"，线上采购禁止直接关联
+    # 历史供应商必须先在"供应商管理"中补录平台，才能用于线上采购
+    if supplier.platform is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f'所选供应商（{supplier.supplier_name}）尚未分配平台，无法关联到线上采购。'
+                   '请先在"供应商管理"中为该供应商设置平台类型。'
+        )
+    # 2.3 平台一致性校验：防止跨平台误复用
     if supplier.platform != payload.platform:
-        raise ValueError(
-            f'所选供应商平台为 {supplier.platform}，与本次采购平台 {payload.platform} 不一致，'
-            '请重新选择或使用"新建供应商"流程'
+        raise HTTPException(
+            status_code=422,
+            detail=f'所选供应商平台为 {supplier.platform}，与本次采购平台 {payload.platform} 不一致，'
+                   '请重新选择或使用"新建供应商"流程'
         )
     # 一致则直接使用 supplier_id，无需 find-or-create
 
@@ -720,9 +761,20 @@ await purchaseApi.createOnlinePurchase(payload)
 
 后端在 `createOnlinePurchase` 中自动 `find_or_create_supplier_by_name(..., platform=...)` 并写入采购单 `supplier_id`。
 
-## 后端测试
+## 后端测试 — 两层语义
 
-`backend/tests/` 下新增 `test_supplier_platform.py`：
+为避免 ValueError 与 HTTP 422 混用造成实现误判，测试分两层：
+
+| 层 | 目标 | 断言方式 |
+|---|---|---|
+| **CRUD 单元测试** | 验证业务规则（platform 校验、shop_link 必填等） | `pytest.raises(ValueError, ...)` |
+| **路由接口测试** | 验证 HTTP 响应状态码与结构化错误信息 | `assert r.status_code == 422` |
+
+> **不要把两种测试混用**：CRUD 层抛出 ValueError，路由层负责转换为 HTTP 422。
+
+### 后端测试 — CRUD 单元测试（ValueError 语义）
+
+`backend/tests/test_supplier_platform.py`：
 
 ```python
 @pytest.fixture
@@ -763,7 +815,8 @@ def test_response_includes_platform_fields():
     assert response.wechat_nickname == 'nick'
 
 def test_find_or_create_creates_new():
-    supplier = find_or_create_supplier_by_name(db, '1688 店 A', platform='1688', shop_link='https://...1688.com/...')
+    supplier, created = find_or_create_supplier_by_name(db, '1688 店 A', platform='1688', shop_link='https://...1688.com/...')
+    assert created is True
     assert supplier.platform == '1688'
     assert supplier.shop_link == 'https://...1688.com/...'
 
@@ -771,9 +824,10 @@ def test_find_or_create_hits_existing_and_fills_missing_fields(insert_incomplete
     # 已有 1688 供应商但缺少 shop_link，本次传入 shop_link，补齐后返回
     existing = insert_incomplete_1688('1688 店 B')
     assert existing.shop_link is None
-    result = find_or_create_supplier_by_name(db, '1688 店 B', platform='1688', shop_link='https://shop.1688.com')
-    assert result.id == existing.id
-    assert result.shop_link == 'https://shop.1688.com'  # 已补齐
+    supplier, created = find_or_create_supplier_by_name(db, '1688 店 B', platform='1688', shop_link='https://shop.1688.com')
+    assert created is False
+    assert supplier.id == existing.id
+    assert supplier.shop_link == 'https://shop.1688.com'  # 已补齐
 
 def test_find_or_create_hits_existing_without_shop_link_raises(insert_incomplete_1688):
     # 已有 1688 供应商缺少 shop_link，本次也没传，返回业务错误
@@ -795,7 +849,11 @@ def test_update_fills_shop_link():
     result = update_supplier(db, existing.id, update)
     assert result.shop_link == 'https://shop.1688.com'
 
-# --- 采购单校验测试 ---
+# --- 采购单 CRUD 校验测试 ---
+# 以下测试 `create_online_purchase(db, payload)` 函数的 ValueError 行为。
+# CRUD 层是唯一业务校验层：supplier_id/name 均缺失 / 跨部门 / platform 不一致 /
+# platform=NULL 等校验均在 crud/purchase.create_online_purchase 中完成并抛 ValueError。
+# 路由层仅负责捕获 ValueError 并转换为 HTTPException(422)，不参与业务判断。
 
 def test_purchase_rejects_missing_supplier_id_and_name():
     # supplier_id 和 supplier_name 都没有时，采购创建应拒绝
@@ -812,7 +870,6 @@ def test_purchase_rejects_missing_supplier_id_and_name():
 
 def test_purchase_rejects_null_platform_supplier():
     # 历史供应商 platform=NULL，线上采购应拒绝关联
-    # （通过 find-or-create 路径，platform 必填会走正常流程；通过 supplier_id 直接关联则校验）
     supplier = SupSupplier(
         supplier_name='历史供应商',
         dept_id='S',
@@ -825,16 +882,17 @@ def test_purchase_rejects_null_platform_supplier():
         dept_id='S',
         pi_id=1,
         platform='1688',
-        supplier_id=supplier.id,  # 传入该 NULL 平台供应商
+        supplier_id=supplier.id,
         supplier_name=None,
         items=[],
     )
     with pytest.raises(ValueError, match='尚未分配平台'):
         create_online_purchase(db, payload)
 
+
 def test_find_or_create_keyword_args():
     # 验证函数签名：platform 位于 dept_id 之前（必填参数不能跟在带默认值参数后面）
-    supplier = find_or_create_supplier_by_name(
+    supplier, created = find_or_create_supplier_by_name(
         db,
         supplier_name='关键字参数顺序测试',
         platform='wechat',  # 必填参数在前
@@ -842,9 +900,186 @@ def test_find_or_create_keyword_args():
         shop_link=None,
         wechat_nickname='昵称',
     )
+    assert created is True
     assert supplier.platform == 'wechat'
     assert supplier.wechat_nickname == '昵称'
 ```
+
+### 接口级测试（路由层 HTTP 422 校验）
+
+仅测试 CRUD 函数中抛 `ValueError` 是不够的：路由层必须把业务校验失败转成 `HTTPException(422, ...)`，前端拦截器才能拿到结构化的 `detail` 字段。下列用例使用 FastAPI `TestClient` 直接打路由，校验响应状态码与错误信息。
+
+测试文件：`backend/tests/test_supplier_platform_api.py`
+
+```python
+import pytest
+from fastapi.testclient import TestClient
+from app.main import app
+from tests._helpers import get_test_db  # 共享内存 SQLite / 事务回滚
+
+client = TestClient(app)
+
+
+# --- /api/suppliers/find-or-create ---
+
+def test_find_or_create_missing_platform_returns_422():
+    """缺失 platform → 422（Literal 必填字段）"""
+    r = client.post("/api/suppliers/find-or-create", json={
+        "supplier_name": "测试店",
+        "dept_id": "S",
+        # platform 故意不传
+    })
+    assert r.status_code == 422
+    assert "platform" in str(r.json())
+
+def test_find_or_create_invalid_platform_returns_422():
+    """platform 取值非法 → 422"""
+    r = client.post("/api/suppliers/find-or-create", json={
+        "supplier_name": "测试店",
+        "dept_id": "S",
+        "platform": "taobao",   # 不在 {'1688','wechat','offline'}
+    })
+    assert r.status_code == 422
+
+def test_find_or_create_blank_supplier_name_returns_422():
+    """纯空白 supplier_name → 422"""
+    r = client.post("/api/suppliers/find-or-create", json={
+        "supplier_name": "   ",
+        "dept_id": "S",
+        "platform": "1688",
+    })
+    assert r.status_code == 422
+    assert "supplier_name" in r.json()["detail"]
+
+def test_find_or_create_1688_missing_shop_link_returns_422():
+    """platform=1688 但未传 shop_link → 422（CRUD 运行时校验，路由统一转 422）"""
+    r = client.post("/api/suppliers/find-or-create", json={
+        "supplier_name": "1688 缺链接店",
+        "dept_id": "S",
+        "platform": "1688",
+        # shop_link 故意不传
+    })
+    assert r.status_code == 422
+    assert "店铺链接" in r.json()["detail"]
+
+
+# --- /api/purchase-orders/1688 (create_1688_purchase_api) ---
+
+def test_purchase_missing_supplier_id_and_name_returns_422():
+    """supplier_id 与 supplier_name 都缺失（或纯空白）→ 422"""
+    r = client.post("/api/purchase-orders/1688", json={
+        "dept_id": "S",
+        "pi_id": 1,
+        "platform": "1688",
+        # supplier_id / supplier_name 都缺
+        "items": [],
+    })
+    assert r.status_code == 422
+    body = r.json()
+    assert "supplier_id" in str(body) or "supplier_name" in str(body)
+
+def test_purchase_blank_supplier_name_returns_422():
+    """supplier_name 是纯空白字符串 → 422"""
+    r = client.post("/api/purchase-orders/1688", json={
+        "dept_id": "S",
+        "pi_id": 1,
+        "platform": "1688",
+        "supplier_id": None,
+        "supplier_name": "   ",   # 纯空白
+        "items": [],
+    })
+    assert r.status_code == 422
+
+def test_purchase_supplier_id_wrong_dept_returns_422(db):
+    """supplier.dept_id 与 payload.dept_id 不一致 → 422"""
+    # 预设：A 部门供应商
+    supplier = _seed_supplier(db, dept_id='A', platform='1688', supplier_code='SPX001')
+    r = client.post("/api/purchase-orders/1688", json={
+        "dept_id": "B",          # 当前采购部门
+        "pi_id": 1,
+        "platform": "1688",
+        "supplier_id": supplier.id,
+        "items": [],
+    })
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "部门" in detail
+    assert supplier.dept_id in detail and "B" in detail
+
+def test_purchase_supplier_id_null_platform_returns_422(db):
+    """历史供应商 platform=NULL → 422（不允许直接关联到线上采购）"""
+    supplier = _seed_supplier(db, dept_id='S', platform=None, supplier_code='SPX002')
+    r = client.post("/api/purchase-orders/1688", json={
+        "dept_id": "S",
+        "pi_id": 1,
+        "platform": "1688",
+        "supplier_id": supplier.id,
+        "items": [],
+    })
+    assert r.status_code == 422
+    assert "尚未分配平台" in r.json()["detail"]
+
+def test_purchase_supplier_id_platform_mismatch_returns_422(db):
+    """供应商 platform=wechat，但采购 platform=1688 → 422"""
+    supplier = _seed_supplier(db, dept_id='S', platform='wechat', supplier_code='SPX003')
+    r = client.post("/api/purchase-orders/1688", json={
+        "dept_id": "S",
+        "pi_id": 1,
+        "platform": "1688",
+        "supplier_id": supplier.id,
+        "items": [],
+    })
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "wechat" in detail and "1688" in detail
+
+def test_purchase_unknown_supplier_id_returns_422():
+    """supplier_id 不存在 → 422"""
+    r = client.post("/api/purchase-orders/1688", json={
+        "dept_id": "S",
+        "pi_id": 1,
+        "platform": "1688",
+        "supplier_id": 999999,    # 不存在
+        "items": [],
+    })
+    assert r.status_code == 422
+    assert "不存在" in r.json()["detail"]
+
+
+# --- /api/suppliers/{id} (update_supplier_api) ---
+
+def test_update_platform_change_blocked_returns_422(db):
+    """已存在 platform 的供应商，update 时改 platform → 422（前后端均锁定）"""
+    supplier = _seed_supplier(db, dept_id='S', platform='1688', supplier_code='SPX004')
+    r = client.put(f"/api/suppliers/{supplier.id}", json={
+        "platform": "wechat",     # 试图变更
+    })
+    assert r.status_code == 422
+    assert "不可修改" in r.json()["detail"]
+
+
+# --- 辅助函数 ---
+
+def _seed_supplier(db, *, dept_id: str, platform: str | None, supplier_code: str, supplier_name: str = '测试供应商'):
+    """绕过校验直接插入测试用供应商"""
+    from models import SupSupplier
+    s = SupSupplier(
+        dept_id=dept_id,
+        supplier_code=supplier_code,
+        supplier_name=supplier_name,
+        platform=platform,
+    )
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return s
+```
+
+**说明**：
+
+- 所有业务校验（部门、平台、空白名称、平台变更锁定）都必须从路由层抛出 `HTTPException(status_code=422, ...)`；如果走 `ValueError`，FastAPI 默认会返回 500，前端拦截器会判定为请求失败而非业务错误。
+- 建议把"测试 status_code==422"作为合并门槛：CI 中跑 `pytest backend/tests/test_supplier_platform_api.py`，任何回归立即拦截。
+- `platform` 在 `FindOrCreateSupplierRequest` 与 `PurchaseCreateOnline` 中均为 `Literal[...]` 必填，缺失会触发 Pydantic 自动 422，无需手动校验。
 
 ## 成功标准
 
@@ -860,3 +1095,7 @@ def test_find_or_create_keyword_args():
 10. `find_or_create_supplier_by_name` 签名与所有调用方一致（platform 为必填 str）
 11. `PurchaseCreateOnline.platform` 和 `FindOrCreateSupplierRequest.platform` 均为 Literal 必填，缺失返回 422
 12. 数据库唯一索引 `uq_supplier_dept_platform_name(dept_id, platform, supplier_name)` 存在，platform=NULL 时不参与约束
+13. `find_or_create_supplier_by_name` 函数入口校验 `platform in ('1688', 'wechat', 'offline')`，否则 `ValueError`
+14. 采购路由 supplier_id 关联校验流程：供应商存在 → dept_id 一致 → platform 非 NULL → platform 与 payload 一致；任一不满足返回 422
+15. supplier_name 校验使用 `bool(payload.supplier_name and payload.supplier_name.strip())`，纯空白视为无效
+16. 所有业务校验从路由层抛出 `HTTPException(422, ...)`，接口级测试覆盖（`backend/tests/test_supplier_platform_api.py`）
