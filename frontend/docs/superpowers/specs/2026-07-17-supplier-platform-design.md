@@ -247,11 +247,11 @@ def get_supplier_by_name_and_platform(
 def find_or_create_supplier_by_name(
     db: Session,
     supplier_name: str,
+    platform: str,  # 必填，调用方须保证非空；放在所有带默认值参数之前
     dept_id: str = "S",
     contact_person: str = None,
     phone: str = None,
     address: str = None,
-    platform: str,  # 必填，调用方须保证非空
     shop_link: Optional[str] = None,
     wechat_id: Optional[str] = None,
     wechat_nickname: Optional[str] = None,
@@ -363,26 +363,39 @@ def find_or_create_supplier_api(
 线上采购的 `createOnlinePurchase` 入口：
 
 ```python
-# 1. 传入 supplier_id 时，校验平台一致性
+from typing import Optional
+
+# 1. 两者都缺失时直接拒绝
+if not payload.supplier_id and not payload.supplier_name:
+    raise ValueError('supplier_id 或 supplier_name 至少填写一个')
+
+# 2. 传入 supplier_id 时，校验平台一致性
 if payload.supplier_id:
     supplier = db.query(SupSupplier).filter(SupSupplier.id == payload.supplier_id).first()
     if not supplier:
         raise ValueError('供应商不存在')
-    if supplier.platform and supplier.platform != payload.platform:
+    # 策略：platform IS NULL 视为"未知平台"，线上采购禁止直接关联
+    # 历史供应商必须先补录平台（通过供应商编辑表单），才能用于线上采购
+    if supplier.platform is None:
+        raise ValueError(
+            f'所选供应商（{supplier.supplier_name}）尚未分配平台，无法关联到线上采购。'
+            '请先在"供应商管理"中为该供应商设置平台类型。'
+        )
+    if supplier.platform != payload.platform:
         raise ValueError(
             f'所选供应商平台为 {supplier.platform}，与本次采购平台 {payload.platform} 不一致，'
             '请重新选择或使用"新建供应商"流程'
         )
     # 一致则直接使用 supplier_id，无需 find-or-create
 
-# 2. 未传 supplier_id 但有 supplier_name，按平台创建/查找
+# 3. 未传 supplier_id 但有 supplier_name，按平台创建/查找
 elif payload.supplier_name:
     # 透传 shop_link（1688 必填）、wechat_nickname 等平台字段
     supplier = find_or_create_supplier_by_name(
         db,
         supplier_name=payload.supplier_name,
+        platform=payload.platform,  # 必填Literal，不会为空；platform 在 dept_id 之前
         dept_id=payload.dept_id,
-        platform=payload.platform,  # 必填Literal，不会为空
         shop_link=getattr(payload, 'shop_link', None),  # 1688 必填
         wechat_id=getattr(payload, 'wechat_id', None),  # 1688 选填
         wechat_nickname=getattr(payload, 'wechat_nickname', None),  # 微信选填
@@ -469,6 +482,31 @@ def upgrade():
 
         # 创建唯一索引防止并发重复（仅在 (dept_id, platform, supplier_name) 全非 NULL 时生效）
         # platform 为 NULL 时不参与唯一约束，允许历史 NULL 数据保留
+
+        # Step 1：检查已有重复数据（非 NULL platform）
+        duplicate_rows = conn.execute(text("""
+            SELECT dept_id, platform, supplier_name, COUNT(*) as cnt, GROUP_CONCAT(id) as ids
+            FROM sup_supplier
+            WHERE dept_id IS NOT NULL
+              AND platform IS NOT NULL
+              AND supplier_name IS NOT NULL
+            GROUP BY dept_id, platform, supplier_name
+            HAVING COUNT(*) > 1
+        """)).fetchall()
+
+        if duplicate_rows:
+            # 发现重复，打印并中止迁移，要求人工处理
+            for row in duplicate_rows:
+                print(f"[MIGRATION ERROR] 重复供应商数据: dept_id={row[0]}, platform={row[1]}, "
+                      f"supplier_name={row[2]}, 重复数量={row[3]}, ids={row[4]}")
+            raise RuntimeError(
+                f"发现 {len(duplicate_rows)} 组重复供应商数据，请先在数据库中合并或删除重复记录后再执行迁移。"
+                "受影响组合：" + ", ".join(
+                    f"({r[0]},{r[1]},{r[2]})" for r in duplicate_rows
+                )
+            )
+
+        # Step 2：无重复，正式创建唯一索引
         try:
             conn.execute(text("""
                 CREATE UNIQUE INDEX uq_supplier_dept_platform_name
@@ -756,6 +794,56 @@ def test_update_fills_shop_link():
     update = SupplierUpdate(shop_link='https://shop.1688.com')
     result = update_supplier(db, existing.id, update)
     assert result.shop_link == 'https://shop.1688.com'
+
+# --- 采购单校验测试 ---
+
+def test_purchase_rejects_missing_supplier_id_and_name():
+    # supplier_id 和 supplier_name 都没有时，采购创建应拒绝
+    payload = PurchaseCreateOnline(
+        dept_id='S',
+        pi_id=1,
+        platform='1688',
+        supplier_id=None,
+        supplier_name=None,
+        items=[],
+    )
+    with pytest.raises(ValueError, match='supplier_id 或 supplier_name'):
+        create_online_purchase(db, payload)
+
+def test_purchase_rejects_null_platform_supplier():
+    # 历史供应商 platform=NULL，线上采购应拒绝关联
+    # （通过 find-or-create 路径，platform 必填会走正常流程；通过 supplier_id 直接关联则校验）
+    supplier = SupSupplier(
+        supplier_name='历史供应商',
+        dept_id='S',
+        supplier_code='TEST002',
+        platform=None,  # 故意 NULL
+    )
+    db.add(supplier)
+    db.commit()
+    payload = PurchaseCreateOnline(
+        dept_id='S',
+        pi_id=1,
+        platform='1688',
+        supplier_id=supplier.id,  # 传入该 NULL 平台供应商
+        supplier_name=None,
+        items=[],
+    )
+    with pytest.raises(ValueError, match='尚未分配平台'):
+        create_online_purchase(db, payload)
+
+def test_find_or_create_keyword_args():
+    # 验证函数签名：platform 位于 dept_id 之前（必填参数不能跟在带默认值参数后面）
+    supplier = find_or_create_supplier_by_name(
+        db,
+        supplier_name='关键字参数顺序测试',
+        platform='wechat',  # 必填参数在前
+        dept_id='S',
+        shop_link=None,
+        wechat_nickname='昵称',
+    )
+    assert supplier.platform == 'wechat'
+    assert supplier.wechat_nickname == '昵称'
 ```
 
 ## 成功标准
