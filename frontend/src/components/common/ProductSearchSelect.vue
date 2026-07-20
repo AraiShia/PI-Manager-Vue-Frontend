@@ -8,6 +8,7 @@
     :placeholder="placeholder"
     :clearable="clearable"
     :disabled="disabled"
+    popper-class="product-search-dropdown"
     value-key="id"
     @change="onSelect"
     @clear="onClear"
@@ -260,7 +261,7 @@ function onClear() {
   text-overflow: ellipsis;
 }
 
-:deep(.el-select-dropdown__item) {
+:global(.product-search-dropdown .el-select-dropdown__item) {
   height: auto !important;
   padding: 0 !important;
   line-height: normal !important;

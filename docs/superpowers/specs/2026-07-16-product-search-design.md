@@ -635,7 +635,7 @@ export const productSearchService = {
 - 内部用 axios 调用（`client.get(PRODUCT_SEARCH.recommend, { params, signal })`），
   不直接 fetch，统一走 `baseURL` 策略。
 - `signal` 用于组件 onUnmounted 时 `controller.abort()`。
-
+## 4. 组件
 ### 4.2 ProductSearchSelect 组件
 
 **新文件**: `frontend/src/components/common/ProductSearchSelect.vue`
@@ -877,7 +877,7 @@ async function saveOeField(value: string) {
 | 选项 | 优点 | 缺点 |
 |---|---|---|
 | A. 复用 `oes/batch`（追加语义）+ 前端先 GET 再 DELETE 多次 | 无新接口 | 4 步操作，部分失败易脏数据 |
-| B. **新增 `oes/bulk-sync`**（POST，先删后增） | **单事务原子**，前端 1 个请求 | 新 handler |
+| B. **新增 `oes/bulk-sync`**（POST，差量同步） | **单事务原子**，前端 1 个请求 | 新 handler |
 
 **选 B**，handler 规格：
 
@@ -900,15 +900,16 @@ Content-Type: application/json
 
 **服务端规则**：
 
-1. **事务**: 整个删除 + 插入用单个 SQLAlchemy session.begin() 包裹，任何异常整体回滚。
-2. **去重**: 列表内 `set(oes)` 去空 + 去前后空格；DB 端利用 `UNIQUE(customer_product_id, oe_number)` 约束去重。
+1. **事务**: 从读取现有 OE 到差量删除、更新、插入，全部放在单个 SQLAlchemy `session.begin()` 中，任何异常整体回滚。
+2. **去重**: 先对每项执行 `strip()` 并过滤空字符串，再使用有序去重（例如 `list(dict.fromkeys(normalized_oes))`），不得使用会破坏输入顺序的 `set(oes)`；DB 端继续利用 `UNIQUE(customer_product_id, oe_number)` 约束兜底。
 3. **主 OE 规则**:
-   - `set_first_as_primary=true` 时：把列表首条设为 `is_primary=true`，其余为 `false`。
-   - 列表为空时：清除所有现有 OE 的 `is_primary` 标记。
-4. **删除行为**: 先按 `customer_product_id` DELETE 全部 `prd_customer_product_oe`，再 INSERT。
-5. **不可变字段**: `customer_product_id`、`id`、`created_at` 不变。
+   - `set_first_as_primary=true` 时：把有序去重后的列表首条设为 `is_primary=true`，其余为 `false`。
+   - `set_first_as_primary=false` 时：保留仍存在的原主 OE；若原主 OE 已被移除，则不设置新的主 OE。
+   - 列表为空时：删除该产品的全部 OE，`primary_oe` 为空。
+4. **差量同步**: 读取现有 OE 后，删除请求中不存在的 OE，保留请求中仍存在的 OE 记录并只更新其 `is_primary`，仅为新增 OE 插入记录；因此未变化记录的 `id`、`created_at` 保持不变。
+5. **不可变字段**: 客户端不得传入或修改 `customer_product_id`、`id`、`created_at`；服务端对保留记录不改写这些字段，新记录由数据库/ORM 生成。
 6. **错误码**: 400（入参非数组）、404（产品不存在）、500（DB 异常，回滚）。
-7. **审计日志**: 写入 `[product_search] bulk_sync product={id} added={n} removed={m}`，便于排查。
+7. **审计日志**: 写入 `[product_search] bulk_sync product={id} added={n} removed={m}`，其中 `added` 为实际插入数，`removed` 为实际删除数，便于排查。
 
 ### 4.4 接入点
 
@@ -1034,7 +1035,7 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 
 ## 8. 迁移与回滚
 
-- **OE 拆分迁移**: 现有 `PrdCustomerProductOE` 表已有数据，新 `bulk-sync` 接口仅替换该 customer_product_id 下的所有 OE，不动其他表。
+- **OE 拆分迁移**: 现有 `PrdCustomerProductOE` 表已有数据，新 `bulk-sync` 接口仅对该 `customer_product_id` 做差量同步，不动其他表；请求中仍存在的 OE 保留原记录的 `id` / `created_at`。
 - **新搜索接口可灰度**: 引入 `USE_PRODUCT_SEARCH` feature flag（前端常量）：
   - `true` → `<ProductSearchSelect>` 走 `/api/customer-products/search`
   - `false` → 保留 NewOrderDialog 现有的三件套 + `PRODUCT_CUSTOMER.search` 老 fallback（**老路径会 404**，仅作为界面层兼容，保留代码但不期望其工作；后续彻底删除）
@@ -1054,7 +1055,7 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 | `customer_product_id` 旧列名 vs 新列名 | 以现有 ORM 关系为准，不改字段名 |
 | LIMIT 200 排序不可靠（P1-1） | **不**在 SQL 截断，改为分字段独立查询 + 合并去重，最后按 score desc Python 截 limit |
 | 名称字段数据来源（P1-2） | 不动 PrdCustomerProduct 表结构；跨表查询取最近一次 PI item 的 `detail_desc_en` / `product_short_name` / `product_short_name_en` |
-| OE 全替换接口（P1-4） | 新增 `oes/bulk-sync`，单事务原子；前端 1 个请求；显式处理去重 + 主 OE |
+| OE 批量同步（P1-4） | 新增 `oes/bulk-sync`，单事务原子；前端 1 个请求；有序去重、差量删除/保留/新增，并按输入顺序确定主 OE |
 | `customer_id` 过滤缺失（P0-3） | 4 组候选查询全部加 `if customer_id is not None` 过滤 PrdCustomerProduct.customer_id；PI name 过滤走 `PiProformaInvoice.customer_id`（JOIN 主表） |
 | 下单 payload 缺 product_id / customer_model（P0-3） | 前端 `payload.items[0]` 必带 `product_id`；后端 `PIInvoiceItemCreate` schema 显式加 `customer_model` 字段（业务仅 USD，无需货币字段） |
 | 通过 OE/型号命中时无名称字段展示（P1-5） | 候选集确定后再统一加载"全部候选产品最近一次 PI item"作为展示用，**覆盖**原始 `latest_name_map` |
@@ -1119,7 +1120,7 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 ### 功能验收（必须全部通过）
 
 #### P0 — 实现阻断项
-- **P0-1 接口路径**: `GET /api/customer-products/search` → 200；`GET /api/customer-products/search?keyword=test` → 有结果。`/search` 必须放在 `/{product_id}` 之前（FastAPI 路由顺序）。
+- **P0-1 接口路径**: `GET /api/customer-products/search?keyword=test` → 200（含结果）；`GET /api/customer-products/search`（无 keyword）→ 422（来自 `/search` handler 的 `Query(min_length=1)` 校验，不是 `/{product_id}` 的整数转换错误）。`/search` 必须放在 `/{product_id}` 之前（FastAPI 路由顺序）。
 - **P0-2 下单回填字段**: 选搜索结果后 `form.customer_code / customer_model / oe_number / unit_price / product_id / customer_id` 全部正确回填；响应 null 不报错。
 - **P0-3 customer_id 过滤**: 4 组候选查询均按 `customer_id` 过滤；同型号产品跨客户搜索返回只含指定客户的记录。
 - **P0-4 product_id 入 payload**: `payload.items[0]` 含 `product_id`；`create_pi_invoice` 写入 `pi_proforma_invoice_item.product_id`。
@@ -1132,7 +1133,7 @@ GET /api/customer-products/search?keyword=750&limit=20&customer_id=1
 - **P1-1 排序可靠性**: 精确型号匹配不受 LIMIT 截断影响；插入 500 条随机 + 1 条精确 → 搜索精确型号返回首条。
 - **P1-2 名称字段闭环**: 4 个 PI item 字段（`detail_desc` / `detail_desc_en` / `product_short_name` / `product_short_name_en`）全部参与精排。
 - **P1-3 XSS 防御**: `splitForHighlight` 不返回 HTML；`v-html` 在模板中零使用；恶意输入作为纯文本展示。
-- **P1-4 OE 批量同步**: `POST /api/customer-products/{id}/oes/bulk-sync` 单事务原子；去重；主 OE = 首条；清空时清除主 OE 标记。
+- **P1-4 OE 批量同步**: `POST /api/customer-products/{id}/oes/bulk-sync` 单事务原子；有序去重；差量删除/保留/新增；未变化 OE 保留 `id` / `created_at`；主 OE = 有序去重后的首条；清空时删除该产品全部 OE。
 - **P1-5 非名称命中返回名称**: OE / 客户型号命中的产品，响应含 `product_name_en` / `product_short_name*`（来自该产品最近一次 PI item）。
 - **P1-6 货币（方案 1: 仅 USD）**: 响应不返回 `currency` / `price_rmb`；`unit_price` 按 USD 写入。
 - **P1-7 detail_desc 精排**: `PrdCustomerProduct.detail_desc` 独立计分（score=30），matched_in 含 `detail_desc`。
