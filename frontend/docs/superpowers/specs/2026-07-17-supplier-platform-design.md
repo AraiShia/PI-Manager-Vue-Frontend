@@ -185,13 +185,16 @@ def _validate_platform_fields_update(db_supplier: SupSupplier, supplier_update: 
     """更新时平台字段校验
 
     校验规则：
-    1. platform 一旦创建后不可修改（前端 UI 锁定，后端拒绝 platform 变更）
-    2. 使用“数据库旧值 + 本次更新值”合并后的最终值校验必填字段
+    1. platform 为 NULL 时允许首次设置（历史数据首次分配平台）
+    2. platform 已存在时禁止修改（前端 UI 锁定，后端拒绝变更）
+    3. 使用"数据库旧值 + 本次更新值"合并后的最终值校验必填字段
     """
-    if supplier_update.platform is not None and supplier_update.platform != db_supplier.platform:
-        raise ValueError(f'供应商平台不可修改（当前为 {db_supplier.platform}）')
+    # 历史 NULL 允许首次设置平台
+    if db_supplier.platform is not None and supplier_update.platform is not None:
+        if supplier_update.platform != db_supplier.platform:
+            raise ValueError(f'供应商平台不可修改（当前为 {db_supplier.platform}）')
 
-    final_platform = db_supplier.platform
+    final_platform = supplier_update.platform if supplier_update.platform is not None else db_supplier.platform
     final_shop_link = supplier_update.shop_link if supplier_update.shop_link is not None else db_supplier.shop_link
 
     if final_platform == '1688' and not (final_shop_link and final_shop_link.strip()):
@@ -248,7 +251,7 @@ def find_or_create_supplier_by_name(
     contact_person: str = None,
     phone: str = None,
     address: str = None,
-    platform: Optional[str] = None,
+    platform: str,  # 必填，调用方须保证非空
     shop_link: Optional[str] = None,
     wechat_id: Optional[str] = None,
     wechat_nickname: Optional[str] = None,
@@ -256,9 +259,12 @@ def find_or_create_supplier_by_name(
 ) -> SupSupplier:
     """线上采购按 dept_id + platform + supplier_name 查找或创建供应商
 
+    前提：platform 必须非空，调用方应确保线上采购必传 platform。
+
     数据库层并发安全：
-    - 创建唯一约束：ALTER TABLE sup_supplier ADD CONSTRAINT
-      uq_supplier_dept_platform_name UNIQUE (dept_id, platform, supplier_name)
+    - 唯一索引：CREATE UNIQUE INDEX uq_supplier_dept_platform_name
+      ON sup_supplier(dept_id, platform, supplier_name)
+      （platform 为 NULL 时不参与唯一约束，历史 NULL 数据不受影响）
     - 创建时捕获 IntegrityError，并发冲突时回滚后重新查询并复用
     """
     if not supplier_name or not supplier_name.strip():
@@ -324,7 +330,7 @@ class FindOrCreateSupplierRequest(BaseModel):
     contact_person: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
-    platform: Optional[str] = None       # 新增：'1688' / 'wechat' / 'offline'
+    platform: Literal['1688', 'wechat', 'offline']   # 必填，缺失返回 422
     shop_link: Optional[str] = None      # 新增：1688 店铺链接
     wechat_id: Optional[str] = None      # 新增：微信号
     wechat_nickname: Optional[str] = None # 新增：微信昵称
@@ -357,15 +363,26 @@ def find_or_create_supplier_api(
 线上采购的 `createOnlinePurchase` 入口：
 
 ```python
-# 在处理 supplier_name 时：
-if not payload.supplier_id and payload.supplier_name:
-    # 自动按 platform + name 建立 supplier_id
+# 1. 传入 supplier_id 时，校验平台一致性
+if payload.supplier_id:
+    supplier = db.query(SupSupplier).filter(SupSupplier.id == payload.supplier_id).first()
+    if not supplier:
+        raise ValueError('供应商不存在')
+    if supplier.platform and supplier.platform != payload.platform:
+        raise ValueError(
+            f'所选供应商平台为 {supplier.platform}，与本次采购平台 {payload.platform} 不一致，'
+            '请重新选择或使用"新建供应商"流程'
+        )
+    # 一致则直接使用 supplier_id，无需 find-or-create
+
+# 2. 未传 supplier_id 但有 supplier_name，按平台创建/查找
+elif payload.supplier_name:
     # 透传 shop_link（1688 必填）、wechat_nickname 等平台字段
     supplier = find_or_create_supplier_by_name(
         db,
         supplier_name=payload.supplier_name,
         dept_id=payload.dept_id,
-        platform=payload.platform,
+        platform=payload.platform,  # 必填Literal，不会为空
         shop_link=getattr(payload, 'shop_link', None),  # 1688 必填
         wechat_id=getattr(payload, 'wechat_id', None),  # 1688 选填
         wechat_nickname=getattr(payload, 'wechat_nickname', None),  # 微信选填
@@ -377,6 +394,8 @@ if not payload.supplier_id and payload.supplier_name:
         payload.supplier_id = supplier.id  # 写入采购单
 ```
 
+采购单 platform 字段以请求 `payload.platform` 为准（采购单本身记录本次采购的平台类型），与供应商 platform 一致性由后端校验。
+
 ### 采购请求契约完整定义
 
 `backend/schemas/purchase.py`（或对应文件）需要明确以下字段：
@@ -386,9 +405,9 @@ class PurchaseCreateOnline(BaseModel):
     # 现有字段保持不变
     dept_id: str
     pi_id: int
-    supplier_id: Optional[int] = None      # 后端自动 find-or-create 时写入
+    supplier_id: Optional[int] = None      # 已有供应商时传入；后端校验平台一致性
     supplier_name: Optional[str] = None    # 1688 店铺名 / 微信昵称
-    platform: Optional[str] = None         # '1688' / 'wechat'
+    platform: Literal['1688', 'wechat']    # 必填，缺失返回 422
     items: List[PurchaseItem]
     link: Optional[str] = None
     contact_wechat: Optional[str] = None
@@ -447,6 +466,18 @@ def upgrade():
             except Exception as exc:
                 if "duplicate column name" not in str(exc).lower():
                     raise
+
+        # 创建唯一索引防止并发重复（仅在 (dept_id, platform, supplier_name) 全非 NULL 时生效）
+        # platform 为 NULL 时不参与唯一约束，允许历史 NULL 数据保留
+        try:
+            conn.execute(text("""
+                CREATE UNIQUE INDEX uq_supplier_dept_platform_name
+                ON sup_supplier(dept_id, platform, supplier_name)
+            """))
+        except Exception as exc:
+            if "already exists" not in str(exc).lower():
+                raise
+
         conn.commit()
 
 
@@ -731,11 +762,13 @@ def test_update_fills_shop_link():
 
 1. 新建 1688 供应商需填写店铺链接（前后端均校验）
 2. 新建微信供应商名称即微信号，必填
-3. 历史供应商（platform 为 NULL）编辑时 Tabs 可切换，保存后回写 platform
+3. 历史供应商（platform 为 NULL）编辑时 Tabs 可切换，保存后回写 platform（NULL → 非NULL 允许）
 4. 线上采购自动建立 supplier_id（后端 find-or-create 流程，按 dept_id+platform+name 精确匹配，不跨平台误复用）
-5. 采购单 supplier_id 字段正确写入
+5. 采购单 supplier_id 字段正确写入；传入已有 supplier_id 时后端校验平台一致性，不一致时拒绝
 6. 现有线下供应商数据不受影响
 7. `is_dropship` 迁移通过 server_default 自动为 False，零失败
 8. 前端"供应商编号"字段禁用输入，后端自动生成并返回
 9. Docker 镜像中迁移脚本位于 `/app/migrations/`，执行路径为 `python -m migrations.add_supplier_platform_fields`
-10. `find_or_create_supplier_by_name` 签名与所有调用方一致（包含 shop_link、wechat_id、wechat_nickname、is_dropship）
+10. `find_or_create_supplier_by_name` 签名与所有调用方一致（platform 为必填 str）
+11. `PurchaseCreateOnline.platform` 和 `FindOrCreateSupplierRequest.platform` 均为 Literal 必填，缺失返回 422
+12. 数据库唯一索引 `uq_supplier_dept_platform_name(dept_id, platform, supplier_name)` 存在，platform=NULL 时不参与约束
