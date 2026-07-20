@@ -54,6 +54,10 @@ client.interceptors.response.use(
     return response
   },
   error => {
+    // 忽略主动取消的请求（AbortError / Cancel）
+    if (error.code === 'ERR_CANCELED' || error.name === 'CanceledError') {
+      return Promise.reject(error)
+    }
     const detail = error.response?.data?.detail
     const message = error.response?.data?.message
       || (typeof detail === 'string' ? detail : undefined)

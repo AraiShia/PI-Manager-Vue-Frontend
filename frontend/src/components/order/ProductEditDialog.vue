@@ -322,46 +322,26 @@
               <!-- 第3行：供应商 + 产品特性标题 -->
               <div class="purchase-cost-head  required">供应商</div>
               <div class="purchase-cost-cell" data-required-field="supplier_name">
-                <el-select
+                <SupplierSearchSelect
                   v-model="form.supplier"
-                  filterable
-                  remote
-                  :remote-method="searchSuppliers"
-                  :loading="supplierLoading"
+                  :current-name="form.supplier_name"
                   placeholder="搜索或选择供应商"
-                  style="width: 100%"
-                  :reserve-keyword="false"
-                  :no-data-text="supplierLoading ? '加载中…' : '暂无供应商数据'"
-                  @change="onSupplierChange"
-                  @focus="onSupplierFocus"
+                  @select="onSupplierSelect"
+                  @clear="onSupplierClear"
                 >
-                  <el-option
-                    v-for="s in suppliers"
-                    :key="s.id"
-                    :label="s.supplier_name"
-                    :value="s"
-                  >
-                    <div class="supplier-option">
-                      <span class="supplier-name">{{ s.supplier_name }}</span>
-                      <span v-if="s.supplier_code" class="supplier-code">[{{ s.supplier_code }}]</span>
-                    </div>
-                  </el-option>
-                  <template #empty>
-                    <div class="supplier-empty">
-                      <div v-if="supplierSearchQuery">未找到供应商「{{ supplierSearchQuery }}」</div>
-                      <div v-else>暂无供应商数据</div>
+                  <template #empty-extra="{ keyword }">
+                    <div v-if="keyword" class="ss-extra-actions">
                       <el-button
-                        v-if="supplierSearchQuery"
                         type="primary"
                         size="small"
                         link
                         @click="openNewSupplierDialog"
                       >
-                        + 新建供应商
+                        + 新建供应商「{{ keyword }}」
                       </el-button>
                     </div>
                   </template>
-                </el-select>
+                </SupplierSearchSelect>
               </div>
               
               <div class="purchase-cost-head invoice-group-head">开票情况</div>
@@ -681,10 +661,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
 import { orderSummaryApi } from '@/api/orderSummary'
-import { suppliersApi, type Supplier } from '@/api/suppliers'
+import { type Supplier } from '@/api/suppliers'
 import { productsApi } from '@/api/products'
 import { splitOeInput } from '@/api/customerProduct'
 import SupplierFormDialog from '@/components/supplier/SupplierFormDialog.vue'
+import SupplierSearchSelect from '@/components/common/SupplierSearchSelect.vue'
 import { apiUrl, assetUrl } from '@/api/base'
 import { CUSTOMER_PRODUCTS, PRODUCT_CATEGORIES } from '@/api/endpoints'
 import type { OrderDetailItem } from '@/types/orderSummary'
@@ -791,10 +772,7 @@ const categoryLevel1 = ref('')
 const categoryLevel2 = ref('')
 const inboundRecords = ref<InboundRecord[]>([])
 
-// 供应商下拉状态
-const suppliers = ref<Supplier[]>([])
-const supplierLoading = ref(false)
-const supplierSearchQuery = ref('')
+// 新建供应商弹窗
 const newSupplierDialogVisible = ref(false)
 
 const form = reactive<ProductEditForm>({
@@ -1632,10 +1610,6 @@ function open(source: OrderDetailItem, customerName?: string, customerCountry?: 
   if (!editItem.id) {
     form.factory_code = form.customer_model
   }
-  // 如果有供应商名称但没有 supplier 对象，自动搜索并匹配
-  if (form.supplier_name && !form.supplier) {
-    searchSuppliers(form.supplier_name)
-  }
   initialFormSnapshot.value = createFormSnapshot()
   visible.value = true
 }
@@ -1993,47 +1967,17 @@ async function handleArchiveChange(key: string, file: any) {
   ElMessage.info(`${key} 已选择: ${file.name}`)
 }
 
-// 供应商搜索
-let supplierSearchTimer: ReturnType<typeof setTimeout> | null = null
-async function searchSuppliers(query: string) {
-  supplierSearchQuery.value = query
-  if (supplierSearchTimer) clearTimeout(supplierSearchTimer)
-  // 即便 query 为空也允许拉一次默认列表（首次聚焦时使用）
-  supplierSearchTimer = setTimeout(async () => {
-    supplierLoading.value = true
-    try {
-      const res = await suppliersApi.list({ skip: 0, limit: 20, keyword: query || undefined })
-      suppliers.value = res.data || []
-      // 如果有 supplier_name 但尚未匹配到 supplier，自动选中第一个匹配的
-      if (!form.supplier && form.supplier_name && suppliers.value.length > 0) {
-        const matched = suppliers.value.find(s => s.supplier_name === form.supplier_name)
-        if (matched) {
-          form.supplier = matched
-        } else {
-          // 模糊匹配第一个
-          form.supplier = suppliers.value[0]
-        }
-      }
-    } catch (err) {
-      console.warn('[ProductEditDialog] 加载供应商列表失败', err)
-      suppliers.value = []
-    } finally {
-      supplierLoading.value = false
-    }
-  }, 300)
-}
-
-function onSupplierChange(s: Supplier) {
+// 供应商选择回调（由 SupplierSearchSelect 触发）
+function onSupplierSelect(s: Supplier) {
   form.supplier_name = s.supplier_name
   form.supplier = s
   saveField('supplier_name', s.supplier_name)
 }
 
-function onSupplierFocus() {
-  // 首次聚焦时若列表为空，先加载首屏数据
-  if (suppliers.value.length === 0 && !supplierLoading.value) {
-    searchSuppliers(form.supplier_name || '')
-  }
+function onSupplierClear() {
+  form.supplier_name = ''
+  form.supplier = null
+  saveField('supplier_name', '')
 }
 
 function openNewSupplierDialog() {
@@ -2044,7 +1988,6 @@ async function onNewSupplierCreated(created: Supplier) {
   form.supplier_name = created.supplier_name
   form.supplier = created
   saveField('supplier_name', created.supplier_name)
-  await searchSuppliers(created.supplier_name)
 }
 
 defineExpose({ open, close })

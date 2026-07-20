@@ -30,8 +30,10 @@ export interface SupplierFormPayload {
 }
 
 export const suppliersApi = {
-  list: (params: { skip?: number; limit?: number; keyword?: string } = {}) =>
-    client.get<Supplier[]>(SUPPLIERS.list, { params }),
+  list: (params: { skip?: number; limit?: number; keyword?: string; signal?: AbortSignal } = {}) => {
+    const { signal, ...rest } = params
+    return client.get<Supplier[]>(SUPPLIERS.list, { params: rest, signal })
+  },
   get: (id: number) => client.get<Supplier>(SUPPLIERS.detail(id)),
   create: (payload: SupplierFormPayload, deptId = 'S') =>
     client.post<Supplier>(SUPPLIERS.create, payload, { params: { dept_id: deptId } }),
