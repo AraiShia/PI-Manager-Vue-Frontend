@@ -184,13 +184,14 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
 def _validate_platform_fields_update(db_supplier: SupSupplier, supplier_update: SupplierUpdate):
     """更新时平台字段校验
 
-    校验规则：使用“数据库旧值 + 本次更新值”合并后的最终值进行校验，
-    不能仅校验请求对象，否则会误判或放过非法数据。
-
-    例如：请求只传了 supplier_name、未传 platform 和 shop_link，
-    应合并为 db_supplier.platform + None → 最终 platform 非空则仍需 shop_link。
+    校验规则：
+    1. platform 一旦创建后不可修改（前端 UI 锁定，后端拒绝 platform 变更）
+    2. 使用“数据库旧值 + 本次更新值”合并后的最终值校验必填字段
     """
-    final_platform = supplier_update.platform if supplier_update.platform is not None else db_supplier.platform
+    if supplier_update.platform is not None and supplier_update.platform != db_supplier.platform:
+        raise ValueError(f'供应商平台不可修改（当前为 {db_supplier.platform}）')
+
+    final_platform = db_supplier.platform
     final_shop_link = supplier_update.shop_link if supplier_update.shop_link is not None else db_supplier.shop_link
 
     if final_platform == '1688' and not (final_shop_link and final_shop_link.strip()):
@@ -255,15 +256,10 @@ def find_or_create_supplier_by_name(
 ) -> SupSupplier:
     """线上采购按 dept_id + platform + supplier_name 查找或创建供应商
 
-    匹配策略：
-    1. 若 platform 非空：按 (dept_id, platform, supplier_name) 精确查找
-    2. 命中后检查平台必填字段是否完整：
-       - 1688 缺少 shop_link → 用传入值补充，回写数据库，返回完整记录
-       - 1688 缺少 shop_link 且传入值也为 None → 视为平台信息不完整，**不允许复用**，抛出业务错误要求前端补充
-       - 其他平台字段缺失 → 自动补齐后返回
-    3. 若未找到：创建新记录，platform/shop_link 等透传
-    4. 历史数据 platform=NULL 处理：仅在 platform 非空时才复用，
-       避免 1688 名称与历史线下同名供应商误匹配
+    数据库层并发安全：
+    - 创建唯一约束：ALTER TABLE sup_supplier ADD CONSTRAINT
+      uq_supplier_dept_platform_name UNIQUE (dept_id, platform, supplier_name)
+    - 创建时捕获 IntegrityError，并发冲突时回滚后重新查询并复用
     """
     if not supplier_name or not supplier_name.strip():
         return None
@@ -275,38 +271,48 @@ def find_or_create_supplier_by_name(
             # 检查 1688 必填字段
             if platform == '1688' and not (existing.shop_link or shop_link):
                 raise ValueError('1688 供应商必须填写店铺链接，可在供应商详情中补充后重试')
-            # 补齐缺失的平台字段
-            updated = False
-            if shop_link and not existing.shop_link:
-                existing.shop_link = shop_link
-                updated = True
-            if wechat_id and not existing.wechat_id:
-                existing.wechat_id = wechat_id
-                updated = True
-            if wechat_nickname and not existing.wechat_nickname:
-                existing.wechat_nickname = wechat_nickname
-                updated = True
-            if is_dropship is not None and existing.is_dropship != is_dropship:
-                existing.is_dropship = is_dropship
-                updated = True
-            if updated:
-                db.add(existing)
-                db.commit()
-                db.refresh(existing)
-            return existing
+            # 补齐缺失字段并返回
+            return _fill_and_return(db, existing,
+                shop_link=shop_link, wechat_id=wechat_id,
+                wechat_nickname=wechat_nickname, is_dropship=is_dropship)
 
-    create_payload = SupplierCreate(
-        supplier_name=supplier_name,
-        contact_person=contact_person or "",
-        phone=phone or "",
-        address=address or "",
-        platform=platform,
-        shop_link=shop_link,
-        wechat_id=wechat_id or supplier_name if platform == 'wechat' else wechat_id,
-        wechat_nickname=wechat_nickname,
-        is_dropship=is_dropship if is_dropship is not None else False,
-    )
+    # 未找到，尝试创建（并发场景下可能触发唯一约束冲突）
+    try:
+        return _do_create_supplier(db, supplier_name, dept_id, platform,
+            contact_person, phone, address, shop_link, wechat_id, wechat_nickname, is_dropship)
+    except Exception as exc:
+        # 并发冲突：唯一约束违反，重新查询并复用
+        if 'UNIQUE constraint' in str(exc) or 'duplicate' in str(exc).lower():
+            db.rollback()
+            existing = get_supplier_by_name_and_platform(db, supplier_name, platform, dept_id)
+            if existing:
+                if platform == '1688' and not existing.shop_link and not shop_link:
+                    raise ValueError('1688 供应商缺少店铺链接，可在供应商详情中补充后重试')
+                return _fill_and_return(db, existing,
+                    shop_link=shop_link, wechat_id=wechat_id,
+                    wechat_nickname=wechat_nickname, is_dropship=is_dropship)
+        raise
+
+
+def _do_create_supplier(...全部参数...) -> SupSupplier:
+    """实际创建供应商，内部不处理冲突"""
+    _validate_platform_fields_create(...)  # 复用已有校验逻辑
+    create_payload = SupplierCreate(...)
     return create_supplier(db, create_payload, dept_id)
+
+
+def _fill_and_return(db, existing, **kwargs):
+    """命中后补齐缺失字段并返回"""
+    updated = False
+    for field, value in kwargs.items():
+        if value and getattr(existing, field) is None:
+            setattr(existing, field, value)
+            updated = True
+    if updated:
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+    return existing
 ```
 
 ### `backend/routers/supplier.py` — find-or-create 接受 platform
@@ -635,7 +641,9 @@ if (platform.value === '1688') {
   payload.platform = 'wechat'
   payload.wechat_id = wechatId.value          // 微信号（必填，后端校验）
   payload.wechat_nickname = wechatNickname.value || null  // 微信昵称（选填）
+  // 微信采购特有：是否支持代发
   payload.is_dropship = dropshipEnabled.value || false
+  // dropshipEnabled.value 来自 PurchaseDialog 中 el-switch：微信 Tab 下勾选"支持代发"，默认值 false
   // ...
 }
 await purchaseApi.createOnlinePurchase(payload)
@@ -648,6 +656,25 @@ await purchaseApi.createOnlinePurchase(payload)
 `backend/tests/` 下新增 `test_supplier_platform.py`：
 
 ```python
+@pytest.fixture
+def insert_incomplete_1688(db):
+    """绕过校验，直接插入不完整的 1688 历史供应商（用于测试补齐/校验逻辑）"""
+    def _insert(supplier_name: str, **extra):
+        supplier = SupSupplier(
+            supplier_name=supplier_name,
+            dept_id='S',
+            supplier_code='TEST001',   # 直接插入，不触发 generate_supplier_code
+            platform='1688',
+            shop_link=None,             # 故意留空
+            **extra
+        )
+        db.add(supplier)
+        db.commit()
+        db.refresh(supplier)
+        return supplier
+    return _insert
+
+
 def test_create_1688_requires_shop_link():
     payload = SupplierCreate(supplier_name='1688 店', platform='1688')
     with pytest.raises(ValueError, match='店铺链接'):
@@ -671,30 +698,30 @@ def test_find_or_create_creates_new():
     assert supplier.platform == '1688'
     assert supplier.shop_link == 'https://...1688.com/...'
 
-def test_find_or_create_hits_existing_and_fills_missing_fields():
+def test_find_or_create_hits_existing_and_fills_missing_fields(insert_incomplete_1688):
     # 已有 1688 供应商但缺少 shop_link，本次传入 shop_link，补齐后返回
-    existing = create_supplier(db, SupplierCreate(supplier_name='1688 店 B', platform='1688'))
+    existing = insert_incomplete_1688('1688 店 B')
     assert existing.shop_link is None
     result = find_or_create_supplier_by_name(db, '1688 店 B', platform='1688', shop_link='https://shop.1688.com')
     assert result.id == existing.id
     assert result.shop_link == 'https://shop.1688.com'  # 已补齐
 
-def test_find_or_create_hits_existing_without_shop_link_raises():
+def test_find_or_create_hits_existing_without_shop_link_raises(insert_incomplete_1688):
     # 已有 1688 供应商缺少 shop_link，本次也没传，返回业务错误
-    existing = create_supplier(db, SupplierCreate(supplier_name='1688 店 C', platform='1688'))
+    insert_incomplete_1688('1688 店 C')
     with pytest.raises(ValueError, match='店铺链接'):
         find_or_create_supplier_by_name(db, '1688 店 C', platform='1688')
 
-def test_update_partial_1688_merges_and_validates():
+def test_update_partial_1688_merges_and_validates(insert_incomplete_1688):
     # 部分更新：只传 supplier_name、未传 shop_link；平台已是 1688，旧值也无 shop_link → 应报错
-    existing = create_supplier(db, SupplierCreate(supplier_name='1688 店 D', platform='1688'))
+    existing = insert_incomplete_1688('1688 店 D')
     update = SupplierUpdate(supplier_name='1688 店 D（新）')
     with pytest.raises(ValueError, match='店铺链接'):
         update_supplier(db, existing.id, update)
 
 def test_update_fills_shop_link():
-    # 部分更新：shop_link 补全
-    existing = create_supplier(db, SupplierCreate(supplier_name='1688 店 E', platform='1688'))
+    # 部分更新：shop_link 补全（走正常校验路径，shop_link 本次传入，不会报空）
+    existing = create_supplier(db, SupplierCreate(supplier_name='1688 店 E', platform='1688', shop_link='https://x.com'))
     update = SupplierUpdate(shop_link='https://shop.1688.com')
     result = update_supplier(db, existing.id, update)
     assert result.shop_link == 'https://shop.1688.com'
