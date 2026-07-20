@@ -195,13 +195,14 @@ function onClear() {
 .ps-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 4px 0;
+  gap: 12px;
+  padding: 10px 6px;
+  min-height: 64px;
 }
 
 .ps-thumb {
-  width: 48px;
-  height: 48px;
+  width: 56px;
+  height: 56px;
   object-fit: cover;
   border-radius: 4px;
   flex-shrink: 0;
