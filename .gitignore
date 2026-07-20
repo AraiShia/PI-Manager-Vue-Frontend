@@ -4,6 +4,11 @@ dist/
 *.log
 .env.local
 .env.*.local
+
+# Python bytecode and interpreter caches
+__pycache__/
+*.py[cod]
+*$py.class
 backend/routers/__pycache__/customer_reply.cpython-310.pyc
 backend/__pycache__/main.cpython-310.pyc
 backend/data/pimain.db

@@ -194,6 +194,5 @@ def read_purchases_by_supplier(supplier_id: int, db: Session = Depends(get_db)):
 def read_product_latest_purchase(product_id: int, db: Session = Depends(get_db)):
     """获取产品最近一次采购记录（包含费用和发票信息）"""
     record = get_product_latest_purchase(db, product_id)
-    if record:
-        return {"success": True, "record": record}
-    return {"success": False, "record": None}
+    # 没有历史采购记录是正常业务状态，不应被前端响应拦截器判定为请求失败。
+    return {"success": True, "record": record}
