@@ -58,6 +58,8 @@ export interface SupplierFormPayload {
 
 ## 后端 — Pydantic Schema 完整定义
 
+`SupplierBase` 中 `dept_id` 和 `supplier_code` 为必填，但**仅用于响应**（`SupplierResponse` 继承自 `SupplierBase`）；`SupplierCreate` 不继承 `SupplierBase`，**不要求 `supplier_code`**，由后端 `generate_supplier_code()` 自动生成。
+
 ### `backend/schemas/supplier.py`
 
 ```python
@@ -128,6 +130,13 @@ class SupplierResponse(SupplierBase):
         from_attributes = True
 ```
 
+**前后端编号规则**：
+
+- 后端 `crud.create_supplier` 中调用 `generate_supplier_code(db, city_code)` 自动生成
+- 前端 `SupplierFormPayload` 不包含 `supplier_code` 字段
+- 前端表单对应"供应商编号"字段**禁用输入**（`el-input :disabled="true"`），仅作为展示
+- 表格列展示后端返回的 `supplier_code` 即可
+
 ## 后端 — CRUD 完整实现
 
 ### `backend/models/supplier.py` — SupSupplier 新增字段
@@ -194,9 +203,27 @@ supplier_dict["is_dropship"] = s.is_dropship
 
 ### `backend/crud/supplier.py` — 线上采购自动 find-or-create
 
-新增参数 `platform`：
+新增 `platform`、`shop_link` 等平台字段参数；查询时按 `dept_id + platform + supplier_name` 精确匹配：
 
 ```python
+def get_supplier_by_name_and_platform(
+    db: Session,
+    supplier_name: str,
+    platform: Optional[str] = None,
+    dept_id: str = "S",
+) -> Optional[SupSupplier]:
+    """按部门 + 平台 + 名称精确查找供应商"""
+    if not supplier_name:
+        return None
+    query = db.query(SupSupplier).filter(
+        SupSupplier.supplier_name == supplier_name,
+        SupSupplier.dept_id == dept_id,
+    )
+    if platform:
+        query = query.filter(SupSupplier.platform == platform)
+    return query.first()
+
+
 def find_or_create_supplier_by_name(
     db: Session,
     supplier_name: str,
@@ -204,12 +231,28 @@ def find_or_create_supplier_by_name(
     contact_person: str = None,
     phone: str = None,
     address: str = None,
-    platform: str = None,  # 新增
+    platform: Optional[str] = None,
+    shop_link: Optional[str] = None,
+    wechat_id: Optional[str] = None,
+    wechat_nickname: Optional[str] = None,
+    is_dropship: Optional[bool] = None,
 ) -> SupSupplier:
-    """线上采购按名称+platform 查找或创建供应商"""
-    existing = get_supplier_by_name(db, supplier_name, dept_id)
-    if existing:
-        return existing
+    """线上采购按 dept_id + platform + supplier_name 查找或创建供应商
+
+    匹配策略：
+    1. 若 platform 非空：按 (dept_id, platform, supplier_name) 精确查找
+    2. 若未找到且 platform 非空：创建新记录，platform/shop_link 等透传
+    3. 历史数据 platform=NULL 处理：仅在 platform 非空时才复用，
+       避免 1688 名称与历史线下同名供应商误匹配
+    """
+    if not supplier_name or not supplier_name.strip():
+        return None
+    supplier_name = supplier_name.strip()
+
+    if platform:
+        existing = get_supplier_by_name_and_platform(db, supplier_name, platform, dept_id)
+        if existing:
+            return existing
 
     create_payload = SupplierCreate(
         supplier_name=supplier_name,
@@ -217,6 +260,10 @@ def find_or_create_supplier_by_name(
         phone=phone or "",
         address=address or "",
         platform=platform,
+        shop_link=shop_link,
+        wechat_id=wechat_id or supplier_name if platform == 'wechat' else wechat_id,
+        wechat_nickname=wechat_nickname,
+        is_dropship=is_dropship if is_dropship is not None else False,
     )
     return create_supplier(db, create_payload, dept_id)
 ```
@@ -230,10 +277,33 @@ class FindOrCreateSupplierRequest(BaseModel):
     contact_person: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
-    platform: Optional[str] = None  # 新增
-```
+    platform: Optional[str] = None       # 新增：'1688' / 'wechat' / 'offline'
+    shop_link: Optional[str] = None      # 新增：1688 店铺链接
+    wechat_id: Optional[str] = None      # 新增：微信号
+    wechat_nickname: Optional[str] = None # 新增：微信昵称
+    is_dropship: Optional[bool] = None   # 新增：是否代发
 
-调用 `find_or_create_supplier_by_name` 时传入 platform。
+@router.post("/find-or-create", response_model=FindOrCreateSupplierResponse)
+def find_or_create_supplier_api(
+    payload: FindOrCreateSupplierRequest,
+    db: Session = Depends(get_db)
+):
+    # ... 现有逻辑 ...
+    new_supplier = find_or_create_supplier_by_name(
+        db,
+        supplier_name=payload.supplier_name,
+        dept_id=dept_id,
+        contact_person=payload.contact_person,
+        phone=payload.phone,
+        address=payload.address,
+        platform=payload.platform,
+        shop_link=payload.shop_link,
+        wechat_id=payload.wechat_id,
+        wechat_nickname=payload.wechat_nickname,
+        is_dropship=payload.is_dropship,
+    )
+    # ...
+```
 
 ### `backend/routers/purchase.py`（或对应的采购路由）— 线上采购自动 find-or-create
 
@@ -243,17 +313,64 @@ class FindOrCreateSupplierRequest(BaseModel):
 # 在处理 supplier_name 时：
 if not payload.supplier_id and payload.supplier_name:
     # 自动按 platform + name 建立 supplier_id
+    # 透传 shop_link（1688 必填）、wechat_nickname 等平台字段
     supplier = find_or_create_supplier_by_name(
         db,
         supplier_name=payload.supplier_name,
         dept_id=payload.dept_id,
-        platform=payload.platform,  # '1688' / 'wechat'
-        contact_person=payload.supplier_contact,
-        phone=payload.supplier_phone,
+        platform=payload.platform,
+        shop_link=getattr(payload, 'shop_link', None),  # 1688 必填
+        wechat_id=getattr(payload, 'wechat_id', None),  # 1688 选填
+        wechat_nickname=getattr(payload, 'wechat_nickname', None),  # 微信选填
+        is_dropship=getattr(payload, 'is_dropship', None),
+        contact_person=getattr(payload, 'supplier_contact', None),
+        phone=getattr(payload, 'supplier_phone', None),
     )
     if supplier:
         payload.supplier_id = supplier.id  # 写入采购单
 ```
+
+### 采购请求契约完整定义
+
+`backend/schemas/purchase.py`（或对应文件）需要明确以下字段：
+
+```python
+class PurchaseCreateOnline(BaseModel):
+    # 现有字段保持不变
+    dept_id: str
+    pi_id: int
+    supplier_id: Optional[int] = None      # 后端自动 find-or-create 时写入
+    supplier_name: Optional[str] = None    # 1688 店铺名 / 微信昵称
+    platform: Optional[str] = None         # '1688' / 'wechat'
+    items: List[PurchaseItem]
+    link: Optional[str] = None
+    contact_wechat: Optional[str] = None
+    screenshot: Optional[str] = None
+    remark: Optional[str] = None
+    # 新增平台字段（与 supplier 表字段对齐）
+    shop_link: Optional[str] = None        # 1688 店铺链接
+    wechat_id: Optional[str] = None        # 微信号（1688 选填 / 微信即 supplier_name）
+    wechat_nickname: Optional[str] = None  # 微信昵称
+    is_dropship: Optional[bool] = None     # 是否支持代发
+    # 线下联系人字段
+    supplier_contact: Optional[str] = None
+    supplier_phone: Optional[str] = None
+```
+
+`backend/models/purchase.py`（或对应 ORM）补齐字段：
+
+```python
+class PurchaseOrder(Base):
+    # 现有字段...
+    # 新增平台字段
+    platform = Column(String(20), nullable=True)
+    shop_link = Column(String(500), nullable=True)
+    wechat_id = Column(String(100), nullable=True)
+    wechat_nickname = Column(String(100), nullable=True)
+    is_dropship = Column(Boolean, default=False, nullable=False, server_default='0')
+```
+
+采购路由 `create_online_purchase` 入参使用 `PurchaseCreateOnline`，落库前确保字段已包含（避免 Pydantic `extra='ignore'` 默认行为丢失）。
 
 ## 后端 — 数据库迁移（手写脚本，参考 `migrations/add_pi_item_labeling_fee.py` 风格）
 
@@ -292,15 +409,30 @@ if __name__ == "__main__":
 
 **Docker 容器内执行方式**：
 
+镜像 `WORKDIR=/app`，且 `COPY . .` 将 backend 根目录复制为容器内的 `/app`，**不是** `/app/backend`：
+
 ```bash
-docker exec -it <backend-container> python -m migrations.add_supplier_platform_fields
+# 在宿主机执行（推荐）
+docker compose exec backend python -m migrations.add_supplier_platform_fields
+
+# 或直接指定容器名（项目实际 container_name: pi-backend）
+docker exec -it pi-backend python -m migrations.add_supplier_platform_fields
 ```
 
-或在容器内：
+进入容器验证路径：
 
 ```bash
-cd /app/backend
-python -m migrations.add_supplier_platform_fields
+docker compose exec backend ls /app/migrations/add_supplier_platform_fields.py
+# 应输出文件路径表示迁移脚本存在
+docker compose exec backend pwd
+# 应输出 /app（不是 /app/backend）
+```
+
+若需手动排查：
+
+```bash
+docker compose exec backend python -c "from app.database import engine; from sqlalchemy import text; conn = engine.connect(); cols = [row[1] for row in conn.execute(text('PRAGMA table_info(sup_supplier)')).fetchall()]; print('platform' in cols, 'shop_link' in cols, 'wechat_id' in cols, 'wechat_nickname' in cols, 'is_dropship' in cols)"
+# 预期：True True True True True
 ```
 
 ## 前端 — SupplierFormDialog 完整改造
@@ -496,7 +628,10 @@ def test_find_or_create_with_platform():
 1. 新建 1688 供应商需填写店铺链接（前后端均校验）
 2. 新建微信供应商名称即微信号，必填
 3. 历史供应商（platform 为 NULL）编辑时 Tabs 可切换，保存后回写 platform
-4. 线上采购自动建立 supplier_id（后端 find-or-create 流程）
+4. 线上采购自动建立 supplier_id（后端 find-or-create 流程，按 dept_id+platform+name 精确匹配，不跨平台误复用）
 5. 采购单 supplier_id 字段正确写入
 6. 现有线下供应商数据不受影响
 7. `is_dropship` 迁移通过 server_default 自动为 False，零失败
+8. 前端"供应商编号"字段禁用输入，后端自动生成并返回
+9. Docker 镜像中迁移脚本位于 `/app/migrations/`，执行路径为 `python -m migrations.add_supplier_platform_fields`
+10. `find_or_create_supplier_by_name` 签名与所有调用方一致（包含 shop_link、wechat_id、wechat_nickname、is_dropship）
