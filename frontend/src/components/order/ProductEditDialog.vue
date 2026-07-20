@@ -7,6 +7,7 @@
     top="3vh"
     :close-on-click-modal="false"
     destroy-on-close
+    :before-close="requestClose"
     @closed="onClosed"
   >
     <div v-if="item" ref="dialogBodyRef" class="product-edit-dialog" @click="onDocClick">
