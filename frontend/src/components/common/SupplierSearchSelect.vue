@@ -113,7 +113,7 @@ async function onQuery(query: string) {
     searchTimer = setTimeout(async () => {
       abortController = new AbortController()
       try {
-        const res = await suppliersApi.list({ skip: 0, limit: 20, signal: abortController!.signal })
+        const res = await suppliersApi.list({ skip: 0, limit: 50 })
         if (currentSeq === requestSeq) {
           options.value = res.data || []
         }
@@ -136,7 +136,7 @@ async function onQuery(query: string) {
   searchTimer = setTimeout(async () => {
     abortController = new AbortController()
     try {
-      const res = await suppliersApi.list({ skip: 0, limit: 20, keyword: query.trim(), signal: abortController!.signal })
+      const res = await suppliersApi.list({ skip: 0, limit: 20, keyword: query.trim() })
       if (currentSeq === requestSeq) {
         options.value = res.data || []
       }

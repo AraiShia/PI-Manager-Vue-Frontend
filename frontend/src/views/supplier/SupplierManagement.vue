@@ -133,7 +133,7 @@ async function toggleStatus(row: Supplier) {
   const next = row.status === 1 ? 0 : 1
   const action = next === 1 ? '启用' : '禁用'
   await ElMessageBox.confirm(`确定要${action}供应商 ${row.supplier_name} 吗？`, '确认操作', { type: 'warning' })
-  await suppliersApi.update(row.id, { supplier_name: row.supplier_name } as Partial<Supplier>)
+  await suppliersApi.update(row.id, { supplier_name: row.supplier_name! })
   ElMessage.warning('请通过后端 API 修改状态字段（前端面板暂不直接切换启用）')
   await loadSuppliers()
 }
