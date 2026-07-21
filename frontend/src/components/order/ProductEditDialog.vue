@@ -1985,9 +1985,16 @@ function openNewSupplierDialog() {
 }
 
 async function onNewSupplierCreated(created: Supplier) {
-  form.supplier_name = created.supplier_name
-  form.supplier = created
-  saveField('supplier_name', created.supplier_name)
+  const name = created?.supplier_name ?? form.supplier_name
+  if (name) {
+    form.supplier_name = name
+  }
+  if (created) {
+    form.supplier = created
+  }
+  if (name) {
+    saveField('supplier_name', name)
+  }
 }
 
 defineExpose({ open, close })
