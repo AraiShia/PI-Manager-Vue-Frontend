@@ -225,6 +225,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { purchaseApi, type PurchasePayload, type PurchaseItem, createOnlinePurchase, type PurchaseCreateOnline } from '@/api/purchase'
 import { apiUrl } from '@/api/base'
 import { SUPPLIERS } from '@/api/endpoints'
+import { pendingSupplierState } from '@/api/suppliers'
 import type { OrderDetailItem } from '@/types/orderSummary'
 
 const emit = defineEmits<{
@@ -243,7 +244,7 @@ const items = ref<OrderDetailItem[]>([])
 
 // 采购类型
 const purchaseType = ref<'online' | 'offline'>('online')
-const platform = ref<'1688' | 'wechat'>('1688')
+const platform = ref<'1688' | 'wechat' | 'offline'>('1688')
 
 // 币种
 
@@ -335,6 +336,36 @@ function open(
 
   // 重置表单
   resetForm()
+
+  // ProductEditDialog 选择/新建供应商后，自动回填采购表单
+  const pending = pendingSupplierState
+  if (pending.supplier) {
+    // 自动匹配供应商下拉中已有记录并选中
+    const found = suppliersCache.value.find((s: any) => s.id === pending.supplier!.id)
+    if (found) {
+      selectedSupplierId.value = found.id
+      onSupplierChange(found.id)
+    }
+    // 按平台字段设置平台
+    platform.value = pending.platform || '1688'
+    // 1688 回填 shop_link → linkUrl
+    if (pending.shop_link) {
+      linkUrl.value = pending.shop_link
+    }
+    // 微信回填 wechat_id / wechat_nickname
+    if (pending.wechat_id) {
+      wechatId.value = pending.wechat_id
+    }
+    if (pending.wechat_nickname) {
+      wechatNickname.value = pending.wechat_nickname
+    }
+    // 清空共享状态（只消费一次）
+    pendingSupplierState.supplier = null
+    pendingSupplierState.platform = '1688'
+    pendingSupplierState.shop_link = null
+    pendingSupplierState.wechat_id = null
+    pendingSupplierState.wechat_nickname = null
+  }
 }
 
 // 加载供应商列表（一次性加载全量，本地搜索）

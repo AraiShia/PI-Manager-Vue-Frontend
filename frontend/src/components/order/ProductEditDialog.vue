@@ -661,7 +661,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
 import { orderSummaryApi } from '@/api/orderSummary'
-import { type Supplier } from '@/api/suppliers'
+import { type Supplier, pendingSupplierState } from '@/api/suppliers'
 import { productsApi } from '@/api/products'
 import { splitOeInput } from '@/api/customerProduct'
 import SupplierFormDialog from '@/components/supplier/SupplierFormDialog.vue'
@@ -1977,6 +1977,12 @@ function onSupplierSelect(s: Supplier) {
     form.shop_url = s.shop_link
     saveField('shop_url', s.shop_link)
   }
+  // 写入共享状态，供 PurchaseDialog 读取并回填
+  pendingSupplierState.supplier = s
+  pendingSupplierState.platform = (s.platform as any) || '1688'
+  pendingSupplierState.shop_link = s.shop_link || null
+  pendingSupplierState.wechat_id = s.wechat_id || null
+  pendingSupplierState.wechat_nickname = s.wechat_nickname || null
 }
 
 function onSupplierClear() {
@@ -2000,6 +2006,12 @@ async function onNewSupplierCreated(created: Supplier) {
   if (name) {
     saveField('supplier_name', name)
   }
+  // 写入共享状态，供 PurchaseDialog 读取并回填
+  pendingSupplierState.supplier = created || null
+  pendingSupplierState.platform = (created?.platform as any) || '1688'
+  pendingSupplierState.shop_link = created?.shop_link || null
+  pendingSupplierState.wechat_id = created?.wechat_id || null
+  pendingSupplierState.wechat_nickname = created?.wechat_nickname || null
 }
 
 defineExpose({ open, close })

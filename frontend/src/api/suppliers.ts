@@ -1,3 +1,4 @@
+import { reactive } from 'vue'
 import client from './client'
 import { SUPPLIERS } from './endpoints'
 
@@ -80,3 +81,21 @@ export const suppliersApi = {
     return client.delete(SUPPLIERS.remove(id))
   },
 }
+
+/** 跨组件共享的待采购供应商状态（ProductEditDialog 写入 → PurchaseDialog 读取）*/
+
+export interface PendingSupplier {
+  supplier: Supplier | null
+  platform: '1688' | 'wechat' | 'offline'
+  shop_link: string | null
+  wechat_id: string | null
+  wechat_nickname: string | null
+}
+
+export const pendingSupplierState = reactive<PendingSupplier>({
+  supplier: null,
+  platform: '1688',
+  shop_link: null,
+  wechat_id: null,
+  wechat_nickname: null,
+})
