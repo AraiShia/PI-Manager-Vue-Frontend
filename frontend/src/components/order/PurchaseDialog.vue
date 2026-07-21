@@ -292,7 +292,7 @@ const invoiceCurrency = ref('CNY')
 let orderId: number | null = null
 let prefillUrls: Record<number, string[]> = {}
 
-function open(
+async function open(
   orderItems: OrderDetailItem[],
   piId: number,
   urls: Record<number, string[]> = {},
@@ -337,17 +337,20 @@ function open(
   // 重置表单
   resetForm()
 
+  // 加载供应商列表（需等待完成才能匹配）
+  await loadSuppliers()
+
   // ProductEditDialog 选择/新建供应商后，自动回填采购表单
   const pending = pendingSupplierState
   if (pending.supplier) {
+    // 按平台字段设置平台（先于供应商匹配，避免平台切换后又被 resetForm 覆盖）
+    platform.value = pending.platform || '1688'
     // 自动匹配供应商下拉中已有记录并选中
     const found = suppliersCache.value.find((s: any) => s.id === pending.supplier!.id)
     if (found) {
       selectedSupplierId.value = found.id
       onSupplierChange(found.id)
     }
-    // 按平台字段设置平台
-    platform.value = pending.platform || '1688'
     // 1688 回填 shop_link → linkUrl
     if (pending.shop_link) {
       linkUrl.value = pending.shop_link
