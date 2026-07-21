@@ -339,8 +339,9 @@ async function open(
           contactWechat.value = pending.wechat_id
         }
       } else if (supplierPlatform === 'wechat') {
-        wechatId.value = pending.wechat_id || pending.supplier!.supplier_name || ''
-        wechatNickname.value = pending.wechat_nickname || ''
+        // 微信供应商：回填微信号和昵称，不填 1688 店铺名称。
+        wechatId.value = pending.wechat_id || pending.supplier!.wechat_id || pending.supplier!.supplier_name || ''
+        wechatNickname.value = pending.wechat_nickname || pending.supplier!.wechat_nickname || ''
       }
     }
     
