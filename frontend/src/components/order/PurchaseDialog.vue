@@ -319,15 +319,6 @@ async function open(
   }))
   items.value.forEach((_, index) => recalcTotal(index))
 
-  // 顶层 1688 店铺名称预填
-  if (prefillShopName) {
-    shopName.value = prefillShopName
-  }
-  // 顶层采购链接预填
-  if (prefillLinkUrl) {
-    linkUrl.value = prefillLinkUrl
-  }
-
   // 加载初始费用
   loadInitialPrices()
 
@@ -336,6 +327,15 @@ async function open(
 
   // 加载供应商列表（需等待完成才能匹配供应商）
   await loadSuppliers()
+
+  // 顶层 1688 店铺名称预填（在 resetForm 之后，避免被清空）
+  if (prefillShopName && !pendingSupplierState.supplier) {
+    shopName.value = prefillShopName
+  }
+  // 顶层采购链接预填
+  if (prefillLinkUrl && !pendingSupplierState.supplier) {
+    linkUrl.value = prefillLinkUrl
+  }
 
   // ProductEditDialog 选择/新建供应商后，自动回填采购表单
   const pending = pendingSupplierState
