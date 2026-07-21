@@ -617,7 +617,7 @@ def resolve_online_supplier(db: Session, payload: PurchaseCreateOnline) -> int:
 
     # 3. 无 supplier_id 但有 supplier_name → find-or-create
     from crud.supplier import find_or_create_supplier_by_name
-    supplier_obj, _ = find_or_create_supplier_by_name(
+    result = find_or_create_supplier_by_name(
         db,
         supplier_name=str(payload.supplier_name).strip(),
         platform=payload.platform,
@@ -629,4 +629,7 @@ def resolve_online_supplier(db: Session, payload: PurchaseCreateOnline) -> int:
         contact_person=payload.supplier_contact,
         phone=payload.supplier_phone,
     )
+    if result is None:
+        raise ValueError('创建供应商失败')
+    supplier_obj, _ = result
     return supplier_obj.id
