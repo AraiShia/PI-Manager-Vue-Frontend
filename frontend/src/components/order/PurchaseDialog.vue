@@ -62,7 +62,7 @@
           <!-- 1688 采购表单 -->
           <template v-if="platform === '1688'">
             <el-form-item label="1688店铺名称 *" required>
-              <el-input v-model="shopName" placeholder="请输入1688店铺名称" />
+              <el-input v-model="autoFillShopName" placeholder="请输入1688店铺名称" />
             </el-form-item>
             <el-form-item label="1688链接">
               <el-input v-model="linkUrl" placeholder="https://detail.1688.com/..." />
@@ -250,6 +250,7 @@ const platform = ref<'1688' | 'wechat' | 'offline'>('1688')
 
 // 1688采购
 const shopName = ref('')
+const autoFillShopName = ref('')  // 保存从供应商/prefill自动填入的店铺名，tab切换时不丢失
 const linkUrl = ref('')
 const contactWechat = ref('')
 const screenshotPath = ref('')
@@ -329,9 +330,10 @@ async function open(
   await loadSuppliers()
 
   // 顶层 1688 店铺名称预填（在 resetForm 之后，避免被清空）
-  if (prefillShopName && !pendingSupplierState.supplier) {
-    shopName.value = prefillShopName
-  }
+   if (prefillShopName && !pendingSupplierState.supplier) {
+     shopName.value = prefillShopName
+     autoFillShopName.value = prefillShopName
+   }
   // 顶层采购链接预填
   if (prefillLinkUrl && !pendingSupplierState.supplier) {
     linkUrl.value = prefillLinkUrl
@@ -356,7 +358,9 @@ async function open(
       platform.value = supplierPlatform
       
       if (supplierPlatform === '1688') {
-        shopName.value = pending.supplier!.supplier_name || ''
+        const name = pending.supplier!.supplier_name || ''
+        shopName.value = name
+        autoFillShopName.value = name
         if (pending.shop_link) {
           linkUrl.value = pending.shop_link
         }
@@ -492,8 +496,7 @@ async function onCreateSupplier() {
 function resetForm() {
   purchaseType.value = 'online'
   platform.value = '1688'
-  shopName.value = ''
-  linkUrl.value = ''
+  // shopName / linkUrl 由 autoFillShopName 保存，不清空以便 tab 切换后恢复
   contactWechat.value = ''
   screenshotPath.value = ''
   onlineRemark.value = ''
@@ -534,7 +537,8 @@ async function loadInitialPrices() {
         item.shipping_fee = record.shipping_fee ?? record.freight ?? 0
         item.freight = 0
         // 历史供应商名称 → 1688 店铺名称（如果当前为空）
-        if (record.supplier_name && !shopName.value) {
+        if (record.supplier_name && !autoFillShopName.value) {
+          autoFillShopName.value = record.supplier_name
           shopName.value = record.supplier_name
         }
         if (!item.link && record.link) {
@@ -596,7 +600,7 @@ function formatMoney(amount: number): string {
 }
 
 function onPlatformChange() {
-  // 切换平台时清空表单
+  // 切换平台时只清空当前平台的特有字段，shopName 为线上采购通用字段应保留
   linkUrl.value = ''
   contactWechat.value = ''
 }
@@ -614,7 +618,7 @@ async function onSubmit() {
   }
 
   if (purchaseType.value === 'online' && platform.value === '1688') {
-    if (!shopName.value.trim()) {
+    if (!autoFillShopName.value.trim()) {
       ElMessage.warning('请输入1688店铺名称')
       return
     }
@@ -665,7 +669,7 @@ async function onSubmit() {
         pi_id: orderId!,
         platform: platform.value,
         items: payload.items,
-        supplier_name: platform.value === '1688' ? shopName.value : wechatNickname.value,
+        supplier_name: platform.value === '1688' ? autoFillShopName.value : wechatNickname.value,
         shop_link: platform.value === '1688' ? (linkUrl.value || null) : null,
         link: linkUrl.value || null,
         contact_wechat: platform.value === '1688' ? contactWechat.value : wechatId.value,
@@ -684,7 +688,7 @@ async function onSubmit() {
         emit('purchase-complete', {
           factory_name: platform.value === 'wechat'
             ? `${wechatNickname.value}(微信: ${wechatId.value})`
-            : shopName.value,
+            : autoFillShopName.value,
           shop_url: linkUrl.value,
           wechatId: platform.value === 'wechat' ? wechatId.value : '',
           wechatNickname: platform.value === 'wechat' ? wechatNickname.value : '',
@@ -707,7 +711,7 @@ async function onSubmit() {
         emit('purchase-complete', {
           factory_name: platform.value === 'wechat'
             ? `${wechatNickname.value}(微信: ${wechatId.value})`
-            : shopName.value,
+            : autoFillShopName.value,
           shop_url: linkUrl.value,
           wechatId: platform.value === 'wechat' ? wechatId.value : '',
           wechatNickname: platform.value === 'wechat' ? wechatNickname.value : '',
