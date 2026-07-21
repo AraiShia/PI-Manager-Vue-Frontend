@@ -180,52 +180,25 @@
     </template>
   </el-dialog>
 
-  <!-- 新建供应商子对话框 -->
-  <el-dialog
+  <!-- 新建供应商（复用 SupplierFormDialog） -->
+  <SupplierFormDialog
     v-model="createSupplierDialogVisible"
-    title="新建供应商"
-    width="500px"
-    :close-on-click-modal="false"
-    @close="resetSupplierForm"
-  >
-    <el-form :model="newSupplier" label-width="100px" ref="supplierFormRef">
-      <el-form-item label="供应商名称" prop="supplier_name" required>
-        <el-input v-model="newSupplier.supplier_name" placeholder="必填" />
-      </el-form-item>
-      <el-form-item label="联系人">
-        <el-input v-model="newSupplier.contact_person" placeholder="联系人姓名" />
-      </el-form-item>
-      <el-form-item label="电话">
-        <el-input v-model="newSupplier.phone" placeholder="联系电话" />
-      </el-form-item>
-      <el-form-item label="邮箱">
-        <el-input v-model="newSupplier.email" placeholder="联系邮箱" />
-      </el-form-item>
-      <el-form-item label="省份">
-        <el-input v-model="newSupplier.province" placeholder="可选" />
-      </el-form-item>
-      <el-form-item label="城市">
-        <el-input v-model="newSupplier.city" placeholder="可选" />
-      </el-form-item>
-      <el-form-item label="地址">
-        <el-input v-model="newSupplier.address" placeholder="可选" />
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="createSupplierDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="creatingSupplier" @click="onCreateSupplier">确认创建</el-button>
-    </template>
-  </el-dialog>
+    :supplier="null"
+    :default-platform="purchaseType === 'offline' ? 'offline' : platform"
+    @success="onSupplierCreated"
+  />
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { purchaseApi, type PurchasePayload, type PurchaseItem, createOnlinePurchase, type PurchaseCreateOnline } from '@/api/purchase'
 import { apiUrl } from '@/api/base'
 import { SUPPLIERS } from '@/api/endpoints'
 import { pendingSupplierState } from '@/api/suppliers'
+import SupplierFormDialog from '@/components/supplier/SupplierFormDialog.vue'
+import type { Supplier } from '@/api/suppliers'
 import type { OrderDetailItem } from '@/types/orderSummary'
 
 const emit = defineEmits<{
@@ -272,19 +245,8 @@ const offlineRemark = ref('')
 const contractRemark = ref('')
 const generateContract = ref(true)
 
-// 新建供应商
+// 新建供应商（复用 SupplierFormDialog）
 const createSupplierDialogVisible = ref(false)
-const creatingSupplier = ref(false)
-const supplierFormRef = ref()
-const newSupplier = reactive({
-  supplier_name: '',
-  contact_person: '',   // 后端 SupplierCreate.contact_person
-  phone: '',
-  email: '',
-  address: '',
-  province: '',
-  city: '',
-})
 
 // 发票
 const invoiceAmount = ref(0)
@@ -430,67 +392,30 @@ function onSupplierChange(val: number | null) {
 
 // 打开新建供应商对话框
 function openCreateSupplierDialog() {
-  // 预填：把当前供应商下拉框输入的搜索词作为新供应商名
-  newSupplier.supplier_name = lastSupplierQuery.value || ''
-  newSupplier.contact_person = supplierContact.value || ''
-  newSupplier.phone = supplierPhone.value || ''
-  newSupplier.email = ''
-  newSupplier.address = ''
-  newSupplier.province = ''
-  newSupplier.city = ''
   createSupplierDialogVisible.value = true
 }
 
-// 重置新建供应商表单
-function resetSupplierForm() {
-  newSupplier.supplier_name = ''
-  newSupplier.contact_person = ''
-  newSupplier.phone = ''
-  newSupplier.email = ''
-  newSupplier.address = ''
-  newSupplier.province = ''
-  newSupplier.city = ''
-}
-
-// 创建供应商
-async function onCreateSupplier() {
-  if (!newSupplier.supplier_name.trim()) {
-    ElMessage.warning('请填写供应商名称')
-    return
-  }
-  creatingSupplier.value = true
-  try {
-    const res = await fetch(apiUrl(SUPPLIERS.create), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        supplier_name: newSupplier.supplier_name.trim(),
-        contact_person: newSupplier.contact_person.trim() || null,
-        phone: newSupplier.phone.trim() || null,
-        email: newSupplier.email.trim() || null,
-        address: newSupplier.address.trim() || null,
-        province: newSupplier.province.trim() || null,
-        city: newSupplier.city.trim() || null,
-      }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.detail || `HTTP ${res.status}`)
-    }
-    const created = await res.json()
-    // 添加到本地缓存并选中
-    suppliersCache.value.push(created)
-    suppliers.value = suppliersCache.value
+// SupplierFormDialog 创建成功回调
+function onSupplierCreated(created: Supplier) {
+  // 添加到本地缓存
+  suppliersCache.value.push(created)
+  suppliers.value = [...suppliersCache.value]
+  
+  if (purchaseType.value === 'offline') {
+    // 线下采购：匹配供应商下拉
     selectedSupplierId.value = created.id
-    supplierContact.value = created.contact_person || newSupplier.contact_person
-    supplierPhone.value = created.phone || newSupplier.phone
-    ElMessage.success(`供应商「${created.supplier_name}」创建成功`)
-    createSupplierDialogVisible.value = false
-  } catch (e: any) {
-    ElMessage.error('创建供应商失败: ' + (e.message || e))
-  } finally {
-    creatingSupplier.value = false
+    onSupplierChange(created.id)
+  } else {
+    // 线上采购（1688/微信）：1688 平台时把店铺名填入 autoFillShopName
+    if (platform.value === '1688') {
+      autoFillShopName.value = created.supplier_name || ''
+      shopName.value = created.supplier_name || ''
+      if (created.shop_link) {
+        linkUrl.value = created.shop_link
+      }
+    }
   }
+  createSupplierDialogVisible.value = false
 }
 
 function resetForm() {
