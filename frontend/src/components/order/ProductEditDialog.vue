@@ -273,7 +273,7 @@
                 </el-input>
               </div>
               <div class="purchase-cost-cell cost-cell amount-cell">
-                ¥{{ formatMoney(Number(form.purchase_price || 0) * Number(form.quantity || 0) + Number(form.misc_fee || 0) + Number(form.shipping_fee || 0)) }}
+                ¥{{ formatMoney(Number(form.purchase_price || 0) * Number(form.quantity || 0) + Number(form.labeling_fee || 0) + Number(form.shipping_fee || 0)) }}
               </div>
             <div class="sales-detail-cell">
               <FieldInput

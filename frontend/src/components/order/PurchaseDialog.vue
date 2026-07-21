@@ -103,37 +103,43 @@
             <el-checkbox v-model="generateContract">生成采购合同</el-checkbox>
           </el-form-item>
           <el-form-item label="供应商">
-            <el-select
-              v-model="selectedSupplierId"
-              placeholder="搜索供应商名称/编号/联系人"
-              style="width: 100%"
-              filterable
-              remote
-              :remote-method="searchSuppliers"
-              :loading="supplierLoading"
-              clearable
-              @change="onSupplierChange"
-              popper-class="supplier-select-popper"
-            >
-              <el-option label="-- 请选择 --" :value="null" />
-              <el-option
-                v-for="s in suppliers"
-                :key="s.id"
-                :label="`${s.supplier_code ? s.supplier_code + ' - ' : ''}${s.supplier_name}${s.contact_person ? ' (' + s.contact_person + ')' : ''}`"
-                :value="s.id"
-              />
-              <template #empty>
-                <div class="supplier-empty">
-                  <span>未找到供应商</span>
-                </div>
-              </template>
-              <template #footer>
-                <div class="supplier-footer" @click="openCreateSupplierDialog">
-                  <el-icon><Plus /></el-icon>
-                  <span>新建供应商「{{ lastSupplierQuery || '' }}」</span>
-                </div>
-              </template>
-            </el-select>
+            <div class="supplier-select-row">
+              <el-select
+                v-model="selectedSupplierId"
+                placeholder="搜索供应商名称/编号/联系人"
+                class="supplier-select"
+                filterable
+                remote
+                :remote-method="searchSuppliers"
+                :loading="supplierLoading"
+                clearable
+                @change="onSupplierChange"
+                popper-class="supplier-select-popper"
+              >
+                <el-option label="-- 请选择 --" :value="null" />
+                <el-option
+                  v-for="s in suppliers"
+                  :key="s.id"
+                  :label="`${s.supplier_code ? s.supplier_code + ' - ' : ''}${s.supplier_name}${s.contact_person ? ' (' + s.contact_person + ')' : ''}`"
+                  :value="s.id"
+                />
+                <template #empty>
+                  <div class="supplier-empty">
+                    <span>未找到供应商</span>
+                  </div>
+                </template>
+                <template #footer>
+                  <div class="supplier-footer" @click="openCreateSupplierDialog">
+                    <el-icon><Plus /></el-icon>
+                    <span>新建供应商「{{ lastSupplierQuery || '' }}」</span>
+                  </div>
+                </template>
+              </el-select>
+              <el-button type="primary" plain @click="openCreateSupplierDialog">
+                <el-icon><Plus /></el-icon>
+                添加供应商
+              </el-button>
+            </div>
           </el-form-item>
           <el-form-item label="联系人">
             <el-input v-model="supplierContact" placeholder="供应商联系人" />
@@ -687,6 +693,18 @@ defineExpose({ open })
   justify-content: space-between;
   padding: 4px 8px;
   color: #909399;
+}
+
+.supplier-select-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.supplier-select {
+  flex: 1;
+  min-width: 0;
 }
 
 .supplier-footer {
