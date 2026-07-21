@@ -291,13 +291,13 @@ async function open(
   // 加载供应商列表（需等待完成才能匹配供应商）
   await loadSuppliers()
 
-  // 顶层 1688 店铺名称预填（在 resetForm 之后，避免被清空）
-   if (prefillShopName && !pendingSupplierState.supplier) {
-     shopName.value = prefillShopName
-     autoFillShopName.value = prefillShopName
-   }
+  // 顶层 1688 店铺名称预填（来自 order 或产品的供应商名，独立于 pendingSupplierState）
+  if (prefillShopName) {
+    shopName.value = prefillShopName
+    autoFillShopName.value = prefillShopName
+  }
   // 顶层采购链接预填
-  if (prefillLinkUrl && !pendingSupplierState.supplier) {
+  if (prefillLinkUrl) {
     linkUrl.value = prefillLinkUrl
   }
 
