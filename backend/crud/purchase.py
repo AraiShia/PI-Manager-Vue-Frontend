@@ -9,7 +9,7 @@ from models import (
     SupSupplier,
     PrdCustomerProduct
 )
-from schemas import PurchaseOrderCreate, PurchaseOrderUpdate, PurchaseOrderItemCreate
+from schemas import PurchaseOrderCreate, PurchaseOrderUpdate, PurchaseOrderItemCreate, PurchaseCreateOnline
 from utils.number_generator import NumberGenerator
 # FixPlan Task 3: 导入同步函数
 from crud.pi_sync import (
@@ -570,5 +570,63 @@ def get_product_latest_purchase(db: Session, product_id: int):
         # 备注
         "remark": latest.product_remark,
     }
-    
+
     return record
+
+
+def resolve_online_supplier(db: Session, payload: PurchaseCreateOnline) -> int:
+    """解析线上采购的供应商：supplier_id 校验或 supplier_name find-or-create。
+
+    返回 supplier_id 用于后续创建采购订单。
+    本函数不创建采购订单，仅做供应商解析与业务校验。
+
+    业务校验（唯一事实来源）：
+    - supplier_id 与 supplier_name 均缺失/空白 → ValueError
+    - supplier_id 关联时：供应商不存在 / dept_id 不一致 / platform=NULL / platform 不一致 → ValueError
+    """
+    # 1. supplier_name 空白校验
+    has_supplier_name = bool(payload.supplier_name and str(payload.supplier_name).strip())
+    if not payload.supplier_id and not has_supplier_name:
+        raise ValueError('supplier_id 或 supplier_name（非空）至少填写一个')
+
+    # 2. supplier_id 关联时校验
+    if payload.supplier_id:
+        supplier = db.query(SupSupplier).filter(SupSupplier.id == payload.supplier_id).first()
+        if not supplier:
+            raise ValueError('供应商不存在')
+        # 2.1 部门一致性
+        if supplier.dept_id != payload.dept_id:
+            raise ValueError(
+                f'所选供应商部门为 {supplier.dept_id}，与本次采购部门 {payload.dept_id} 不一致，'
+                '请选择本部门供应商或通过"新建供应商"创建'
+            )
+        # 2.2 platform=NULL 禁止用于线上采购
+        if supplier.platform is None:
+            raise ValueError(
+                f'所选供应商（{supplier.supplier_name}）尚未分配平台，无法关联到线上采购。'
+                '请先在"供应商管理"中为该供应商设置平台类型。'
+            )
+        # 2.3 平台一致性
+        if supplier.platform != payload.platform:
+            raise ValueError(
+                f'所选供应商平台为 {supplier.platform}，与本次采购平台 {payload.platform} 不一致，'
+                '请重新选择或使用"新建供应商"流程'
+            )
+        # 一致则直接使用 supplier_id，无需 find-or-create
+        return payload.supplier_id
+
+    # 3. 无 supplier_id 但有 supplier_name → find-or-create
+    from crud.supplier import find_or_create_supplier_by_name
+    supplier_obj, _ = find_or_create_supplier_by_name(
+        db,
+        supplier_name=str(payload.supplier_name).strip(),
+        platform=payload.platform,
+        dept_id=payload.dept_id,
+        shop_link=payload.shop_link,
+        wechat_id=payload.wechat_id,
+        wechat_nickname=payload.wechat_nickname,
+        is_dropship=payload.is_dropship,
+        contact_person=payload.supplier_contact,
+        phone=payload.supplier_phone,
+    )
+    return supplier_obj.id

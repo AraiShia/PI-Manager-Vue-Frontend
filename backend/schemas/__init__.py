@@ -6,7 +6,8 @@ from .purchase import (
     PurchaseOrderCreate, PurchaseOrderUpdate, PurchaseOrderResponse,
     PurchaseOrderItemCreate, PurchaseOrderItemResponse, PurchaseOrderDetailResponse,
     Po1688PurchaseCreate, Po1688PurchaseResponse,
-    PoInboundBatchCreate, PoInboundBatchUpdate, PoInboundBatchResponse
+    PoInboundBatchCreate, PoInboundBatchUpdate, PoInboundBatchResponse,
+    PurchaseCreateOnline
 )
 from .shipment import ShipmentCreate, ShipmentResponse, ShipmentItemCreate, ShipmentStageCreate, ShipmentDetailResponse, ShipmentItemResponse, CiDocumentCreate, PlDocumentCreate, CiDocumentResponse, PlDocumentResponse
 from .payment import (
@@ -43,6 +44,7 @@ __all__ = [
     'PurchaseOrderItemCreate', 'PurchaseOrderItemResponse', 'PurchaseOrderDetailResponse',
     'Po1688PurchaseCreate', 'Po1688PurchaseResponse',
     'PoInboundBatchCreate', 'PoInboundBatchUpdate', 'PoInboundBatchResponse',
+    'PurchaseCreateOnline',
     'ShipmentCreate', 'ShipmentResponse', 'ShipmentItemCreate', 'ShipmentStageCreate', 'ShipmentDetailResponse', 'ShipmentItemResponse',
     'CiDocumentCreate', 'PlDocumentCreate', 'CiDocumentResponse', 'PlDocumentResponse',
     'CustomerPaymentCreate', 'CustomerPaymentUpdate', 'CustomerPaymentResponse',

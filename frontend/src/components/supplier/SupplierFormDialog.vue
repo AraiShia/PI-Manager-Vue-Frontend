@@ -1,127 +1,161 @@
 <template>
   <el-dialog
-    :model-value="modelValue"
-    :title="supplier ? '编辑供应商' : '新建供应商'"
-    width="780px"
-    destroy-on-close
+    v-model="visible"
+    :title="dialogTitle"
+    width="560px"
     :close-on-click-modal="false"
-    @update:model-value="$emit('update:modelValue', $event)"
+    :before-close="requestClose"
   >
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
-      <el-row :gutter="16">
-        <el-col :span="12">
-          <el-form-item label="供应商编号" prop="supplier_code">
-            <el-input v-model="form.supplier_code" :disabled="!!supplier" />
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="供应商名称" prop="supplier_name">
-            <el-input v-model="form.supplier_name" />
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="省份">
-            <el-select v-model="form.province" filterable clearable class="full-width" @change="onProvinceChange">
-              <el-option v-for="item in provinces" :key="item" :label="item" :value="item" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="城市">
-            <el-select v-model="form.city" filterable clearable class="full-width">
-              <el-option v-for="item in cities" :key="item" :label="item" :value="item" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="联系人">
-            <el-input v-model="form.contact_person" />
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="电话">
-            <el-input v-model="form.phone" />
-          </el-form-item>
-        </el-col>
-        <el-col :span="24">
-          <el-form-item label="邮箱">
-            <el-input v-model="form.email" />
-          </el-form-item>
-        </el-col>
-        <el-col :span="24">
-          <el-form-item label="地址">
-            <el-input v-model="form.address" type="textarea" :rows="2" />
-          </el-form-item>
-        </el-col>
-      </el-row>
+    <!-- 平台 Tabs：新建或历史数据（platform=NULL）时可切换 -->
+    <el-tabs v-if="!hasPlatform" v-model="currentPlatform" class="platform-tabs">
+      <el-tab-pane label="1688" name="1688" />
+      <el-tab-pane label="微信" name="wechat" />
+      <el-tab-pane label="线下" name="offline" />
+    </el-tabs>
+
+    <!-- 已有 platform 的供应商，Tabs 锁定为该值 -->
+    <div v-else class="platform-locked">
+      <el-tag type="info">{{ platformLabelMap[currentPlatform] }}</el-tag>
+    </div>
+
+    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="supplier-form">
+      <!-- 供应商名称（各平台通用） -->
+      <el-form-item label="供应商名称" prop="supplier_name">
+        <el-input v-model="form.supplier_name" placeholder="请输入供应商名称" />
+      </el-form-item>
+
+      <!-- 1688 专属字段 -->
+      <template v-if="currentPlatform === '1688'">
+        <el-form-item label="店铺链接" prop="shop_link">
+          <el-input v-model="form.shop_link" placeholder="https://shop.1688.com/..." />
+        </el-form-item>
+        <el-form-item label="微信号">
+          <el-input v-model="form.wechat_id" placeholder="选填" />
+        </el-form-item>
+      </template>
+
+      <!-- 微信专属字段 -->
+      <template v-if="currentPlatform === 'wechat'">
+        <el-form-item label="微信昵称">
+          <el-input v-model="form.wechat_nickname" placeholder="选填" />
+        </el-form-item>
+        <el-form-item label="支持代发">
+          <el-switch v-model="form.is_dropship" />
+        </el-form-item>
+      </template>
+
+      <!-- 通用字段（各平台共享） -->
+      <el-form-item label="联系人">
+        <el-input v-model="form.contact_person" placeholder="选填" />
+      </el-form-item>
+      <el-form-item label="电话">
+        <el-input v-model="form.phone" placeholder="选填" />
+      </el-form-item>
+      <el-form-item label="省份">
+        <el-select v-model="form.province" placeholder="请选择省份" clearable filterable allow-create>
+          <el-option v-for="p in provinces" :key="p" :label="p" :value="p" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="城市" v-if="form.province">
+        <el-select v-model="form.city" placeholder="请选择城市" clearable filterable allow-create>
+          <el-option v-for="c in cities" :key="c" :label="c" :value="c" />
+        </el-select>
+      </el-form-item>
     </el-form>
 
     <template #footer>
-      <el-button @click="$emit('update:modelValue', false)">取消</el-button>
+      <el-button @click="requestClose">取消</el-button>
       <el-button type="primary" :loading="saving" @click="save">保存</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
-import { suppliersApi, type Supplier } from '@/api/suppliers'
+import { suppliersApi } from '@/api/suppliers'
+import type { Supplier } from '@/api/suppliers'
 
 const props = defineProps<{
   modelValue: boolean
   supplier: Supplier | null
+  defaultPlatform?: '1688' | 'wechat' | 'offline'
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [value: boolean]
+  'update:modelValue': [v: boolean]
   'success': [supplier: Supplier]
 }>()
 
-const formRef = ref<FormInstance>()
-const saving = ref(false)
-const provinces = ref<string[]>([])
-const cities = ref<string[]>([])
-
-const emptyForm = () => ({
-  supplier_code: '',
-  supplier_name: '',
-  province: '',
-  city: '',
-  contact_person: '',
-  phone: '',
-  email: '',
-  address: '',
+const visible = computed({
+  get: () => props.modelValue,
+  set: (v) => emit('update:modelValue', v),
 })
 
-const form = reactive(emptyForm())
+const dialogTitle = computed(() => props.supplier ? '编辑供应商' : '新建供应商')
+const hasPlatform = computed(() => !!props.supplier?.platform)
+const currentPlatform = ref<'1688' | 'wechat' | 'offline'>(
+  (props.supplier?.platform as any) || props.defaultPlatform || 'offline'
+)
+
+const platformLabelMap: Record<string, string> = {
+  '1688': '1688 平台',
+  'wechat': '微信平台',
+  'offline': '线下供应商',
+}
+
+const formRef = ref<FormInstance>()
+const saving = ref(false)
+
+const form = ref({
+  supplier_name: '',
+  shop_link: '',
+  wechat_id: '',
+  wechat_nickname: '',
+  is_dropship: false,
+  contact_person: '',
+  phone: '',
+  province: '',
+  city: '',
+})
+
+// 加载已有供应商数据到表单
+watch(() => props.supplier, (s) => {
+  if (s) {
+    form.value = {
+      supplier_name: s.supplier_name || '',
+      shop_link: s.shop_link || '',
+      wechat_id: s.wechat_id || '',
+      wechat_nickname: s.wechat_nickname || '',
+      is_dropship: s.is_dropship || false,
+      contact_person: (s as any).contact_person || '',
+      phone: (s as any).phone || '',
+      province: (s as any).province || '',
+      city: (s as any).city || '',
+    }
+  } else {
+    form.value = { supplier_name: '', shop_link: '', wechat_id: '', wechat_nickname: '', is_dropship: false, contact_person: '', phone: '', province: '', city: '' }
+    currentPlatform.value = props.defaultPlatform || 'offline'
+  }
+}, { immediate: true })
 
 const rules: FormRules = {
   supplier_name: [{ required: true, message: '请输入供应商名称', trigger: 'blur' }],
+  shop_link: [{
+    validator: (_r, value, callback) => {
+      if (currentPlatform.value === '1688' && !value?.trim()) {
+        callback(new Error('1688 供应商必须填写店铺链接'))
+      } else {
+        callback()
+      }
+    },
+    trigger: 'blur',
+  }],
 }
 
-// 监听 supplier prop 变化，填充或重置表单
-watch(() => props.supplier, (s) => {
-  if (s) {
-    Object.assign(form, emptyForm(), {
-      supplier_code: s.supplier_code || '',
-      supplier_name: s.supplier_name || '',
-      province: s.province || '',
-      city: s.city || '',
-      contact_person: s.contact_person || '',
-      phone: s.phone || '',
-      email: s.email || '',
-      address: s.address || '',
-    })
-    if (s.province) {
-      loadCities(s.province, s.city)
-    }
-  } else {
-    Object.assign(form, emptyForm())
-  }
-  cities.value = []
-}, { immediate: true })
+const provinces = ref<string[]>([])
+const cities = ref<string[]>([])
 
 // 监听弹窗打开时加载省份列表
 watch(() => props.modelValue, async (visible) => {
@@ -135,59 +169,60 @@ watch(() => props.modelValue, async (visible) => {
   }
 })
 
-async function onProvinceChange(value?: string) {
-  cities.value = []
-  if (!value) return
-  await loadCities(value)
-}
-
-async function loadCities(province: string | null | undefined, initialCity?: string | null | undefined) {
-  if (!province) return
-  try {
-    const res = await suppliersApi.cities(province as string)
-    cities.value = res.data || []
-    if (initialCity && !cities.value.includes(initialCity)) {
-      form.city = ''
-    }
-  } catch (e) {
-    console.warn('[SupplierFormDialog] 加载城市失败', e)
+watch(() => form.value.province, (p) => {
+  if (p) {
+    suppliersApi.cities(p).then((res) => {
+      cities.value = res.data || []
+    }).catch(() => {
+      cities.value = []
+    })
+  } else {
+    cities.value = []
+    form.value.city = ''
   }
-}
+})
 
 async function save() {
-  await formRef.value?.validate()
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
   saving.value = true
   try {
-    if (props.supplier) {
-      await suppliersApi.update(props.supplier.id, {
-        supplier_name: form.supplier_name,
-        province: form.province || null,
-        city: form.city || null,
-        contact_person: form.contact_person || null,
-        phone: form.phone || null,
-        email: form.email || null,
-        address: form.address || null,
-      })
-      ElMessage.success('供应商已更新')
-    } else {
-      const res = await suppliersApi.create({
-        supplier_code: form.supplier_code,
-        supplier_name: form.supplier_name,
-        province: form.province || null,
-        city: form.city || null,
-        contact_person: form.contact_person || null,
-        phone: form.phone || null,
-        email: form.email || null,
-        address: form.address || null,
-      })
-      ElMessage.success('供应商已创建')
-      emit('success', res.data)
+    const payload: any = {
+      supplier_name: form.value.supplier_name,
+      province: form.value.province || null,
+      city: form.value.city || null,
+      contact_person: form.value.contact_person || null,
+      phone: form.value.phone || null,
+      platform: currentPlatform.value,
     }
-    emit('update:modelValue', false)
+    if (currentPlatform.value === '1688') {
+      payload.shop_link = form.value.shop_link || null
+      payload.wechat_id = form.value.wechat_id || null
+    } else if (currentPlatform.value === 'wechat') {
+      payload.wechat_id = form.value.supplier_name  // 微信号即名称
+      payload.wechat_nickname = form.value.wechat_nickname || null
+      payload.is_dropship = form.value.is_dropship
+    }
+    const res = props.supplier
+      ? await suppliersApi.update(props.supplier.id, payload)
+      : await suppliersApi.create(payload)
+    ElMessage.success(props.supplier ? '供应商已更新' : '供应商已创建')
+    emit('success', res.data)
+    visible.value = false
   } catch (e: any) {
     ElMessage.error(e?.message || '保存失败')
   } finally {
     saving.value = false
   }
 }
+
+function requestClose() {
+  visible.value = false
+}
 </script>
+
+<style scoped>
+.platform-tabs { margin-bottom: 16px; }
+.platform-locked { margin-bottom: 16px; }
+.supplier-form { margin-top: 8px; }
+</style>

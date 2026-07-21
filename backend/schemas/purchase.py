@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 class PurchaseOrderItemCreate(BaseModel):
     product_id: int
@@ -33,6 +33,27 @@ class PurchaseOrderCreate(BaseModel):
     supplier_id: Optional[int] = None
     currency: Optional[str] = "USD"
     items: List[PurchaseOrderItemCreate]
+
+class PurchaseCreateOnline(BaseModel):
+    """线上采购（1688/微信）请求体，包含平台分类字段"""
+    dept_id: str
+    pi_id: int
+    supplier_id: Optional[int] = None
+    supplier_name: Optional[str] = None
+    platform: Literal['1688', 'wechat', 'offline']   # 必填
+    items: List[PurchaseOrderItemCreate]
+    link: Optional[str] = None
+    contact_wechat: Optional[str] = None
+    screenshot: Optional[str] = None
+    remark: Optional[str] = None
+    # 新增平台字段
+    shop_link: Optional[str] = None
+    wechat_id: Optional[str] = None
+    wechat_nickname: Optional[str] = None
+    is_dropship: Optional[bool] = None
+    # 线下联系人
+    supplier_contact: Optional[str] = None
+    supplier_phone: Optional[str] = None
 
 class PurchaseOrderUpdate(BaseModel):
     status: Optional[int] = None

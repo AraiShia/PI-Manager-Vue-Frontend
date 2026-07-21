@@ -173,3 +173,38 @@ export const purchaseApi = {
   inboundPiItemsBatch: (piId: number, data: { items: InboundItem[]; inspector?: string }) =>
     client.post<ApiResponse<any>>(PI.inboundBatch(piId), data),
 }
+
+/** 线上采购（1688/微信）请求体，对应后端 PurchaseCreateOnline */
+export interface PurchaseCreateOnline {
+  dept_id: string
+  pi_id: number
+  supplier_id?: number | null
+  supplier_name?: string | null
+  platform: '1688' | 'wechat' | 'offline'
+  items: PurchaseItem[]
+  link?: string | null
+  contact_wechat?: string | null
+  screenshot?: string | null
+  remark?: string | null
+  // 平台字段
+  shop_link?: string | null
+  wechat_id?: string | null
+  wechat_nickname?: string | null
+  is_dropship?: boolean | null
+  // 联系人
+  supplier_contact?: string | null
+  supplier_phone?: string | null
+}
+
+/** 后端 /api/purchase-orders/1688 响应 */
+export interface CreateOnlinePurchaseResponse {
+  success: boolean
+  purchase_orders: any[]
+  records: any[]
+}
+
+/** 调用线上采购接口 */
+export async function createOnlinePurchase(payload: PurchaseCreateOnline): Promise<CreateOnlinePurchaseResponse> {
+  const res = await client.post('/api/purchase-orders/1688', payload)
+  return res.data
+}

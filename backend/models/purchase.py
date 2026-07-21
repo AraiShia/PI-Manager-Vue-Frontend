@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, DECIMAL, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Integer, DECIMAL, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.orm import relationship
 from app.database import Base
 from datetime import datetime
@@ -18,6 +18,12 @@ class PoPurchaseOrder(Base):
     created_by = Column(Integer)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    # 平台分类字段（2026-07-20 新增）
+    platform = Column(String(20), nullable=True)
+    shop_link = Column(String(500), nullable=True)
+    wechat_id = Column(String(100), nullable=True)
+    wechat_nickname = Column(String(100), nullable=True)
+    is_dropship = Column(Boolean, default=False, nullable=False, server_default='0')
 
     pi = relationship("PiProformaInvoice")
     supplier = relationship("SupSupplier")

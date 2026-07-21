@@ -216,7 +216,7 @@
 import { ref, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { purchaseApi, type PurchasePayload, type PurchaseItem } from '@/api/purchase'
+import { purchaseApi, type PurchasePayload, type PurchaseItem, createOnlinePurchase, type PurchaseCreateOnline } from '@/api/purchase'
 import { apiUrl } from '@/api/base'
 import { SUPPLIERS } from '@/api/endpoints'
 import type { OrderDetailItem } from '@/types/orderSummary'
@@ -611,20 +611,41 @@ async function onSubmit() {
       })),
     }
 
-    let res
     if (purchaseType.value === 'online') {
-      payload.platform = platform.value
-      if (platform.value === '1688') {
-        payload.supplier_name = shopName.value
-        payload.link = linkUrl.value
-        payload.contact_wechat = contactWechat.value
-      } else {
-        payload.link = wechatId.value
-        payload.contact_wechat = wechatNickname.value
+      // 新逻辑：直接传 platform + supplier_name，后端自动 find-or-create
+      const onlinePayload: PurchaseCreateOnline = {
+        dept_id: 'S',
+        pi_id: orderId!,
+        platform: platform.value,
+        items: payload.items,
+        supplier_name: platform.value === '1688' ? shopName.value : wechatNickname.value,
+        shop_link: platform.value === '1688' ? (linkUrl.value || null) : null,
+        link: linkUrl.value || null,
+        contact_wechat: platform.value === '1688' ? contactWechat.value : wechatId.value,
+        screenshot: screenshotPath.value || null,
+        remark: onlineRemark.value || null,
+        wechat_id: platform.value === 'wechat' ? (wechatId.value || null) : null,
+        wechat_nickname: platform.value === 'wechat' ? (wechatNickname.value || null) : null,
+        is_dropship: false,
+        supplier_contact: null,
+        supplier_phone: null,
       }
-      payload.screenshot = screenshotPath.value
-      payload.remark = onlineRemark.value
-      res = await purchaseApi.createOnlinePurchase(payload)
+      const result = await createOnlinePurchase(onlinePayload)
+      if (result.success) {
+        ElMessage.success('采购订单创建成功')
+        emit('success')
+        emit('purchase-complete', {
+          factory_name: platform.value === 'wechat'
+            ? `${wechatNickname.value}(微信: ${wechatId.value})`
+            : shopName.value,
+          shop_url: linkUrl.value,
+          wechatId: platform.value === 'wechat' ? wechatId.value : '',
+          wechatNickname: platform.value === 'wechat' ? wechatNickname.value : '',
+        })
+        onClose()
+      } else {
+        ElMessage.error('采购失败')
+      }
     } else {
       payload.supplier_id = selectedSupplierId.value!
       payload.generate_contract = generateContract.value
@@ -632,23 +653,22 @@ async function onSubmit() {
       payload.supplier_phone = supplierPhone.value
       payload.remark = offlineRemark.value
       payload.contract_remark = contractRemark.value
-      res = await purchaseApi.createOfflinePurchase(payload)
-    }
-
-    if (res.data.code === 200) {
-      ElMessage.success('采购订单创建成功')
-      emit('success')
-      emit('purchase-complete', {
-        factory_name: platform.value === 'wechat'
-          ? `${wechatNickname.value}(微信: ${wechatId.value})`
-          : shopName.value,
-        shop_url: linkUrl.value,
-        wechatId: platform.value === 'wechat' ? wechatId.value : '',
-        wechatNickname: platform.value === 'wechat' ? wechatNickname.value : '',
-      })
-      onClose()
-    } else {
-      ElMessage.error(res.data.message || '采购失败')
+      const res = await purchaseApi.createOfflinePurchase(payload)
+      if (res.data.code === 200) {
+        ElMessage.success('采购订单创建成功')
+        emit('success')
+        emit('purchase-complete', {
+          factory_name: platform.value === 'wechat'
+            ? `${wechatNickname.value}(微信: ${wechatId.value})`
+            : shopName.value,
+          shop_url: linkUrl.value,
+          wechatId: platform.value === 'wechat' ? wechatId.value : '',
+          wechatNickname: platform.value === 'wechat' ? wechatNickname.value : '',
+        })
+        onClose()
+      } else {
+        ElMessage.error(res.data.message || '采购失败')
+      }
     }
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || e?.message || '采购失败')
