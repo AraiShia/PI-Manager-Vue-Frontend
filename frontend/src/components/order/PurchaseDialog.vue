@@ -266,6 +266,16 @@ async function open(
   orderId = piId
   prefillUrls = urls
 
+  // 在异步加载供应商列表前快照 ProductEditDialog 传来的供应商，
+  // 避免等待期间共享状态被其他流程清空，导致 1688 店铺名称丢失。
+  const pending = {
+    supplier: pendingSupplierState.supplier,
+    platform: pendingSupplierState.platform,
+    shop_link: pendingSupplierState.shop_link,
+    wechat_id: pendingSupplierState.wechat_id,
+    wechat_nickname: pendingSupplierState.wechat_nickname,
+  }
+
   // 初始化产品数据
   items.value = orderItems.map((item) => ({
     ...item,
@@ -302,7 +312,6 @@ async function open(
   }
 
   // ProductEditDialog 选择/新建供应商后，自动回填采购表单
-  const pending = pendingSupplierState
   if (pending.supplier) {
     const supplierPlatform = pending.platform || '1688'
     
