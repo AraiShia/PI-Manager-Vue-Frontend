@@ -1972,6 +1972,11 @@ function onSupplierSelect(s: Supplier) {
   form.supplier_name = s.supplier_name
   form.supplier = s
   saveField('supplier_name', s.supplier_name)
+  // 供应商有 shop_link 时自动填入采购链接
+  if (s.shop_link) {
+    form.shop_url = s.shop_link
+    saveField('shop_url', s.shop_link)
+  }
 }
 
 function onSupplierClear() {
