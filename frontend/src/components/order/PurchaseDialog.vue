@@ -308,7 +308,17 @@ async function open(
     shipping_fee: item.shipping_fee ?? 0,
     freight: 0,
     link: urls[item.product_id!]?.[0] || '',
-    _urlOptions: urls[item.product_id!] || [],
+    // 包装为 ProductSupplierUrl 形状，使 el-select 选项能访问 u.url / u.display_name
+    _urlOptions: (urls[item.product_id!] || []).map((u) => ({
+      id: 0,
+      product_id: 0,
+      supplier_id: null,
+      supplier_name: '',
+      url: u,
+      display_name: null,
+      is_default: false,
+      created_at: '',
+    })),
     _total: 0,
   }))
   items.value.forEach((_, index) => recalcTotal(index))
@@ -532,20 +542,29 @@ async function loadInitialPrices() {
     }
 
     // 1.2) 历史 1688 链接下拉选项（去重，包含当前链接）
-    const urlOptions: string[] = []
+    const rawOptions: string[] = []
     if (urlsRes.status === 'fulfilled') {
       const res = urlsRes.value
       if (res.data.code === 200 && Array.isArray(res.data.data?.urls)) {
-        urlOptions.push(...res.data.data.urls)
+        rawOptions.push(...res.data.data.urls)
       }
     } else {
       console.warn('加载历史1688链接失败', urlsRes.reason)
     }
     // 把当前链接也加入选项（如果不在列表里）
-    if (item.link && !urlOptions.includes(item.link)) {
-      urlOptions.unshift(item.link)
+    if (item.link && !rawOptions.includes(item.link)) {
+      rawOptions.unshift(item.link)
     }
-    ;(item as any)._urlOptions = urlOptions.slice(0, 10)
+    // 包装成 ProductSupplierUrl 形状，使 el-select 选项能访问 u.url / u.display_name
+    const seen = new Set<string>()
+    ;(item as any)._urlOptions = rawOptions
+      .filter((u) => {
+        if (seen.has(u)) return false
+        seen.add(u)
+        return true
+      })
+      .slice(0, 10)
+      .map((u) => ({ id: 0, product_id: 0, supplier_id: null, supplier_name: '', url: u, display_name: null, is_default: false, created_at: '' }))
   }
 }
 
