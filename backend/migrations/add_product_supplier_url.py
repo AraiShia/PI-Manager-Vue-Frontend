@@ -2,6 +2,20 @@
 """
 迁移：添加 prd_product_supplier_url 表 + po_1688_purchase.supplier_id + 历史数据导入
 
+执行方式（任选其一）：
+
+  Windows 原生（当前实际部署）：
+    cd backend
+    python migrations\\add_product_supplier_url.py
+
+  Docker（若后续切回容器化部署）：
+    docker compose exec backend python -m migrations.add_product_supplier_url
+
+幂等性：
+  - 新表 CREATE TABLE IF NOT EXISTS
+  - 新列 ALTER 通过 column_exists() 跳过
+  - 历史导入 INSERT 加 NOT EXISTS 双分支（supplier_id IS NULL / NOT NULL）
+
 修订历史：
   v5: 幂等保护（IF NOT EXISTS + column_exists）
   v6: PARTITION BY 增加 NULL 供应商按 supplier_name 分组；
