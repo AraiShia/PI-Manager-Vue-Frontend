@@ -83,6 +83,7 @@
               <FieldInput
                 v-model="form.product_name_en"
                 :status="getFieldStatus('detail_desc_en')"
+                :disabled="formLocked"
                 @blur="saveField('detail_desc_en', form.product_name_en)"
               />
             </div>
@@ -460,7 +461,7 @@
                 <el-input v-model="form.carton_height" placeholder="高" type="number" :disabled="formLocked" style="width: 100%" @change="onCartonSizeChange" />
               </div>
               <div class="purchase-cost-cell packaging-cell pack-spec-cell" data-required-field="pack_spec">
-                <el-popover ref="packSpecPopoverRef" placement="bottom" :width="260" trigger="click">
+                <el-popover v-if="!formLocked" ref="packSpecPopoverRef" placement="bottom" :width="260" trigger="click">
                   <template #reference>
                     <el-input :model-value="form.pack_spec || '1pcs/1ctn'" readonly style="width: 100%" />
                   </template>
@@ -493,9 +494,10 @@
                     </div>
                   </template>
                 </el-popover>
+                <span v-else class="pack-spec-locked">{{ form.pack_spec || '1pcs/1ctn' }}</span>
               </div>
               <div class="purchase-cost-cell packaging-cell">
-                <el-input v-model="form.carton_gross_weight" type="number" style="width: 100%" @change="saveField('carton_gross_weight', form.carton_gross_weight)" />
+                <el-input v-model="form.carton_gross_weight" type="number" :disabled="formLocked" style="width: 100%" @change="saveField('carton_gross_weight', form.carton_gross_weight)" />
               </div>
               <div class="purchase-cost-cell packaging-cell">
                 <el-input :model-value="form.estimated_volume != null ? form.estimated_volume.toFixed(6) : ''" readonly />
@@ -3060,6 +3062,18 @@ defineExpose({ open, close })
 /* ============ 包装规格 ============ */
 .pack-spec-cell {
   width: 100%;
+}
+
+.pack-spec-locked {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 11px;
+  background: #f5f7fa;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  color: #909399;
+  font-size: 13px;
 }
 
 .pack-spec-cell :deep(.el-input-number),
