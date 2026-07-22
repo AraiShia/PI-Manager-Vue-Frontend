@@ -1250,7 +1250,7 @@ async function handleContextMenuAction(action: string) {
       await deleteItem(item)
       break
     case 'edit':
-      productEditDialogRef.value?.open(item, store.currentOrder?.customer_name, store.currentOrder?.customer_country)
+      productEditDialogRef.value?.open(item, store.currentOrder?.customer_name, store.currentOrder?.customer_country, hasFormalRecord.value)
       break
     case 'changeSupplier':
       ElMessage.info('更换供应商功能开发中')
@@ -1283,7 +1283,7 @@ async function deleteItem(item: OrderDetailItem) {
 }
 
 function onCellDblClick(row: OrderDetailItem) {
-  productEditDialogRef.value?.open(row, store.currentOrder?.customer_name, store.currentOrder?.customer_country)
+  productEditDialogRef.value?.open(row, store.currentOrder?.customer_name, store.currentOrder?.customer_country, hasFormalRecord.value)
 }
 </script>
 

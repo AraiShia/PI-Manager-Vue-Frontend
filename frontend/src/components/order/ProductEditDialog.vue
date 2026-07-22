@@ -75,6 +75,7 @@
             <div class="basic-info-cell product-name-zh" data-required-field="product_name">
               <el-input
                 v-model="form.product_name"
+                :disabled="formLocked"
                 @blur="saveField('detail_desc', form.product_name)"
               />
             </div>
@@ -143,7 +144,7 @@
                 <el-select
                   v-model="categoryLevel1"
                   placeholder="大类"
-                  :disabled="categoryLocked"
+                  :disabled="categoryLocked || formLocked"
                   @change="onCategoryLevel1Change"
                 >
                   <el-option label="-- 请选择大类 --" value="" />
@@ -157,7 +158,7 @@
                 <el-select
                   v-model="categoryLevel2"
                   placeholder="子类"
-                  :disabled="categoryLocked || !categoryLevel1"
+                  :disabled="categoryLocked || formLocked || !categoryLevel1"
                   @change="onCategoryLevel2Change"
                 >
                   <el-option label="-- 请选择子类 --" value="" />
@@ -224,6 +225,7 @@
               <el-input
                 v-model="form.quantity"
                 type="number"
+                :disabled="formLocked"
                 style="width: 100%"
                 @blur="saveField('quantity', form.quantity)"
               />
@@ -232,6 +234,7 @@
               <el-input
                 v-model="form.unit_price"
                 type="number"
+                :disabled="formLocked"
                 style="width: 100%"
                 @blur="saveField('unit_price', form.unit_price)"
               >
@@ -246,6 +249,7 @@
                 <el-input
                   v-model.number="form.purchase_price"
                   type="number"
+                  :disabled="formLocked"
                   style="width: 100%"
                   @blur="saveField('purchase_price', form.purchase_price)"
                 >
@@ -316,6 +320,7 @@
                 type="textarea"
                 :rows="3"
                 resize="none"
+                :disabled="formLocked"
                 @blur="saveField('product_detail', form.product_detail)"
               />
             </div>
@@ -325,6 +330,7 @@
                 <SupplierSearchSelect
                   v-model="form.supplier"
                   :current-name="form.supplier_name"
+                  :disabled="formLocked"
                   placeholder="搜索或选择供应商"
                   @select="onSupplierSelect"
                   @clear="onSupplierClear"
@@ -445,13 +451,13 @@
               <div class="purchase-cost-head packaging-head">预估毛重(kg)</div>
 
               <div class="purchase-cost-cell packaging-cell packaging-cell-carton" data-required-field="carton_length">
-                <el-input v-model="form.carton_length" placeholder="长" type="number" style="width: 100%" @change="onCartonSizeChange" />
+                <el-input v-model="form.carton_length" placeholder="长" type="number" :disabled="formLocked" style="width: 100%" @change="onCartonSizeChange" />
               </div>
               <div class="purchase-cost-cell packaging-cell packaging-cell-carton" data-required-field="carton_width">
-                <el-input v-model="form.carton_width" placeholder="宽" type="number" style="width: 100%" @change="onCartonSizeChange" />
+                <el-input v-model="form.carton_width" placeholder="宽" type="number" :disabled="formLocked" style="width: 100%" @change="onCartonSizeChange" />
               </div>
               <div class="purchase-cost-cell packaging-cell packaging-cell-carton" data-required-field="carton_height">
-                <el-input v-model="form.carton_height" placeholder="高" type="number" style="width: 100%" @change="onCartonSizeChange" />
+                <el-input v-model="form.carton_height" placeholder="高" type="number" :disabled="formLocked" style="width: 100%" @change="onCartonSizeChange" />
               </div>
               <div class="purchase-cost-cell packaging-cell pack-spec-cell" data-required-field="pack_spec">
                 <el-popover ref="packSpecPopoverRef" placement="bottom" :width="260" trigger="click">
@@ -765,6 +771,7 @@ interface ProductEditForm {
 }
 
 const visible = ref(false)
+const formLocked = ref(false)  // 正式PI锁定后禁用关键字段编辑
 const item = ref<ProductEditItem | null>(null)
 const { fieldStates, dirtyFields, saveField } = useProductEdit(item as any)
 const categories = ref<ProductCategory[]>([])
@@ -1598,7 +1605,8 @@ function createFormSnapshot() {
   })
 }
 
-function open(source: OrderDetailItem, customerName?: string, customerCountry?: string) {
+function open(source: OrderDetailItem, customerName?: string, customerCountry?: string, isLocked = false) {
+  formLocked.value = isLocked
   const editItem = source as ProductEditItem
   editItem.customer_name = customerName || ''
   editItem.customer_country = customerCountry || ''
