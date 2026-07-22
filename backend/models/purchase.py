@@ -78,6 +78,7 @@ class Po1688Purchase(Base):
     pi_id = Column(Integer)
     product_id = Column(Integer)
     supplier_name = Column(String(200))            # 供应商名称（冗余字段，方便查询）
+    supplier_id = Column(Integer, ForeignKey("sup_supplier.id"), nullable=True)  # 2026-07-22
     product_url = Column(String(500))
     product_remark = Column(Text)                 # 产品备注
     color = Column(String(100))                    # 颜色

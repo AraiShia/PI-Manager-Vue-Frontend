@@ -19,6 +19,7 @@ from .memo_record import MemoRecord
 from .order_file import OrderFile
 from .purchase_package import PoPurchaseOrderItemPackage
 from .audit_log import PrdProductAuditLog
+from .product_supplier_url import PrdProductSupplierUrl
 
 __all__ = [
     'PrdCustomerProduct', 'PrdCustomerProductCode', 'PrdCustomerProductOE',
@@ -41,4 +42,5 @@ __all__ = [
     'OrderFile',
     'PoPurchaseOrderItemPackage',
     'PrdProductAuditLog',
+    'PrdProductSupplierUrl',
 ]
