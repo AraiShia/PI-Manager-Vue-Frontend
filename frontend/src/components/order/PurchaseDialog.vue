@@ -323,8 +323,8 @@ async function open(
   }))
   items.value.forEach((_, index) => recalcTotal(index))
 
-  // 加载初始费用
-  loadInitialPrices()
+  // 加载初始费用（仅负责价格与链接兜底，不写入 _urlOptions，避免覆盖供应商专属 URL）
+  await loadInitialPrices()
 
   // 重置表单（purchaseType 默认为 'online'，platform 默认为 '1688'）
   resetForm()
@@ -503,19 +503,16 @@ function onItemUrlChange(index: number, url: string) {
   ;(items.value[index] as any).link = url
 }
 
-// 加载初始费用（从最近采购记录 + 历史 1688 链接）
+// 加载初始费用（仅负责价格与链接兜底，不写入 _urlOptions；URL 下拉由 reloadAllUrls 管理）
 async function loadInitialPrices() {
   for (let i = 0; i < items.value.length; i++) {
     const item = items.value[i]
     if (!item.product_id) continue
 
-    // 1) 并行加载最近采购记录与历史链接列表
-    const [latestRes, urlsRes] = await Promise.allSettled([
+    const latestRes = await Promise.allSettled([
       purchaseApi.getProductLatestPurchase(item.product_id),
-      purchaseApi.getRecent1688Urls(item.product_id, 5),
-    ])
+    ]).then(r => r[0])
 
-    // 1.1) 最近采购记录（采购价/费用/链接兜底）
     if (latestRes.status === 'fulfilled') {
       const res = latestRes.value
       // 兼容后端当前 { success, record } 与旧版 { code, data: { record } } 响应。
@@ -540,31 +537,6 @@ async function loadInitialPrices() {
     } else {
       console.warn('加载采购记录失败', latestRes.reason)
     }
-
-    // 1.2) 历史 1688 链接下拉选项（去重，包含当前链接）
-    const rawOptions: string[] = []
-    if (urlsRes.status === 'fulfilled') {
-      const res = urlsRes.value
-      if (res.data.code === 200 && Array.isArray(res.data.data?.urls)) {
-        rawOptions.push(...res.data.data.urls)
-      }
-    } else {
-      console.warn('加载历史1688链接失败', urlsRes.reason)
-    }
-    // 把当前链接也加入选项（如果不在列表里）
-    if (item.link && !rawOptions.includes(item.link)) {
-      rawOptions.unshift(item.link)
-    }
-    // 包装成 ProductSupplierUrl 形状，使 el-select 选项能访问 u.url / u.display_name
-    const seen = new Set<string>()
-    ;(item as any)._urlOptions = rawOptions
-      .filter((u) => {
-        if (seen.has(u)) return false
-        seen.add(u)
-        return true
-      })
-      .slice(0, 10)
-      .map((u) => ({ id: 0, product_id: 0, supplier_id: null, supplier_name: '', url: u, display_name: null, is_default: false, created_at: '' }))
   }
 }
 

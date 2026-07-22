@@ -5,6 +5,8 @@
  * OrderDetailItem 共 41 列，按 A-F 组排列，与 Excel 订单管理总表完全对齐
  */
 
+import type { ProductSupplierUrl } from '@/api/productSupplierUrls'
+
 export interface OrderListItem {
   id: number
   pi_no: string
@@ -118,7 +120,7 @@ export interface OrderDetailItem {
   link?: string
   supplier_id?: number
   _total?: number
-  _urlOptions?: string[]  // 1688 历史链接下拉选项
+  _urlOptions?: ProductSupplierUrl[]  // 1688 历史链接下拉选项
 }
 
 export interface OrderListFilter {
