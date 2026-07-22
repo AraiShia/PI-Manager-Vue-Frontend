@@ -80,7 +80,7 @@ supplier_id = Column(Integer, ForeignKey("sup_supplier.id"), nullable=True)
 
 ```python
 import sqlalchemy as sa
-from database import engine
+from app.database import engine
 
 
 def column_exists(conn, table: str, column: str) -> bool:
@@ -131,6 +131,7 @@ def upgrade():
         """))
 
         # 4. 历史 URL 导入新表（v5：用 row_num_asc == row_num_desc 判断"该组只有一条"）
+        # v6 修订：添加 NOT EXISTS 幂等检查，避免重复运行时重复插入
         conn.execute(sa.text("""
             INSERT INTO prd_product_supplier_url
                 (product_id, supplier_id, supplier_name, url, is_default, created_at)
@@ -163,7 +164,13 @@ def upgrade():
                       AND p1.supplier_name IS NOT NULL AND p1.supplier_name <> ''
                 ) p
                 WHERE p.row_num_asc = 1
-            ) final
+            ) p1
+            WHERE NOT EXISTS (
+                SELECT 1 FROM prd_product_supplier_url psu2 
+                WHERE psu2.product_id = p1.product_id 
+                  AND COALESCE(psu2.supplier_id, 0) = COALESCE(p1.supplier_id, 0)
+                  AND psu2.url = p1.product_url
+            )
         """))
 
         # 5. 输出迁移统计
@@ -200,7 +207,12 @@ def downgrade():
             FROM po_1688_purchase_backup
         """))
         conn.execute(sa.text("DROP TABLE po_1688_purchase_backup"))
-```
+
+
+if __name__ == "__main__":
+    upgrade()
+    print("Migration completed successfully.")
+
 
 **注意：** downgrade 是一个示意骨架。如果有 Alembic 迁移系统，遵循其迁移机制。
 
@@ -237,8 +249,9 @@ from datetime import datetime
 
 
 class ProductSupplierUrlCreate(BaseModel):
+    # v6 修订：supplier_id 改为必需字段
     product_id: int
-    supplier_id: Optional[int] = None
+    supplier_id: int  # v6: 不再 Optional，新建必须传
     supplier_name: str
     url: str = Field(..., max_length=500)
     display_name: Optional[str] = None
@@ -270,8 +283,8 @@ class ProductSupplierUrlResponse(BaseModel):
 ```python
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from backend.models.product_supplier_url import PrdProductSupplierUrl
-from backend.schemas.product_supplier_url import ProductSupplierUrlCreate, ProductSupplierUrlUpdate
+from app.models.product_supplier_url import PrdProductSupplierUrl
+from app.schemas.product_supplier_url import ProductSupplierUrlCreate, ProductSupplierUrlUpdate
 from fastapi import HTTPException
 
 
@@ -295,10 +308,7 @@ def list_urls(db: Session, product_id: int, supplier_id: int | None = None, supp
 
 
 def create_url(db: Session, data: ProductSupplierUrlCreate) -> tuple[PrdProductSupplierUrl, bool]:
-    """v4 修订：补全默认升级 + 处理并发 IntegrityError"""
-    if data.supplier_id is None:
-        # v4 修订：新建必须传 supplier_id
-        raise HTTPException(status_code=422, detail="supplier_id is required for new URL records")
+    """v6 修订：supplier_id 已改为必需，移除 None 检查"""
     existing = db.query(PrdProductSupplierUrl).filter(
         PrdProductSupplierUrl.product_id == data.product_id,
         PrdProductSupplierUrl.supplier_id == data.supplier_id,
@@ -340,10 +350,19 @@ def _refetch_existing(db: Session, data: ProductSupplierUrlCreate) -> PrdProduct
     ).first()
 
 
+def get_url(db: Session, url_id: int) -> PrdProductSupplierUrl | None:
+    """v6 新增：根据 ID 获取单条 URL 记录"""
+    return db.query(PrdProductSupplierUrl).filter(PrdProductSupplierUrl.id == url_id).first()
+
+
 def update_url(db: Session, url_id: int, data: ProductSupplierUrlUpdate) -> PrdProductSupplierUrl | None:
-    url = db.query(PrdProductSupplierUrl).filter(PrdProductSupplierUrl.id == url_id).first()
+    url = get_url(db, url_id)  # v6 复用 get_url
     if not url:
         return None
+
+    # v6 新增：历史只读数据禁止修改
+    if url.supplier_id is None:
+        raise HTTPException(status_code=409, detail="历史只读数据，禁止修改")
 
     if data.url and data.url != url.url:
         # URL 冲突检查
@@ -368,9 +387,13 @@ def update_url(db: Session, url_id: int, data: ProductSupplierUrlUpdate) -> PrdP
 
 
 def delete_url(db: Session, url_id: int) -> bool:
-    url = db.query(PrdProductSupplierUrl).filter(PrdProductSupplierUrl.id == url_id).first()
+    url = get_url(db, url_id)  # v6 复用 get_url
     if not url:
         return False
+
+    # v6 新增：历史只读数据禁止删除（supplier_id 为 NULL 表示历史导入数据）
+    if url.supplier_id is None:
+        raise HTTPException(status_code=409, detail="历史只读数据，禁止删除")
 
     was_default = url.is_default
     db.delete(url)
@@ -426,14 +449,15 @@ git commit -m "feat: add product_supplier_url schemas and CRUD with is_default c
 
 ```python
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from backend.database import get_db
-from backend.schemas.product_supplier_url import (
+from app.database import get_db
+from app.schemas.product_supplier_url import (
     ProductSupplierUrlCreate,
     ProductSupplierUrlUpdate,
     ProductSupplierUrlResponse,
 )
-from backend.crud import product_supplier_url as crud
+from app.crud import product_supplier_url as crud
 
 
 router = APIRouter(prefix="/product-supplier-urls", tags=["product-supplier-urls"])
@@ -454,9 +478,9 @@ def list_urls(
 def create_url(data: ProductSupplierUrlCreate, db: Session = Depends(get_db)):
     url, created = crud.create_url(db, data)
     # 201 Created 表示新建，200 OK 表示已存在
-    # FastAPI 默认 200，但我们可以用 status_code=201 + 改响应
-    # 这里简化：统一返回 200，由 created 字段告知
-    return url
+    if created:
+        return JSONResponse(url.model_dump(), status_code=201)
+    return JSONResponse(url.model_dump(), status_code=200)
 
 
 @router.put("/{url_id}", response_model=ProductSupplierUrlResponse)
@@ -474,27 +498,29 @@ def update_url(url_id: int, data: ProductSupplierUrlUpdate, db: Session = Depend
 def delete_url(
     url_id: int,
     db: Session = Depends(get_db),
-    dept_id: str = Depends(get_current_dept_id),   # v4 修订：使用部门依赖
+    # TODO: add auth - v6 移除不存在的 get_current_dept_id 依赖
+    # dept_id: str = Query(...)  # 暂时通过前端传参或移除权限校验
 ):
-    from backend.models.customer import CrmCustomer
+    from app.models.customer import CrmCustomer
+    from app.models.customer_product import PrdCustomerProduct
     url = crud.get_url(db, url_id)
     if not url:
         raise HTTPException(status_code=404, detail="URL not found")
     if url.supplier_id is None:
-        # 旧历史数据，禁止删除
+        # v6：历史只读数据，禁止删除
         raise HTTPException(status_code=409, detail="历史只读数据，禁止删除")
-    # v4 修订：通过 crm_customer.dept_id 间接校验产品归属
-    product = (
-        db.query(PrdCustomerProduct)
-        .join(CrmCustomer, CrmCustomer.id == PrdCustomerProduct.customer_id)
-        .filter(
-            PrdCustomerProduct.id == url.product_id,
-            CrmCustomer.dept_id == dept_id,
-        )
-        .first()
-    )
-    if not product:
-        raise HTTPException(status_code=404, detail="URL 不属于当前部门")
+    # v6：可通过 crm_customer.dept_id 校验产品归属（需要前端传 dept_id）
+    # product = (
+    #     db.query(PrdCustomerProduct)
+    #     .join(CrmCustomer, CrmCustomer.id == PrdCustomerProduct.customer_id)
+    #     .filter(
+    #         PrdCustomerProduct.id == url.product_id,
+    #         CrmCustomer.dept_id == dept_id,
+    #     )
+    #     .first()
+    # )
+    # if not product:
+    #     raise HTTPException(status_code=404, detail="URL 不属于当前部门")
     crud.delete_url(db, url_id)
 ```
 
@@ -503,7 +529,7 @@ def delete_url(
 在现有 `include_router` 附近添加：
 
 ```python
-from backend.routers.product_supplier_url import router as product_supplier_url_router
+from app.routers.product_supplier_url import router as product_supplier_url_router
 app.include_router(product_supplier_url_router)
 ```
 
@@ -615,7 +641,7 @@ def create_1688_purchase_batch(db: Session, batch_data):
             logger.warning(f"[purchase] _sync_pi_item_from_1688 failed (non-blocking): {sync_err_1688}")
 
         # === 新增：写入 URL 历史（同样 flush） ===
-        from backend.models.product_supplier_url import PrdProductSupplierUrl
+        from app.models.product_supplier_url import PrdProductSupplierUrl
         for p in created:
             if not p.product_url or p.product_url == '':
                 continue
@@ -815,10 +841,10 @@ def test_migration_supplier_id_falls_back_to_null_when_no_match(db):
 
 
 def test_migration_idempotent(db):
-    """v5 修订：重复运行迁移不报错"""
+    """v6 修订：重复运行迁移不报错，且 INSERT 有 NOT EXISTS 幂等检查"""
     # 1) 运行两次 upgrade()
     # 2) 验证没有报错；表和列都已存在
-    # 3) 验证未重复插入历史 URL（UNIQUE 约束阻止重复）
+    # 3) 验证未重复插入历史 URL（NOT EXISTS 检查阻止重复）
     pass
 ```
 
