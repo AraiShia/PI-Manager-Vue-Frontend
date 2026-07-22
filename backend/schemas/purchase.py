@@ -164,6 +164,7 @@ class Po1688PurchaseItem(BaseModel):
     """1688 采购 - 单产品条目（按产品维度）"""
     product_id: int
     supplier_name: Optional[str] = None
+    supplier_id: Optional[int] = None  # 2026-07-22: 路由层注入
     product_url: Optional[str] = None
     product_remark: Optional[str] = None
     color: Optional[str] = None
@@ -184,6 +185,7 @@ class Po1688PurchaseBatchCreate(BaseModel):
     dept_id: str
     po_id: Optional[int] = None
     pi_id: Optional[int] = None
+    supplier_id: Optional[int] = None  # 2026-07-22: 路由层注入
     screenshot: Optional[str] = None
     remark: Optional[str] = None
     items: List[Po1688PurchaseItem]

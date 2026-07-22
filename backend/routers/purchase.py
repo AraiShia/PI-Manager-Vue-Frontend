@@ -120,6 +120,7 @@ def create_1688_purchase_api(purchase_data: PurchaseCreateOnline, db: Session = 
                 batch_items.append(Po1688PurchaseItem(
                     product_id=it.get("product_id"),
                     supplier_name=it.get("supplier_name") or data.get("supplier_name"),
+                    supplier_id=supplier_id,  # 2026-07-22: 路由层注入
                     product_url=it.get("link") or it.get("product_url"),
                     product_remark=it.get("remark"),
                     color=it.get("color"),
@@ -138,6 +139,7 @@ def create_1688_purchase_api(purchase_data: PurchaseCreateOnline, db: Session = 
                 dept_id=data.get("dept_id"),
                 po_id=data.get("po_id"),
                 pi_id=data.get("pi_id"),
+                supplier_id=supplier_id,  # 2026-07-22: 路由层注入
                 screenshot=data.get("screenshot"),
                 remark=data.get("remark"),
                 items=batch_items,

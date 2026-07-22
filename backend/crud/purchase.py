@@ -411,10 +411,15 @@ def create_1688_purchase_batch(db: Session, batch_data):
         raise ValueError("items 不能为空")
 
     # 2026-06-09 修复：移除 dept_id="D01" 死代码（schema 必填，getattr 不会触发默认）
+    shared_supplier_id = getattr(batch_data, "supplier_id", None)
+    shared_supplier_name = (
+        items[0].supplier_name if items and items[0].supplier_name else None
+    )
     shared = {
         "dept_id": batch_data.dept_id,
         "po_id": batch_data.po_id,
         "pi_id": batch_data.pi_id,
+        "supplier_id": shared_supplier_id,  # 2026-07-22: 路由层注入
     }
     created = []
     try:
@@ -422,7 +427,7 @@ def create_1688_purchase_batch(db: Session, batch_data):
             db_purchase = Po1688Purchase(
                 **shared,
                 product_id=item.product_id,
-                supplier_name=item.supplier_name,
+                supplier_name=item.supplier_name or shared_supplier_name,
                 product_url=item.product_url,
                 product_remark=item.product_remark,
                 color=item.color,
@@ -440,8 +445,9 @@ def create_1688_purchase_batch(db: Session, batch_data):
             )
             db.add(db_purchase)
             created.append(db_purchase)
-        # 2026-06-09 修复 3：批量事务回滚保护 - 任一失败整体回滚
-        db.commit()
+
+        # 仅 flush，不 commit（由路由统一提交）
+        db.flush()
 
         # FixPlan Task 3: 线上(1688/微信)采购提交后,同步回写PI订单项
         try:
@@ -454,11 +460,32 @@ def create_1688_purchase_batch(db: Session, batch_data):
                 ).first()
                 if pi_item:
                     _sync_pi_item_from_1688(db, pi_item, p)
-                    db.refresh(pi_item)
+                    db.flush()
         except Exception as sync_err_1688:
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"[purchase] _sync_pi_item_from_1688 failed (non-blocking): {sync_err_1688}")
+
+        # === 2026-07-22: 写入 URL 历史（同样 flush）===
+        from models.product_supplier_url import PrdProductSupplierUrl
+        for p in created:
+            if not p.product_url or p.product_url == '':
+                continue
+            existing = db.query(PrdProductSupplierUrl).filter(
+                PrdProductSupplierUrl.product_id == p.product_id,
+                PrdProductSupplierUrl.supplier_id == p.supplier_id,
+                PrdProductSupplierUrl.url == p.product_url,
+            ).first()
+            if not existing:
+                url_record = PrdProductSupplierUrl(
+                    product_id=p.product_id,
+                    supplier_id=p.supplier_id,
+                    supplier_name=p.supplier_name,
+                    url=p.product_url,
+                    is_default=False,
+                )
+                db.add(url_record)
+        db.flush()
 
     except Exception:
         db.rollback()
