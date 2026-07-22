@@ -180,33 +180,14 @@ def upgrade():
         conn.execute(sa.text("SELECT COUNT(*) FROM prd_product_supplier_url"))  # history imported
 
 
-def downgrade():
-    with engine.begin() as conn:
-        conn.execute(sa.text("DROP TABLE IF EXISTS prd_product_supplier_url"))
-        # SQLite 不支持 DROP COLUMN，使用重建表：
-        conn.execute(sa.text("""
-            CREATE TABLE po_1688_purchase_backup AS SELECT * FROM po_1688_purchase
-        """))
-        conn.execute(sa.text("DROP TABLE po_1688_purchase"))
-        conn.execute(sa.text("""
-            CREATE TABLE po_1688_purchase (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                dept_id VARCHAR(10) NOT NULL,
-                po_id INTEGER,
-                pi_id INTEGER NOT NULL,
-                product_id INTEGER NOT NULL,
-                supplier_name VARCHAR(200),
-                product_url VARCHAR(500),
-                -- ...（完整原字段定义）
-            )
-        """))
-        conn.execute(sa.text("""
-            INSERT INTO po_1688_purchase
-            (id, dept_id, po_id, pi_id, product_id, supplier_name, product_url, ...)
-            SELECT id, dept_id, po_id, pi_id, product_id, supplier_name, product_url, ...
-            FROM po_1688_purchase_backup
-        """))
-        conn.execute(sa.text("DROP TABLE po_1688_purchase_backup"))
+# Downgrade 留待后续工单
+# 说明：本次实现范围仅包含 upgrade（创建表 + 新增列 + 历史数据导入）。
+# 如需回滚，应人工操作：
+#   1) 备份 prd_product_supplier_url 与 po_1688_purchase 中 supplier_id 历史回填结果；
+#   2) DROP TABLE prd_product_supplier_url；
+#   3) 由于 SQLite 不支持 DROP COLUMN，需重建 po_1688_purchase 表移除 supplier_id 字段；
+#   4) 重启应用前请确认没有运行中的 1688 写入链路。
+# 完整 SQL 留待后续工单补齐。
 
 
 if __name__ == "__main__":
@@ -214,7 +195,7 @@ if __name__ == "__main__":
     print("Migration completed successfully.")
 
 
-**注意：** downgrade 是一个示意骨架。如果有 Alembic 迁移系统，遵循其迁移机制。
+**注意：** downgrade 不在本次实现范围内。如需回滚，请参考迁移文件顶部的 "Downgrade 留待后续工单" 注释手工执行。
 
 - [ ] **步骤 4：运行迁移**
 
@@ -283,10 +264,9 @@ class ProductSupplierUrlResponse(BaseModel):
 ```python
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import or_, and_
-from models.prd_product_supplier_url import PrdProductSupplierUrl
-from models.prd_customer_product import PrdCustomerProduct
-from models.supplier import Supplier as SupSupplier
+from models.product_supplier_url import PrdProductSupplierUrl
+from models.customer_product import PrdCustomerProduct
+from models.supplier import SupSupplier
 from schemas.product_supplier_url import ProductSupplierUrlCreate, ProductSupplierUrlUpdate
 from fastapi import HTTPException
 
@@ -297,32 +277,29 @@ def list_urls(db: Session, product_id: int, supplier_id: int | None = None, supp
     q = db.query(PrdProductSupplierUrl).filter(PrdProductSupplierUrl.product_id == product_id)
 
     if supplier_id is not None:
+        # 主分支：按 supplier_id 精确匹配
         rows = q.filter(PrdProductSupplierUrl.supplier_id == supplier_id).all()
         if rows:
             return sorted(rows, key=lambda u: (not u.is_default, -u.created_at.timestamp()))
-        # fallback 仅在 primary 查询返回空 AND supplier_name 提供时触发
-        if not supplier_name:
-            return []
-        rows = q.filter(
-            and_(
+        # fallback：仅当 supplier_name 提供时，匹配 supplier_id IS NULL 的历史数据
+        if supplier_name:
+            rows = q.filter(
                 PrdProductSupplierUrl.supplier_id.is_(None),
                 PrdProductSupplierUrl.supplier_name == supplier_name,
-            )
-        ).all()
-    elif supplier_name:
-        # 用 OR 同时匹配 supplier_id 等于指定值（当 supplier_id 通过其它路径传入但函数参数 supplier_id 实际为 None 时）和历史 NULL 记录
-        rows = q.filter(
-            or_(
-                PrdProductSupplierUrl.supplier_id == supplier_id,
-                and_(
-                    PrdProductSupplierUrl.supplier_id.is_(None),
-                    PrdProductSupplierUrl.supplier_name == supplier_name,
-                ),
-            )
-        ).all()
-    else:
-        rows = q.all()
+            ).all()
+            return sorted(rows, key=lambda u: (not u.is_default, -u.created_at.timestamp()))
+        return []
 
+    if supplier_name:
+        # supplier_id 为 None 时：仅匹配历史 NULL 记录（避免返回所有 NULL 记录）
+        rows = q.filter(
+            PrdProductSupplierUrl.supplier_id.is_(None),
+            PrdProductSupplierUrl.supplier_name == supplier_name,
+        ).all()
+        return sorted(rows, key=lambda u: (not u.is_default, -u.created_at.timestamp()))
+
+    # 两者都未提供：返回该 product 全部记录
+    rows = q.all()
     return sorted(rows, key=lambda u: (not u.is_default, -u.created_at.timestamp()))
 
 
@@ -539,7 +516,7 @@ def delete_url(
     # dept_id: str = Query(...)  # 暂时通过前端传参或移除权限校验
 ):
     from models.customer import CrmCustomer
-    from models.prd_customer_product import PrdCustomerProduct
+    from models.customer_product import PrdCustomerProduct
     url = crud.get_url(db, url_id)
     if not url:
         raise HTTPException(status_code=404, detail="URL not found")
@@ -678,7 +655,7 @@ def create_1688_purchase_batch(db: Session, batch_data):
             logger.warning(f"[purchase] _sync_pi_item_from_1688 failed (non-blocking): {sync_err_1688}")
 
         # === 新增：写入 URL 历史（同样 flush） ===
-        from models.prd_product_supplier_url import PrdProductSupplierUrl
+        from models.product_supplier_url import PrdProductSupplierUrl
         for p in created:
             if not p.product_url or p.product_url == '':
                 continue
@@ -815,11 +792,16 @@ def test_delete_default_auto_promotes_latest(client):
 
 def test_supplier_id_threads_through_1688_batch(client, db):
     """验证 create_1688_purchase_batch 写入 supplier_id"""
+    # 实际 API 路由：POST /api/purchase-orders/1688（routers/purchase.py:96-169）
+    # 请求体 schema：PurchaseCreateOnline（schemas/purchase.py:37-56）
+    # 路由层由 resolve_online_supplier 解析 supplier_id，并由 create_1688_purchase_batch 注入到每条 Po1688Purchase
+    #
     # 1. 准备前置数据：product / supplier / pi_id
     #    - PrdCustomerProduct(id=10)
     #    - SupSupplier(id=20, supplier_name="测试供应商A")
-    # 2. 构造 Po1688PurchaseBatchCreate payload：items 包含 product_id=10, supplier_id=20, product_url="https://x.com/abc"
-    # 3. POST /api/purchase/1688-batch with payload
+    # 2. 构造 PurchaseCreateOnline payload：items[i].product_id=10, items[i].link=...
+    #    items[i].supplier_name="测试供应商A", 顶层 supplier_id=20
+    # 3. POST /api/purchase-orders/1688 with payload
     # 4. 断言：
     #    - po_1688_purchase 表中存在该记录且 supplier_id == 20
     #    - prd_product_supplier_url 表中存在 (product_id=10, supplier_id=20, url="https://x.com/abc") 的记录
@@ -828,25 +810,29 @@ def test_supplier_id_threads_through_1688_batch(client, db):
     target_url = "https://detail.1688.com/offer/abc.html"
     payload = {
         "dept_id": "D001",
-        "po_id": None,
         "pi_id": 100,
+        "platform": "1688",
         "supplier_id": target_supplier_id,
+        "supplier_name": "测试供应商A",
         "items": [
             {
                 "product_id": target_product_id,
-                "supplier_id": target_supplier_id,
                 "supplier_name": "测试供应商A",
-                "product_url": target_url,
+                "link": target_url,           # PurchaseCreateOnline 用 link 字段
                 "unit_price": 10.0,
                 "quantity": 1,
             }
         ],
     }
     # 假定已配置 conftest 中的 product/supplier fixture
-    r = client.post("/api/purchase/1688-batch", json=payload)
-    assert r.status_code in (200, 201)
+    r = client.post("/api/purchase-orders/1688", json=payload)
+    assert r.status_code in (200, 201), f"期望 200/201，实际 {r.status_code}: {r.text}"
+    body = r.json()
+    assert body.get("success") is True
+    assert isinstance(body.get("records"), list) and len(body["records"]) >= 1
+
     po_row = db.execute(
-        sa.text("SELECT supplier_id FROM po_1688_purchase WHERE product_id=:pid"),
+        sa.text("SELECT supplier_id FROM po_1688_purchase WHERE product_id=:pid ORDER BY id DESC LIMIT 1"),
         {"pid": target_product_id},
     ).fetchone()
     assert po_row is not None and po_row[0] == target_supplier_id
@@ -859,29 +845,33 @@ def test_supplier_id_threads_through_1688_batch(client, db):
 
 def test_1688_batch_failure_rolls_back_urls(client, db):
     """验证采购单生成失败时，URL 历史也回滚（事务统一）"""
+    # 实际 API 路由：POST /api/purchase-orders/1688
+    # 请求体 schema：PurchaseCreateOnline（platform=1688）
+    #
     # 1. 准备前置数据：product / supplier / pi_id
     # 2. 故意构造一个会触发 IntegrityError 的 batch payload：
-    #    - 例如 product_id 指向不存在的记录（FK 失败），或 supplier_id 故意违反约束
-    # 3. POST /api/purchase/1688-batch 期望 4xx/5xx
+    #    - product_id 指向不存在的记录（FK 失败）
+    # 3. POST /api/purchase-orders/1688 期望 4xx/5xx
     # 4. 验证 prd_product_supplier_url 中没有本次 URL 的记录被插入
     target_url = "https://detail.1688.com/offer/rollback.html"
     payload = {
         "dept_id": "D001",
         "pi_id": 101,
+        "platform": "1688",
         "supplier_id": 99999,  # 不存在的 supplier_id，会触发 FK 失败
+        "supplier_name": "幽灵供应商",
         "items": [
             {
                 "product_id": 99999,  # 不存在的 product_id
-                "supplier_id": 99999,
                 "supplier_name": "幽灵供应商",
-                "product_url": target_url,
+                "link": target_url,
                 "unit_price": 1.0,
                 "quantity": 1,
             }
         ],
     }
-    r = client.post("/api/purchase/1688-batch", json=payload)
-    assert r.status_code >= 400
+    r = client.post("/api/purchase-orders/1688", json=payload)
+    assert r.status_code >= 400, f"期望 4xx/5xx，实际 {r.status_code}"
     url_row = db.execute(
         sa.text("SELECT id FROM prd_product_supplier_url WHERE url=:u"),
         {"u": target_url},
@@ -901,15 +891,18 @@ def test_post_without_supplier_id_returns_422(client):
 
 def test_delete_null_supplier_id_history_returns_409(client, db):
     """v3 修订：supplier_id 为 NULL 的历史数据不允许 DELETE"""
+    from models.product_supplier_url import PrdProductSupplierUrl
+
     # 1) 直接在数据库中插入一条 supplier_id=NULL 的记录（模拟历史导入数据）
-    db.add(PrdProductSupplierUrl(
+    history = PrdProductSupplierUrl(
         product_id=1, supplier_id=None, supplier_name="历史供应商",
         url="https://history.com",
-    ))
+    )
+    db.add(history)
     db.commit()
+    db.refresh(history)
     # 2) 尝试 DELETE
-    url_id = db.query(...).id  # 取刚插入的 id
-    r = client.delete(f"/api/product-supplier-urls/{url_id}")
+    r = client.delete(f"/api/product-supplier-urls/{history.id}")
     assert r.status_code == 409
 
 
