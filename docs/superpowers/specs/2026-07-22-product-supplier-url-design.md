@@ -89,36 +89,79 @@ WHERE supplier_id IS NULL;
 
 ```sql
 -- 从 po_1688_purchase 把已有历史链接导入新表
--- 同一 (product_id, supplier_id, url) 重复时保留最早的一条
--- 最近一条设为 is_default=1
+-- 同一 (product_id, supplier_id, url) 中：保留最早一条。
+-- supplier_id NULL 时按 supplier_name 分组
+-- 用 GROUP BY 预去重，避免 INSERT 触发 UNIQUE 冲突
 INSERT INTO prd_product_supplier_url
     (product_id, supplier_id, supplier_name, url, is_default, created_at)
-SELECT
-    p.product_id,
-    p.supplier_id,
-    p.supplier_name,
-    p.product_url,
-    -- 同一 (product_id, supplier_id, url) 中最新一条置为默认
-    CASE WHEN p.created_at = (
-        SELECT MAX(p2.created_at)
-        FROM po_1688_purchase p2
-        WHERE p2.product_id = p.product_id
-          AND COALESCE(p2.supplier_id, -1) = COALESCE(p.supplier_id, -1)
-          AND p2.product_url = p.product_url
-    ) THEN 1 ELSE 0 END,
-    p.created_at
-FROM po_1688_purchase p
-WHERE p.product_url IS NOT NULL AND p.product_url <> '';
-
--- 用唯一索引去重（如有重复则保留最早）
-DELETE FROM prd_product_supplier_url
-WHERE id NOT IN (
-    SELECT MIN(id) FROM prd_product_supplier_url
-    GROUP BY product_id, supplier_id, url
-);
+SELECT * FROM (
+    SELECT
+        p.product_id,
+        p.supplier_id,
+        p.supplier_name,
+        p.product_url,
+        -- 同一 (product_id, supplier_id, url) 中最新一条置为默认
+        CASE WHEN p.row_num_desc = 1 THEN 1 ELSE 0 END,
+        p.created_at
+    FROM (
+        SELECT
+            p1.product_id,
+            p1.supplier_id,
+            p1.supplier_name,
+            p1.product_url,
+            p1.created_at,
+            ROW_NUMBER() OVER (
+                PARTITION BY
+                    p1.product_id,
+                    COALESCE(p1.supplier_id, 0),    -- 把 NULL 映射成 0，用于分组
+                    p1.product_url
+                ORDER BY p1.created_at ASC, p1.id ASC
+            ) AS row_num_asc,
+            ROW_NUMBER() OVER (
+                PARTITION BY
+                    p1.product_id,
+                    COALESCE(p1.supplier_id, 0),
+                    p1.product_url
+                ORDER BY p1.created_at DESC, p1.id DESC
+            ) AS row_num_desc
+        FROM po_1688_purchase p1
+        WHERE p1.product_url IS NOT NULL AND p1.product_url <> ''
+    ) p
+    WHERE p.row_num_asc = 1   -- 只插入每组最早一条
+) final;
 ```
 
-**注意：** 如果 supplier_id 为 NULL，按 `(product_id, -1, url)` 分组；唯一索引允许 supplier_id 为 NULL（SQLite 默认允许多个 NULL）。
+**注释：**
+
+| 决策 | 理由 |
+|------|------|
+| 同一 `(product_id, supplier_id, url)` 保留最早一条 | 唯一索引 + 历史可追溯 |
+| 默认项 = 同组最新一条 | 用户最常用最新链接为默认 |
+| `ROW_NUMBER()` 而非 `GROUP BY` | `GROUP BY` + 聚合无法同时选最早/最新两行 |
+| `COALESCE(supplier_id, 0)` 解决 NULL 分组 | SQLite 唯一索引允许多个 NULL，因此 NULL 仍可能产生多条历史；用 `0` 占位可让分组生效 |
+
+**特别说明：** `created_at` 相同的同组记录，最新一条由 `id DESC` 决定，保证可重复。
+
+**供应商关联回填（移步执行）：**
+
+```sql
+-- 1) 先尝试按 (dept_id + supplier_name + platform='1688') 精确匹配
+UPDATE po_1688_purchase
+SET supplier_id = (
+    SELECT id FROM sup_supplier
+    WHERE sup_supplier.supplier_name = po_1688_purchase.supplier_name
+      AND sup_supplier.dept_id = po_1688_purchase.dept_id
+      AND sup_supplier.platform = '1688'
+    LIMIT 1
+)
+WHERE supplier_id IS NULL;
+
+-- 2) 仍未匹配的（找不到精确供应商），保留 supplier_id=NULL
+-- 这些是历史供应商已删除或重命名；导入新表时 supplier_id=NULL、supplier_name=历史值
+-- （supplier_name 在新表中是 NOT NULL；这些 NULL 数据会通过供应商名兜底匹配）
+```
+
+迁移完成后需要单独记录：`SELECT COUNT(*) FROM po_1688_purchase WHERE supplier_id IS NULL` 给出回填统计。
 
 ---
 
@@ -161,10 +204,24 @@ GET /api/product-supplier-urls?product_id=123&supplier_name=xxx  # fallback
 
 **约束：**
 - `url` 长度 ≤ 500，必须以 `http://` 或 `https://` 开头
-- `product_id`、`supplier_id` 必须存在
+- **新数据强制要求 `supplier_id`（不可为 NULL）**；只有迁移导入的旧数据允许 `supplier_id=NULL`
+- `product_id` 必须存在
+- `supplier_id` 必须存在
 - 同一 `(product_id, supplier_id, url)` 重复时：
   - 返回 200 + 已有记录（不重复创建）
   - 若请求中 `is_default=true`，**仍将其升级为默认**
+
+### 3.3.1 supplier_id 一致性约束
+
+| 场景 | supplier_id 处理 |
+|------|------------------|
+| 新建 URL（POST） | 必填，传 NULL 返回 422 |
+| 迁移导入的旧数据 | 允许 NULL；这些记录只读，PUT/DELETE 时返回 409 |
+| 查询 GET（无 supplier_id 参数） | 返回所有 supplier_id 与 supplier_name 匹配规则命中的记录 |
+| 查询 GET（传 supplier_id） | 只返回 `supplier_id` 命中的记录 |
+| 查询 GET（仅传 supplier_name，fallback） | 返回 supplier_id NULL 但 supplier_name 命中的记录 |
+| PUT/DELETE supplier_id NULL 记录 | **拒绝**，返回 409 Conflict；提示数据为历史只读 |
+| POST 同一 URL 时 supplier_id 不同 | 视作不同记录，不冲突 |
 
 ### 3.4 POST 返回 200/201 语义
 
@@ -187,7 +244,34 @@ GET /api/product-supplier-urls?product_id=123&supplier_name=xxx  # fallback
 
 ### 3.6 DELETE
 
-无需权限校验，由前端调用。
+**前置校验：**
+- URL 记录必须存在
+- `product_id` 关联的产品必须存在并属于当前部门（`prd_customer_product.dept_id`）
+- `supplier_id` 非 NULL 时，对应供应商必须存在
+- 旧数据（`supplier_id IS NULL`）**不允许 DELETE**，返回 409 Conflict
+- 后续接入用户权限时，由统一的 `Depends(get_current_user)` 处理细粒度权限
+
+路由示例：
+```python
+@router.delete("/{url_id}", status_code=204)
+def delete_url(
+    url_id: int,
+    db: Session = Depends(get_db),
+    dept_id: str = Depends(get_current_dept_id),
+):
+    url = crud.get_url(db, url_id)
+    if not url:
+        raise HTTPException(404)
+    if url.supplier_id is None:
+        raise HTTPException(409, detail="历史只读数据，禁止删除")
+    product = db.query(PrdCustomerProduct).filter(
+        PrdCustomerProduct.id == url.product_id,
+        PrdCustomerProduct.dept_id == dept_id,
+    ).first()
+    if not product:
+        raise HTTPException(404, detail="URL 不属于当前部门")
+    crud.delete_url(db, url_id)
+```
 
 ---
 
@@ -318,23 +402,20 @@ async function reloadAllUrls() {
 
 #### 提交逻辑
 
-在 `createOnlinePurchase` 调用后，对每个有 URL 的 item 调用 `productSupplierUrlsApi.create()`：
+**URL 历史写入完全由后端事务负责（路由在采购事务内一并写入 `prd_product_supplier_url`）。** 前端**不再**单独调用 `productSupplierUrlsApi.create()`，避免重复写入。
+
+前端 `onSubmit` 只负责把每行的 `row.link` 提交到 `PurchaseCreateOnline.items[i].link`，让路由层把这些 URL 与 supplier_id 一并入库。
 
 ```typescript
-// 提交成功后，对每个非空 URL 写入历史
-if (result.success && platform.value === '1688') {
-  const supplierId = pendingSupplierState.supplier?.id
-  const supplierName = pendingSupplierState.supplier?.supplier_name
-  for (const item of items.value) {
-    if (!item.link || !item.product_id) continue
-    await productSupplierUrlsApi.create({
-      product_id: item.product_id,
-      supplier_id: supplierId,
-      supplier_name: supplierName,
-      url: item.link,
-    }).catch(console.warn)
-  }
-}
+// 1688 提交：每行 link 已在 items[].link 中，无需后续调用
+const result = await createOnlinePurchase({
+  // ...
+  items: items.value.map((it) => ({
+    product_id: it.product_id,
+    link: it.link || null,  // 每行独立 URL
+    // ...其他字段
+  })),
+})
 ```
 
 #### 顶层 `linkUrl`（顶层供应商联系字段）

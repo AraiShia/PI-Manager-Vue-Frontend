@@ -108,46 +108,60 @@ def upgrade():
         # 2. po_1688_purchase 新增 supplier_id
         conn.execute(sa.text("ALTER TABLE po_1688_purchase ADD COLUMN supplier_id INTEGER REFERENCES sup_supplier(id)"))
 
-        # 3. 历史数据回填 supplier_id
+        # 3. 历史数据按 (dept_id + supplier_name + platform='1688') 回填 supplier_id
         conn.execute(sa.text("""
             UPDATE po_1688_purchase
             SET supplier_id = (
                 SELECT id FROM sup_supplier
                 WHERE sup_supplier.supplier_name = po_1688_purchase.supplier_name
+                  AND sup_supplier.dept_id = po_1688_purchase.dept_id
+                  AND sup_supplier.platform = '1688'
                 LIMIT 1
             )
             WHERE supplier_id IS NULL
         """))
 
-        # 4. 历史 URL 导入新表
-        # 同 (product_id, supplier_id, url) 分组，最近一条置默认
+        # 3.1 记录仍未匹配的 supplier_id（保留 NULL）
+        # 由运维人员手动 SELECT COUNT(*) FROM po_1688_purchase WHERE supplier_id IS NULL
+
+        # 4. 历史 URL 导入新表（v3 修订：用 ROW_NUMBER 去重 + 同组最早一条插入）
         conn.execute(sa.text("""
             INSERT INTO prd_product_supplier_url
                 (product_id, supplier_id, supplier_name, url, is_default, created_at)
-            SELECT
-                p.product_id,
-                p.supplier_id,
-                p.supplier_name,
-                p.product_url,
-                CASE WHEN p.created_at = (
-                    SELECT MAX(p2.created_at)
-                    FROM po_1688_purchase p2
-                    WHERE p2.product_id = p.product_id
-                      AND COALESCE(p2.supplier_id, -1) = COALESCE(p.supplier_id, -1)
-                      AND p2.product_url = p.product_url
-                ) THEN 1 ELSE 0 END,
-                p.created_at
-            FROM po_1688_purchase p
-            WHERE p.product_url IS NOT NULL AND p.product_url <> ''
-        """))
-
-        # 5. 用唯一索引去重（同 product_id+supplier_id+url 多条时保留最早）
-        conn.execute(sa.text("""
-            DELETE FROM prd_product_supplier_url
-            WHERE id NOT IN (
-                SELECT MIN(id) FROM prd_product_supplier_url
-                GROUP BY product_id, supplier_id, url
-            )
+            SELECT * FROM (
+                SELECT
+                    p.product_id,
+                    p.supplier_id,
+                    p.supplier_name,
+                    p.product_url,
+                    CASE WHEN p.row_num_desc = 1 THEN 1 ELSE 0 END,
+                    p.created_at
+                FROM (
+                    SELECT
+                        p1.product_id,
+                        p1.supplier_id,
+                        p1.supplier_name,
+                        p1.product_url,
+                        p1.created_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY
+                                p1.product_id,
+                                COALESCE(p1.supplier_id, 0),
+                                p1.product_url
+                            ORDER BY p1.created_at ASC, p1.id ASC
+                        ) AS row_num_asc,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY
+                                p1.product_id,
+                                COALESCE(p1.supplier_id, 0),
+                                p1.product_url
+                            ORDER BY p1.created_at DESC, p1.id DESC
+                        ) AS row_num_desc
+                    FROM po_1688_purchase p1
+                    WHERE p1.product_url IS NOT NULL AND p1.product_url <> ''
+                ) p
+                WHERE p.row_num_asc = 1
+            ) final
         """))
 
 
@@ -700,6 +714,46 @@ def test_1688_batch_failure_rolls_back_urls(client):
     # 2. 调用路由
     # 3. 验证 prd_product_supplier_url 中没有本次的新记录
     pass
+
+
+def test_post_without_supplier_id_returns_422(client):
+    """v3 修订：新建必须传 supplier_id"""
+    r = client.post("/api/product-supplier-urls", json={
+        "product_id": 1,
+        "supplier_name": "A",
+        "url": "https://x.com",
+    })
+    assert r.status_code == 422
+
+
+def test_delete_null_supplier_id_history_returns_409(client, db):
+    """v3 修订：supplier_id 为 NULL 的历史数据不允许 DELETE"""
+    # 1) 直接在数据库中插入一条 supplier_id=NULL 的记录（模拟历史导入数据）
+    db.add(PrdProductSupplierUrl(
+        product_id=1, supplier_id=None, supplier_name="历史供应商",
+        url="https://history.com",
+    ))
+    db.commit()
+    # 2) 尝试 DELETE
+    url_id = db.query(...).id  # 取刚插入的 id
+    r = client.delete(f"/api/product-supplier-urls/{url_id}")
+    assert r.status_code == 409
+
+
+def test_migration_dedupes_history_urls(db):
+    """v3 修订：迁移 SQL 用 ROW_NUMBER 去重，不会触发 UNIQUE 冲突"""
+    # 1) 直接 SQL 准备 po_1688_purchase 多条 (product_id, supplier_id, url) 重复记录
+    # 2) 执行迁移脚本的 INSERT…SELECT FROM (ROW_NUMBER 子查询)
+    # 3) 验证：prd_product_supplier_url 中只插入了最早一条，is_default=1（最新一条）
+    pass
+
+
+def test_migration_supplier_id_falls_back_to_null_when_no_match(db):
+    """v3 修订：supplier_id 回填找不到时保留 NULL（不强行写入错误供应商）"""
+    # 1) po_1688_purchase 中插入 supplier_name='UNKNOWN' 且 sup_supplier 中没有匹配
+    # 2) 运行迁移
+    # 3) 验证 po_1688_purchase.supplier_id 仍为 NULL
+    pass
 ```
 
 - [ ] **步骤 2：运行测试**
@@ -988,28 +1042,10 @@ async function reloadAllUrls() {
   }
 }
 
-async function onItemUrlChange(index: number, url: string) {
-  // 不立即异步创建，等 onSubmit 成功后再写
-  // 这里只需同步更新 row.link
+function onItemUrlChange(index: number, url: string) {
+  // v3 修订：URL 历史完全由后端事务写入，前端不再单独调用 API
+  // 这里只更新 row.link；提交时由后端在同一事务内持久化
   ;(items.value[index] as any).link = url
-}
-
-async function persistSupplierUrlsAfterPurchase() {
-  const supplier = pendingSupplierState.supplier
-  if (!supplier || platform.value !== '1688') return
-  for (const row of items.value as any[]) {
-    if (!row.link || !row.product_id) continue
-    try {
-      await productSupplierUrlsApi.create({
-        product_id: row.product_id,
-        supplier_id: (supplier as any).id ?? null,
-        supplier_name: supplier.supplier_name,
-        url: row.link,
-      })
-    } catch (e) {
-      console.warn('[PurchaseDialog] 写入采购链接历史失败', e)
-    }
-  }
 }
 ```
 
@@ -1021,19 +1057,28 @@ async function persistSupplierUrlsAfterPurchase() {
 await reloadAllUrls()
 ```
 
-- [ ] **步骤 4：提交成功后写历史**
+- [ ] **步骤 4：提交（v3 修订：不再写 URL 历史）**
 
-在 1688 提交分支 `if (result.success)` 内部添加：
+v3 修订：删除前端的 `persistSupplierUrlsAfterPurchase()`。URL 历史完全由后端事务（任务 4）写入。前端提交时只负责把 `row.link` 放进 `items[i].link` 提交，路由层在同一事务内一并入库。
+
 ```typescript
-// 1688 采购成功后写入每行的 URL 历史
-await persistSupplierUrlsAfterPurchase()
+// PurchaseDialog 的 onSubmit 中，items 已经包含 link：
+const onlinePayload: PurchaseCreateOnline = {
+  // ...
+  items: items.value.map((it: any) => ({
+    product_id: it.product_id,
+    link: it.link || null,  // v3 关键：每行独立 URL
+    // ...其他字段保持原样
+  })),
+}
+await createOnlinePurchase(onlinePayload)
 ```
 
 - [ ] **步骤 5：Commit**
 
 ```bash
 git add frontend/src/components/order/PurchaseDialog.vue
-git commit -m "feat: add per-row 1688 URL dropdown in PurchaseDialog table"
+git commit -m "feat: add per-row 1688 URL dropdown in PurchaseDialog table (write delegated to backend transaction)"
 ```
 
 ---
