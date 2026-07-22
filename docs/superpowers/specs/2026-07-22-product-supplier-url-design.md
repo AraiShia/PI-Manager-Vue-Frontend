@@ -149,35 +149,16 @@ SELECT * FROM (
 | `MAX(...) OVER (PARTITION BY ...)` 获取同组最新时间 | 避免同一 URL 出现在多行记录中时 `is_default` 状态不一致 |
 | `COALESCE(supplier_id, 0)` 解决 NULL 分组 | SQLite 唯一索引允许多个 NULL，将 NULL 映射为 0 让分组生效 |
 | 过滤 supplier_name 为空的记录 | 新表 supplier_name NOT NULL；导不进去的空记录跳过并记数 |
+| PARTITION BY 增加 NULL 供应商按 supplier_name 分组 | 不同历史供应商（supplier_id NULL 但 supplier_name 不同）的 URL 不被合并 |
 
-**时间相同的情况：** `MAX(created_at)` 不能区分同时间多条；后续用 `id DESC` 决定谁是"最新"，引入额外列 `max_id_per_group`：
+**完整最终 SQL（v6 同步 plan v8 修订）：**
 
-```sql
-MAX(p1.id) OVER (
-    PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0), p1.product_url
-) AS max_id_in_group
-```
-
-判断：
-```sql
-CASE WHEN p.id = p.max_id_in_group THEN 1 ELSE 0 END  -- is_default
-```
-
-这样保证 `created_at` 相同时仍确定性的、最新的（id 最大）一条为默认。
-
-**完整最终 SQL（v5 修订）：**
-
-**v5 关键修订：** 只保留每组最早一条是不够的——只有最早一条时，组内最新记录丢失；多条的组中最早一条永远不是默认。
-
-**新策略：**
-- 同一 `(product_id, supplier_id, url)` 组中只保留最早一条（持久化历史早期使用）
-- 该条记录的 `is_default=1` 当且仅当**该组只有一条记录**（即"最早 = 最新"，是组内唯一记录）
-- 如果该组有多条记录（同一 URL 多次使用），则最早记录的 `is_default=0`；最新使用仍然存在 `po_1688_purchase` 历史中，将来用户重新购买时会再写入新 URL 记录覆盖默认值
-
-**SQL 实现：**
+**v6 修订（与 plan v8 一致）：**
+1. PARTITION BY 增加 `CASE WHEN supplier_id IS NULL THEN supplier_name ELSE '' END`，使不同历史供应商（supplier_id NULL 但 supplier_name 不同）的记录不被合并
+2. is_default 判断改为 `row_num_asc = row_num_desc`（组内唯一一条时置默认）
+3. NOT EXISTS 幂等检查同样使用双分支匹配逻辑
 
 ```sql
--- 仅插入每组最早一条；is_default = 1 iff 该组只有一条
 INSERT INTO prd_product_supplier_url
     (product_id, supplier_id, supplier_name, url, is_default, created_at)
 SELECT * FROM (
@@ -196,12 +177,21 @@ SELECT * FROM (
             p1.product_url,
             p1.created_at,
             p1.id,
+            -- v6 修订：PARTITION BY 增加 NULL 供应商按 supplier_name 分组
             ROW_NUMBER() OVER (
-                PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0), p1.product_url
+                PARTITION BY
+                    p1.product_id,
+                    COALESCE(p1.supplier_id, 0),
+                    CASE WHEN p1.supplier_id IS NULL THEN p1.supplier_name ELSE '' END,
+                    p1.product_url
                 ORDER BY p1.created_at ASC, p1.id ASC
             ) AS row_num_asc,
             ROW_NUMBER() OVER (
-                PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0), p1.product_url
+                PARTITION BY
+                    p1.product_id,
+                    COALESCE(p1.supplier_id, 0),
+                    CASE WHEN p1.supplier_id IS NULL THEN p1.supplier_name ELSE '' END,
+                    p1.product_url
                 ORDER BY p1.created_at DESC, p1.id DESC
             ) AS row_num_desc
         FROM po_1688_purchase p1
@@ -213,12 +203,32 @@ SELECT * FROM (
 ```
 
 **判定：**
-- 如果组内只有一条记录 → `row_num_asc = row_num_desc = 1` → `is_default = 1`
-- 如果组内有多条记录 → `row_num_asc = 1`，`row_num_desc > 1` → `is_default = 0`
+- 组内只有一条 → `row_num_asc = row_num_desc = 1` → `is_default = 1`
+- 组内有多条 → `row_num_asc = 1`，`row_num_desc > 1` → `is_default = 0`
 
-**性能权衡：** v5 仅插入每组最早一条；该组若有更新历史，最新默认通过当前采购时的 PUT/POST `is_default=true` 自然更新（见 §4），或用户在"选择 URL + 设为默认"操作。
+**幂等 NOT EXISTS（v6 同步）：**
+```sql
+WHERE NOT EXISTS (
+    SELECT 1 FROM prd_product_supplier_url psu2 
+    WHERE psu2.product_id = p1.product_id 
+      AND psu2.url = p1.product_url
+      AND (
+          (p1.supplier_id IS NOT NULL AND psu2.supplier_id IS NOT NULL 
+           AND COALESCE(psu2.supplier_id, 0) = COALESCE(p1.supplier_id, 0))
+          OR
+          (p1.supplier_id IS NULL AND psu2.supplier_id IS NULL 
+           AND psu2.supplier_name = p1.supplier_name)
+      )
+)
+```
 
-**如果同一组有多条记录且期望保留最新一条：** 可改为 `WHERE p.row_num_desc = 1`（保留最新），但同时保留最早一条需要双 INSERT。这里根据"YAGNI"选择最简：保留最早一条作历史，组内仅一条时它同时作为默认。
+**决策表：**
+
+| 决策 | 理由 |
+|------|------|
+| PARTITION BY 增加 NULL 供应商按 supplier_name 分组 | 不同历史供应商的 URL 不被合并 |
+| `row_num_asc = row_num_desc` 判断默认 | 组内唯一一条时自然为默认，多条时最早条不是默认 |
+| NOT EXISTS 双分支 | supplier_id 非 NULL 时按 COALESCE 匹配；IS NULL 时按 supplier_name 匹配 |
 
 **供应商关联回填（只有精确匹配）：**
 

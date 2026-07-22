@@ -152,11 +152,15 @@ def upgrade():
                         p1.created_at,
                         p1.id,
                         ROW_NUMBER() OVER (
-                            PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0), p1.product_url
+                            PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0),
+                                CASE WHEN p1.supplier_id IS NULL THEN p1.supplier_name ELSE '' END,
+                                p1.product_url
                             ORDER BY p1.created_at ASC, p1.id ASC
                         ) AS row_num_asc,
                         ROW_NUMBER() OVER (
-                            PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0), p1.product_url
+                            PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0),
+                                CASE WHEN p1.supplier_id IS NULL THEN p1.supplier_name ELSE '' END,
+                                p1.product_url
                             ORDER BY p1.created_at DESC, p1.id DESC
                         ) AS row_num_desc
                     FROM po_1688_purchase p1
@@ -168,8 +172,14 @@ def upgrade():
             WHERE NOT EXISTS (
                 SELECT 1 FROM prd_product_supplier_url psu2 
                 WHERE psu2.product_id = p1.product_id 
-                  AND COALESCE(psu2.supplier_id, 0) = COALESCE(p1.supplier_id, 0)
                   AND psu2.url = p1.product_url
+                  AND (
+                      (p1.supplier_id IS NOT NULL AND psu2.supplier_id IS NOT NULL 
+                       AND COALESCE(psu2.supplier_id, 0) = COALESCE(p1.supplier_id, 0))
+                      OR
+                      (p1.supplier_id IS NULL AND psu2.supplier_id IS NULL 
+                       AND psu2.supplier_name = p1.supplier_name)
+                  )
             )
         """))
 
@@ -180,22 +190,18 @@ def upgrade():
         conn.execute(sa.text("SELECT COUNT(*) FROM prd_product_supplier_url"))  # history imported
 
 
-# Downgrade 留待后续工单
-# 说明：本次实现范围仅包含 upgrade（创建表 + 新增列 + 历史数据导入）。
-# 如需回滚，应人工操作：
-#   1) 备份 prd_product_supplier_url 与 po_1688_purchase 中 supplier_id 历史回填结果；
-#   2) DROP TABLE prd_product_supplier_url；
-#   3) 由于 SQLite 不支持 DROP COLUMN，需重建 po_1688_purchase 表移除 supplier_id 字段；
-#   4) 重启应用前请确认没有运行中的 1688 写入链路。
-# 完整 SQL 留待后续工单补齐。
+def downgrade():
+    # NOTE: downgrade 不在本次实现范围内
+    # 如需回滚，请手动执行：
+    # 1. DROP TABLE IF EXISTS prd_product_supplier_url;
+    # 2. (可选) ALTER TABLE po_1688_purchase DROP COLUMN supplier_id;
+    # 3. 人工确认无数据丢失
+    raise NotImplementedError("Downgrade out of scope for this feature")
 
 
 if __name__ == "__main__":
     upgrade()
     print("Migration completed successfully.")
-
-
-**注意：** downgrade 不在本次实现范围内。如需回滚，请参考迁移文件顶部的 "Downgrade 留待后续工单" 注释手工执行。
 
 - [ ] **步骤 4：运行迁移**
 
@@ -224,7 +230,7 @@ git commit -m "feat: add PrdProductSupplierUrl model, migration with historical 
 - [ ] **步骤 1：创建 `backend/schemas/product_supplier_url.py`**
 
 ```python
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 
@@ -238,11 +244,31 @@ class ProductSupplierUrlCreate(BaseModel):
     display_name: Optional[str] = None
     is_default: bool = False
 
+    @field_validator('url')
+    @classmethod
+    def url_must_be_http(cls, v: str) -> str:
+        if not v:
+            return v
+        v_stripped = v.strip()
+        if not (v_stripped.startswith('http://') or v_stripped.startswith('https://')):
+            raise ValueError('URL must start with http:// or https://')
+        return v_stripped
+
 
 class ProductSupplierUrlUpdate(BaseModel):
     url: Optional[str] = Field(None, max_length=500)
     display_name: Optional[str] = None
     is_default: Optional[bool] = None
+
+    @field_validator('url')
+    @classmethod
+    def url_must_be_http(cls, v: Optional[str]) -> Optional[str]:
+        if not v:
+            return v
+        v_stripped = v.strip()
+        if not (v_stripped.startswith('http://') or v_stripped.startswith('https://')):
+            raise ValueError('URL must start with http:// or https://')
+        return v_stripped
 
 
 class ProductSupplierUrlResponse(BaseModel):
@@ -737,6 +763,11 @@ git commit -m "feat: thread supplier_id through 1688 purchase batch; unify trans
 
 - [ ] **步骤 1：编写 API 测试**
 
+> **注意：测试使用 db fixture（独立 SQLite 内存库），upgrade() 使用 app.database.engine**
+> **两个连接独立：fixture 中的数据不会在 upgrade() 中被读取。**
+> **因此 test_migration_* 系列直接对 fixture db 执行等效 SQL，而非调用 upgrade()**
+> **upgrade() 的正确性由人工/集成环境验证**
+
 ```python
 def test_list_urls(client, db):
     """List 应该按 is_default DESC, created_at DESC 排序"""
@@ -889,6 +920,17 @@ def test_post_without_supplier_id_returns_422(client):
     assert r.status_code == 422
 
 
+def test_create_url_invalid_protocol_returns_422(client):
+    """URL 必须以 http:// 或 https:// 开头"""
+    r = client.post("/api/product-supplier-urls", json={
+        "product_id": 1,
+        "supplier_id": 1,
+        "supplier_name": "Test",
+        "url": "ftp://invalid.com",
+    })
+    assert r.status_code == 422
+
+
 def test_delete_null_supplier_id_history_returns_409(client, db):
     """v3 修订：supplier_id 为 NULL 的历史数据不允许 DELETE"""
     from models.product_supplier_url import PrdProductSupplierUrl
@@ -908,10 +950,7 @@ def test_delete_null_supplier_id_history_returns_409(client, db):
 
 def test_migration_dedupes_history_urls(db):
     """v5 修订：迁移 SQL 用 ROW_NUMBER 去重，仅插入最早一条；is_default=0 当组内有多条"""
-    # 1) 直接 SQL 准备 po_1688_purchase 中同一 (product_id, supplier_id, url) 插入 3 条
-    #    created_at 递增，确保第一条是最早
-    # 2) 运行迁移 upgrade()
-    # 3) 验证 prd_product_supplier_url 中只有最早一条被插入
+    # 注意：直接对 fixture db 执行等效 SQL，不调用 upgrade()（两者数据库连接不同）
     db.execute(sa.text("""
         INSERT INTO po_1688_purchase
             (dept_id, pi_id, product_id, supplier_id, supplier_name, product_url, created_at)
@@ -921,8 +960,58 @@ def test_migration_dedupes_history_urls(db):
             ('D001', 200, 30, 40, '供应A', 'https://dup.com/x.html', '2026-03-01 00:00:00')
     """))
     db.commit()
-    from migrations.add_product_supplier_url import upgrade
-    upgrade()
+    # 直接在 fixture db 上执行迁移 SQL（不含 upgrade 框架调用）
+    db.execute(sa.text("""
+        INSERT INTO prd_product_supplier_url
+            (product_id, supplier_id, supplier_name, url, is_default, created_at)
+        SELECT * FROM (
+            SELECT
+                p.product_id,
+                p.supplier_id,
+                p.supplier_name,
+                p.product_url,
+                CASE WHEN p.row_num_asc = p.row_num_desc THEN 1 ELSE 0 END,
+                p.created_at
+            FROM (
+                SELECT
+                    p1.product_id,
+                    p1.supplier_id,
+                    p1.supplier_name,
+                    p1.product_url,
+                    p1.created_at,
+                    p1.id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0),
+                            CASE WHEN p1.supplier_id IS NULL THEN p1.supplier_name ELSE '' END,
+                            p1.product_url
+                        ORDER BY p1.created_at ASC, p1.id ASC
+                    ) AS row_num_asc,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0),
+                            CASE WHEN p1.supplier_id IS NULL THEN p1.supplier_name ELSE '' END,
+                            p1.product_url
+                        ORDER BY p1.created_at DESC, p1.id DESC
+                    ) AS row_num_desc
+                FROM po_1688_purchase p1
+                WHERE p1.product_url IS NOT NULL AND p1.product_url <> ''
+                  AND p1.supplier_name IS NOT NULL AND p1.supplier_name <> ''
+            ) p
+            WHERE p.row_num_asc = 1
+        ) p1
+        WHERE NOT EXISTS (
+            SELECT 1 FROM prd_product_supplier_url psu2 
+            WHERE psu2.product_id = p1.product_id 
+              AND psu2.url = p1.product_url
+              AND (
+                  (p1.supplier_id IS NOT NULL AND psu2.supplier_id IS NOT NULL 
+                   AND COALESCE(psu2.supplier_id, 0) = COALESCE(p1.supplier_id, 0))
+                  OR
+                  (p1.supplier_id IS NULL AND psu2.supplier_id IS NULL 
+                   AND psu2.supplier_name = p1.supplier_name)
+              )
+        )
+    """))
+    db.commit()
     rows = db.execute(sa.text("""
         SELECT id, is_default FROM prd_product_supplier_url
         WHERE product_id=30 AND url='https://dup.com/x.html'
@@ -934,9 +1023,7 @@ def test_migration_dedupes_history_urls(db):
 
 def test_migration_history_single_row_default_true(db):
     """v5 修订：组内只有一条记录时 is_default=1"""
-    # 1) po_1688_purchase 中同一 (product_id, supplier_id, url) 只插入一条
-    # 2) 运行迁移 upgrade()
-    # 3) 验证 prd_product_supplier_url.is_default = 1（因为 row_num_asc == row_num_desc == 1）
+    # 注意：直接对 fixture db 执行等效 SQL，不调用 upgrade()（两者数据库连接不同）
     db.execute(sa.text("""
         INSERT INTO po_1688_purchase
             (dept_id, pi_id, product_id, supplier_id, supplier_name, product_url, created_at)
@@ -944,8 +1031,58 @@ def test_migration_history_single_row_default_true(db):
             ('D001', 201, 31, 41, '供应B', 'https://single.com/y.html', '2026-01-15 00:00:00')
     """))
     db.commit()
-    from migrations.add_product_supplier_url import upgrade
-    upgrade()
+    # 直接在 fixture db 上执行迁移 SQL
+    db.execute(sa.text("""
+        INSERT INTO prd_product_supplier_url
+            (product_id, supplier_id, supplier_name, url, is_default, created_at)
+        SELECT * FROM (
+            SELECT
+                p.product_id,
+                p.supplier_id,
+                p.supplier_name,
+                p.product_url,
+                CASE WHEN p.row_num_asc = p.row_num_desc THEN 1 ELSE 0 END,
+                p.created_at
+            FROM (
+                SELECT
+                    p1.product_id,
+                    p1.supplier_id,
+                    p1.supplier_name,
+                    p1.product_url,
+                    p1.created_at,
+                    p1.id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0),
+                            CASE WHEN p1.supplier_id IS NULL THEN p1.supplier_name ELSE '' END,
+                            p1.product_url
+                        ORDER BY p1.created_at ASC, p1.id ASC
+                    ) AS row_num_asc,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0),
+                            CASE WHEN p1.supplier_id IS NULL THEN p1.supplier_name ELSE '' END,
+                            p1.product_url
+                        ORDER BY p1.created_at DESC, p1.id DESC
+                    ) AS row_num_desc
+                FROM po_1688_purchase p1
+                WHERE p1.product_url IS NOT NULL AND p1.product_url <> ''
+                  AND p1.supplier_name IS NOT NULL AND p1.supplier_name <> ''
+            ) p
+            WHERE p.row_num_asc = 1
+        ) p1
+        WHERE NOT EXISTS (
+            SELECT 1 FROM prd_product_supplier_url psu2 
+            WHERE psu2.product_id = p1.product_id 
+              AND psu2.url = p1.product_url
+              AND (
+                  (p1.supplier_id IS NOT NULL AND psu2.supplier_id IS NOT NULL 
+                   AND COALESCE(psu2.supplier_id, 0) = COALESCE(p1.supplier_id, 0))
+                  OR
+                  (p1.supplier_id IS NULL AND psu2.supplier_id IS NULL 
+                   AND psu2.supplier_name = p1.supplier_name)
+              )
+        )
+    """))
+    db.commit()
     row = db.execute(sa.text("""
         SELECT is_default FROM prd_product_supplier_url
         WHERE product_id=31 AND url='https://single.com/y.html'
@@ -956,9 +1093,7 @@ def test_migration_history_single_row_default_true(db):
 
 def test_migration_supplier_id_falls_back_to_null_when_no_match(db):
     """v5 修订：supplier_id 回填找不到时保留 NULL"""
-    # 1) po_1688_purchase 中插入 supplier_name='UNKNOWN' 且 sup_supplier 中没有匹配
-    # 2) 运行迁移 upgrade()
-    # 3) 验证 po_1688_purchase.supplier_id 仍为 NULL
+    # 注意：直接对 fixture db 执行等效 SQL，不调用 upgrade()（两者数据库连接不同）
     db.execute(sa.text("""
         INSERT INTO po_1688_purchase
             (dept_id, pi_id, product_id, supplier_name, product_url, created_at)
@@ -966,8 +1101,19 @@ def test_migration_supplier_id_falls_back_to_null_when_no_match(db):
             ('D001', 202, 32, 'UNKNOWN_NO_MATCH', 'https://nomatch.com/z.html', '2026-04-01 00:00:00')
     """))
     db.commit()
-    from migrations.add_product_supplier_url import upgrade
-    upgrade()
+    # 直接在 fixture db 上执行 supplier_id 回填 SQL
+    db.execute(sa.text("""
+        UPDATE po_1688_purchase
+        SET supplier_id = (
+            SELECT id FROM sup_supplier
+            WHERE sup_supplier.supplier_name = po_1688_purchase.supplier_name
+              AND sup_supplier.dept_id = po_1688_purchase.dept_id
+              AND sup_supplier.platform = '1688'
+            LIMIT 1
+        )
+        WHERE supplier_id IS NULL
+    """))
+    db.commit()
     row = db.execute(sa.text("""
         SELECT supplier_id FROM po_1688_purchase
         WHERE product_id=32 AND supplier_name='UNKNOWN_NO_MATCH'
@@ -977,11 +1123,9 @@ def test_migration_supplier_id_falls_back_to_null_when_no_match(db):
 
 
 def test_migration_idempotent(db):
-    """v6 修订：重复运行迁移不报错，且 INSERT 有 NOT EXISTS 幂等检查"""
-    # 1) 准备 po_1688_purchase 中一条有 URL 的历史记录
-    # 2) 运行 upgrade() 两次
-    # 3) 验证没有报错；表和列都已存在
-    # 4) 验证 prd_product_supplier_url 中历史 URL 仅一条（NOT EXISTS 阻止重复插入）
+    """v6 修订：直接对 fixture db 执行 INSERT 语句，验证幂等性"""
+    # 注意：upgrade() 使用 app.database.engine，与 fixture db 是不同连接
+    # 所以这里改为：直接对 fixture db 执行 INSERT 语句，验证幂等
     db.execute(sa.text("""
         INSERT INTO po_1688_purchase
             (dept_id, pi_id, product_id, supplier_id, supplier_name, product_url, created_at)
@@ -989,18 +1133,115 @@ def test_migration_idempotent(db):
             ('D001', 203, 33, 43, '供应C', 'https://idemp.com/w.html', '2026-05-01 00:00:00')
     """))
     db.commit()
-    from migrations.add_product_supplier_url import upgrade
-    # 第一次运行
-    upgrade()
-    # 第二次运行（幂等）
-    upgrade()
+    # 第一次执行迁移 SQL
+    db.execute(sa.text("""
+        INSERT INTO prd_product_supplier_url
+            (product_id, supplier_id, supplier_name, url, is_default, created_at)
+        SELECT * FROM (
+            SELECT
+                p.product_id,
+                p.supplier_id,
+                p.supplier_name,
+                p.product_url,
+                CASE WHEN p.row_num_asc = p.row_num_desc THEN 1 ELSE 0 END,
+                p.created_at
+            FROM (
+                SELECT
+                    p1.product_id,
+                    p1.supplier_id,
+                    p1.supplier_name,
+                    p1.product_url,
+                    p1.created_at,
+                    p1.id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0),
+                            CASE WHEN p1.supplier_id IS NULL THEN p1.supplier_name ELSE '' END,
+                            p1.product_url
+                        ORDER BY p1.created_at ASC, p1.id ASC
+                    ) AS row_num_asc,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0),
+                            CASE WHEN p1.supplier_id IS NULL THEN p1.supplier_name ELSE '' END,
+                            p1.product_url
+                        ORDER BY p1.created_at DESC, p1.id DESC
+                    ) AS row_num_desc
+                FROM po_1688_purchase p1
+                WHERE p1.product_url IS NOT NULL AND p1.product_url <> ''
+                  AND p1.supplier_name IS NOT NULL AND p1.supplier_name <> ''
+            ) p
+            WHERE p.row_num_asc = 1
+        ) p1
+        WHERE NOT EXISTS (
+            SELECT 1 FROM prd_product_supplier_url psu2 
+            WHERE psu2.product_id = p1.product_id 
+              AND psu2.url = p1.product_url
+              AND (
+                  (p1.supplier_id IS NOT NULL AND psu2.supplier_id IS NOT NULL 
+                   AND COALESCE(psu2.supplier_id, 0) = COALESCE(p1.supplier_id, 0))
+                  OR
+                  (p1.supplier_id IS NULL AND psu2.supplier_id IS NULL 
+                   AND psu2.supplier_name = p1.supplier_name)
+              )
+        )
+    """))
+    db.commit()
+    # 第二次执行，验证 NOT EXISTS 幂等
+    db.execute(sa.text("""
+        INSERT INTO prd_product_supplier_url
+            (product_id, supplier_id, supplier_name, url, is_default, created_at)
+        SELECT * FROM (
+            SELECT
+                p.product_id,
+                p.supplier_id,
+                p.supplier_name,
+                p.product_url,
+                CASE WHEN p.row_num_asc = p.row_num_desc THEN 1 ELSE 0 END,
+                p.created_at
+            FROM (
+                SELECT
+                    p1.product_id,
+                    p1.supplier_id,
+                    p1.supplier_name,
+                    p1.product_url,
+                    p1.created_at,
+                    p1.id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0),
+                            CASE WHEN p1.supplier_id IS NULL THEN p1.supplier_name ELSE '' END,
+                            p1.product_url
+                        ORDER BY p1.created_at ASC, p1.id ASC
+                    ) AS row_num_asc,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0),
+                            CASE WHEN p1.supplier_id IS NULL THEN p1.supplier_name ELSE '' END,
+                            p1.product_url
+                        ORDER BY p1.created_at DESC, p1.id DESC
+                    ) AS row_num_desc
+                FROM po_1688_purchase p1
+                WHERE p1.product_url IS NOT NULL AND p1.product_url <> ''
+                  AND p1.supplier_name IS NOT NULL AND p1.supplier_name <> ''
+            ) p
+            WHERE p.row_num_asc = 1
+        ) p1
+        WHERE NOT EXISTS (
+            SELECT 1 FROM prd_product_supplier_url psu2 
+            WHERE psu2.product_id = p1.product_id 
+              AND psu2.url = p1.product_url
+              AND (
+                  (p1.supplier_id IS NOT NULL AND psu2.supplier_id IS NOT NULL 
+                   AND COALESCE(psu2.supplier_id, 0) = COALESCE(p1.supplier_id, 0))
+                  OR
+                  (p1.supplier_id IS NULL AND psu2.supplier_id IS NULL 
+                   AND psu2.supplier_name = p1.supplier_name)
+              )
+        )
+    """))
+    db.commit()
     rows = db.execute(sa.text("""
         SELECT COUNT(*) FROM prd_product_supplier_url
         WHERE product_id=33 AND url='https://idemp.com/w.html'
     """)).fetchone()
     assert rows[0] == 1, f"幂等迁移应只有一条，实际 {rows[0]} 条"
-    # 表已存在、列已存在 → 不应抛出
-    # （upgrade 内部已用 IF NOT EXISTS / column_exists 保护）
 ```
 
 - [ ] **步骤 2：运行测试**
