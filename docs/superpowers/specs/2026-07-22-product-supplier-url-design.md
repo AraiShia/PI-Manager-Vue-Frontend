@@ -55,9 +55,18 @@ supplier_id = Column(Integer, ForeignKey("sup_supplier.id"), nullable=True)
 
 ### 2.3 数据库迁移
 
+**幂等保护（v5 新增）：** 迁移脚本对所有修改显式判断，避免重复运行报错：
+
+| 操作 | 幂等条件 |
+|------|---------|
+| `CREATE TABLE` | `CREATE TABLE IF NOT EXISTS` |
+| `CREATE INDEX` | `CREATE INDEX IF NOT EXISTS` |
+| `ALTER TABLE ADD COLUMN` | 通过 `pragma_table_info('po_1688_purchase')` 检查列是否存在，存在则跳过 |
+| `UPDATE` 回填 | `WHERE supplier_id IS NULL` 限制只更新未匹配项 |
+
 **新表创建：**
 ```sql
-CREATE TABLE prd_product_supplier_url (
+CREATE TABLE IF NOT EXISTS prd_product_supplier_url (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   product_id INTEGER NOT NULL,
   supplier_id INTEGER,
@@ -69,21 +78,16 @@ CREATE TABLE prd_product_supplier_url (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(product_id, supplier_id, url)
 );
-CREATE INDEX ix_psu_supplier ON prd_product_supplier_url(supplier_id);
-CREATE INDEX ix_psu_product ON prd_product_supplier_url(product_id);
+CREATE INDEX IF NOT EXISTS ix_psu_supplier ON prd_product_supplier_url(supplier_id);
+CREATE INDEX IF NOT EXISTS ix_psu_product ON prd_product_supplier_url(product_id);
 ```
 
 **`po_1688_purchase` 迁移：**
 ```sql
 ALTER TABLE po_1688_purchase ADD COLUMN supplier_id INTEGER REFERENCES sup_supplier(id);
-UPDATE po_1688_purchase
-SET supplier_id = (
-    SELECT id FROM sup_supplier
-    WHERE sup_supplier.supplier_name = po_1688_purchase.supplier_name
-    LIMIT 1
-)
-WHERE supplier_id IS NULL;
 ```
+
+**v5 修订：** po_1688_purchase.supplier_id 回填**只**使用精确版本（下方"供应商关联回填"段）。删除早期宽松 `WHERE sup_supplier.supplier_name = po_1688_purchase.supplier_name LIMIT 1` 的更新语句——它会跨部门错配，精确版本只能改未匹配项，无法回滚错填。
 
 **历史数据导入（新表，v4 修订）：**
 
@@ -161,9 +165,19 @@ CASE WHEN p.id = p.max_id_in_group THEN 1 ELSE 0 END  -- is_default
 
 这样保证 `created_at` 相同时仍确定性的、最新的（id 最大）一条为默认。
 
-**完整最终 SQL：**
+**完整最终 SQL（v5 修订）：**
+
+**v5 关键修订：** 只保留每组最早一条是不够的——只有最早一条时，组内最新记录丢失；多条的组中最早一条永远不是默认。
+
+**新策略：**
+- 同一 `(product_id, supplier_id, url)` 组中只保留最早一条（持久化历史早期使用）
+- 该条记录的 `is_default=1` 当且仅当**该组只有一条记录**（即"最早 = 最新"，是组内唯一记录）
+- 如果该组有多条记录（同一 URL 多次使用），则最早记录的 `is_default=0`；最新使用仍然存在 `po_1688_purchase` 历史中，将来用户重新购买时会再写入新 URL 记录覆盖默认值
+
+**SQL 实现：**
 
 ```sql
+-- 仅插入每组最早一条；is_default = 1 iff 该组只有一条
 INSERT INTO prd_product_supplier_url
     (product_id, supplier_id, supplier_name, url, is_default, created_at)
 SELECT * FROM (
@@ -172,7 +186,7 @@ SELECT * FROM (
         p.supplier_id,
         p.supplier_name,
         p.product_url,
-        CASE WHEN p.id = p.max_id_in_group THEN 1 ELSE 0 END,
+        CASE WHEN p.row_num_asc = p.row_num_desc THEN 1 ELSE 0 END,
         p.created_at
     FROM (
         SELECT
@@ -186,9 +200,10 @@ SELECT * FROM (
                 PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0), p1.product_url
                 ORDER BY p1.created_at ASC, p1.id ASC
             ) AS row_num_asc,
-            MAX(p1.id) OVER (
+            ROW_NUMBER() OVER (
                 PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0), p1.product_url
-            ) AS max_id_in_group
+                ORDER BY p1.created_at DESC, p1.id DESC
+            ) AS row_num_desc
         FROM po_1688_purchase p1
         WHERE p1.product_url IS NOT NULL AND p1.product_url <> ''
           AND p1.supplier_name IS NOT NULL AND p1.supplier_name <> ''
@@ -197,7 +212,15 @@ SELECT * FROM (
 ) final;
 ```
 
-**供应商关联回填（只有精确匹配，不留宽松默认）：**
+**判定：**
+- 如果组内只有一条记录 → `row_num_asc = row_num_desc = 1` → `is_default = 1`
+- 如果组内有多条记录 → `row_num_asc = 1`，`row_num_desc > 1` → `is_default = 0`
+
+**性能权衡：** v5 仅插入每组最早一条；该组若有更新历史，最新默认通过当前采购时的 PUT/POST `is_default=true` 自然更新（见 §4），或用户在"选择 URL + 设为默认"操作。
+
+**如果同一组有多条记录且期望保留最新一条：** 可改为 `WHERE p.row_num_desc = 1`（保留最新），但同时保留最早一条需要双 INSERT。这里根据"YAGNI"选择最简：保留最早一条作历史，组内仅一条时它同时作为默认。
+
+**供应商关联回填（只有精确匹配）：**
 
 ```sql
 -- 仅有精细版本：无 dept_id+platform+supplier_name 完全匹配时 supplier_id 保持 NULL

@@ -83,9 +83,15 @@ import sqlalchemy as sa
 from database import engine
 
 
+def column_exists(conn, table: str, column: str) -> bool:
+    """v5 修订：幂等保护——检查列是否存在"""
+    rows = conn.execute(sa.text(f"PRAGMA table_info({table})")).fetchall()
+    return any(r[1] == column for r in rows)
+
+
 def upgrade():
     with engine.begin() as conn:
-        # 1. 新表
+        # 1. 新表（IF NOT EXISTS 幂等）
         conn.execute(sa.text("""
             CREATE TABLE IF NOT EXISTS prd_product_supplier_url (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,10 +111,13 @@ def upgrade():
         conn.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_psu_supplier ON prd_product_supplier_url(supplier_id)"))
         conn.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_psu_product ON prd_product_supplier_url(product_id)"))
 
-        # 2. po_1688_purchase 新增 supplier_id
-        conn.execute(sa.text("ALTER TABLE po_1688_purchase ADD COLUMN supplier_id INTEGER REFERENCES sup_supplier(id)"))
+        # 2. po_1688_purchase 新增 supplier_id（v5 幂等保护：列存在时跳过）
+        if not column_exists(conn, "po_1688_purchase", "supplier_id"):
+            conn.execute(sa.text("""
+                ALTER TABLE po_1688_purchase ADD COLUMN supplier_id INTEGER REFERENCES sup_supplier(id)
+            """))
 
-        # 3. 历史数据按 (dept_id + supplier_name + platform='1688') 回填 supplier_id
+        # 3. 历史 supplier_id 回填（仅精确版本，v5 唯一 supplier_id 回填语句）
         conn.execute(sa.text("""
             UPDATE po_1688_purchase
             SET supplier_id = (
@@ -121,10 +130,7 @@ def upgrade():
             WHERE supplier_id IS NULL
         """))
 
-        # 3.1 记录仍未匹配的 supplier_id（保留 NULL）
-        # 由运维人员手动 SELECT COUNT(*) FROM po_1688_purchase WHERE supplier_id IS NULL
-
-        # 4. 历史 URL 导入新表（v4 修订：用 max_id_in_group 判断 is_default，过滤 supplier_name 空值）
+        # 4. 历史 URL 导入新表（v5：用 row_num_asc == row_num_desc 判断"该组只有一条"）
         conn.execute(sa.text("""
             INSERT INTO prd_product_supplier_url
                 (product_id, supplier_id, supplier_name, url, is_default, created_at)
@@ -134,7 +140,7 @@ def upgrade():
                     p.supplier_id,
                     p.supplier_name,
                     p.product_url,
-                    CASE WHEN p.id = p.max_id_in_group THEN 1 ELSE 0 END,
+                    CASE WHEN p.row_num_asc = p.row_num_desc THEN 1 ELSE 0 END,
                     p.created_at
                 FROM (
                     SELECT
@@ -148,9 +154,10 @@ def upgrade():
                             PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0), p1.product_url
                             ORDER BY p1.created_at ASC, p1.id ASC
                         ) AS row_num_asc,
-                        MAX(p1.id) OVER (
+                        ROW_NUMBER() OVER (
                             PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0), p1.product_url
-                        ) AS max_id_in_group
+                            ORDER BY p1.created_at DESC, p1.id DESC
+                        ) AS row_num_desc
                     FROM po_1688_purchase p1
                     WHERE p1.product_url IS NOT NULL AND p1.product_url <> ''
                       AND p1.supplier_name IS NOT NULL AND p1.supplier_name <> ''
@@ -784,18 +791,34 @@ def test_delete_null_supplier_id_history_returns_409(client, db):
 
 
 def test_migration_dedupes_history_urls(db):
-    """v3 修订：迁移 SQL 用 ROW_NUMBER 去重，不会触发 UNIQUE 冲突"""
-    # 1) 直接 SQL 准备 po_1688_purchase 多条 (product_id, supplier_id, url) 重复记录
-    # 2) 执行迁移脚本的 INSERT…SELECT FROM (ROW_NUMBER 子查询)
-    # 3) 验证：prd_product_supplier_url 中只插入了最早一条，is_default=1（最新一条）
+    """v5 修订：迁移 SQL 用 ROW_NUMBER 去重，仅插入最早一条；is_default=1 当组内仅一条"""
+    # 1) 直接 SQL 准备 po_1688_purchase 多条 (product_id, supplier_id, url) 重复记录（3 条同 URL）
+    # 2) 运行迁移
+    # 3) 验证 prd_product_supplier_url 中只插入最早一条，且 is_default=0（因为组内有多条）
+    pass
+
+
+def test_migration_history_single_row_default_true(db):
+    """v5 修订：组内只有一条记录时 is_default=1"""
+    # 1) po_1688_purchase 中同一 (product_id, supplier_id, url) 只插入一条
+    # 2) 运行迁移
+    # 3) 验证 prd_product_supplier_url.is_default = 1（因为 row_num_asc == row_num_desc == 1）
     pass
 
 
 def test_migration_supplier_id_falls_back_to_null_when_no_match(db):
-    """v3 修订：supplier_id 回填找不到时保留 NULL（不强行写入错误供应商）"""
+    """v5 修订：supplier_id 回填找不到时保留 NULL"""
     # 1) po_1688_purchase 中插入 supplier_name='UNKNOWN' 且 sup_supplier 中没有匹配
     # 2) 运行迁移
     # 3) 验证 po_1688_purchase.supplier_id 仍为 NULL
+    pass
+
+
+def test_migration_idempotent(db):
+    """v5 修订：重复运行迁移不报错"""
+    # 1) 运行两次 upgrade()
+    # 2) 验证没有报错；表和列都已存在
+    # 3) 验证未重复插入历史 URL（UNIQUE 约束阻止重复）
     pass
 ```
 
@@ -972,9 +995,14 @@ async function onShopUrlChange(url: string) {
 }
 
 function applyShopUrlFromPriority() {
-  // 已有 pi_item.shop_url 不覆盖
-  if (userEditedShopUrl) return
-  if (form.shop_url) return
+  // v5 修订：避免"旧供应商的持久化值 vs 用户当前输入"歧义
+  // 触发时机：仅在 onSupplierSelect 与 onNewSupplierCreated 中显式调用
+  // 不在 open() 启动时调用——避免供应商查询结果返回前误用过期 shop_url
+
+  if (userEditedShopUrl) return  // 用户本会话已编辑（最高优先级）
+  // 注意：这里不判断 form.shop_url 是否存在。
+  // 因为用户切换供应商后，form.shop_url 可能仍是"旧供应商的持久化值"，需要重新加载默认值。
+  // 否则会出现"切换供应商后 URL 没变"的歧义。
 
   // 默认 URL（最高优先级）
   const defaultUrl = supplierUrlOptions.value.find((u) => u.is_default)
@@ -994,6 +1022,10 @@ function applyShopUrlFromPriority() {
   if (supLink) {
     form.shop_url = supLink
     saveField('shop_url', supLink)
+  } else {
+    // 新供应商 / 新产品，没有持久化的旧值时清空，避免切换后延续旧供应商 URL
+    form.shop_url = ''
+    saveField('shop_url', '')
   }
 }
 ```
@@ -1070,14 +1102,19 @@ interface UrlOptionCarrier {
 }
 
 async function reloadAllUrls() {
-  const supplier = pendingSupplierState.supplier
+  // v5 修订：从缓存或 pendingSupplierState 共同解析 supplier；不再使用 selectedSupplier（不存在）
+  const supplier =
+    pendingSupplierState.supplier ||
+    (selectedSupplierId.value != null
+      ? suppliersCache.value.find((s: any) => s.id === selectedSupplierId.value)
+      : null)
   if (!supplier) return
   for (const row of items.value as any[]) {
     if (!row.product_id) continue
     try {
       const res = await productSupplierUrlsApi.list(
         row.product_id,
-        (supplier as any).id,
+        supplier.id,
         supplier.supplier_name,
       )
       row._urlOptions = res.data || []
