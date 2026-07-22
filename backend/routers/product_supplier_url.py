@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 产品-供应商-URL API 路由
+
+事务边界统一：本路由层负责 commit；CRUD 层仅 flush 不 commit。
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 from schemas.product_supplier_url import (
     ProductSupplierUrlCreate,
@@ -31,27 +34,47 @@ def list_urls(
 
 @router.post("", response_model=ProductSupplierUrlResponse)
 def create_url(data: ProductSupplierUrlCreate, db: Session = Depends(get_db)):
-    url, created = crud.create_url(db, data)
-    # 201 Created 表示新建，200 OK 表示已存在
-    if created:
+    """创建 URL。201 = 新建；200 = 已存在（重复 POST 幂等返回）。"""
+    try:
+        url, created = crud.create_url(db, data)
+    except HTTPException:
+        # CRUD 层 4xx 直接透传
+        raise
+    try:
+        db.commit()
+    except IntegrityError:
+        # flush 时未触发的并发约束，统一提交时再次兜底
+        db.rollback()
+        url = crud._refetch_existing(db, data)
+        if not url:
+            raise HTTPException(status_code=409, detail="URL 已存在或并发冲突")
         return JSONResponse(
             content=jsonable_encoder(ProductSupplierUrlResponse.model_validate(url)),
-            status_code=201,
+            status_code=200,
         )
+
+    status_code = 201 if created else 200
     return JSONResponse(
         content=jsonable_encoder(ProductSupplierUrlResponse.model_validate(url)),
-        status_code=200,
+        status_code=status_code,
     )
 
 
 @router.put("/{url_id}", response_model=ProductSupplierUrlResponse)
 def update_url(url_id: int, data: ProductSupplierUrlUpdate, db: Session = Depends(get_db)):
+    """更新 URL。"""
     try:
         url = crud.update_url(db, url_id, data)
     except HTTPException:
         raise
     if not url:
         raise HTTPException(status_code=404, detail="URL not found")
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="URL 已存在或并发冲突")
+    db.refresh(url)
     return url
 
 
@@ -60,8 +83,7 @@ def delete_url(
     url_id: int,
     db: Session = Depends(get_db),
 ):
-    from models.customer import CrmCustomer
-    from models.customer_product import PrdCustomerProduct
+    """删除 URL。删除默认项时自动提升最新一条。"""
     url = crud.get_url(db, url_id)
     if not url:
         raise HTTPException(status_code=404, detail="URL not found")
@@ -69,4 +91,8 @@ def delete_url(
         # 历史只读数据，禁止删除
         raise HTTPException(status_code=409, detail="历史只读数据，禁止删除")
     # TODO: add dept ownership check
+
     crud.delete_url(db, url_id)
+    db.commit()
+    # 路由层返回 204，无 body
+    return None

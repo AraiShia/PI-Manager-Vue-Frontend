@@ -51,7 +51,11 @@ def list_urls(
 
 
 def create_url(db: Session, data: ProductSupplierUrlCreate) -> tuple[PrdProductSupplierUrl, bool]:
-    """创建 URL：supplier_id 已改为必需；处理重复 + is_default 升级 + 并发 IntegrityError"""
+    """创建 URL：supplier_id 已改为必需；处理重复 + is_default 升级 + 并发 IntegrityError
+
+    事务边界：本函数仅 flush，不 commit；由路由层统一提交。
+    返回值：(url, created)。重复 POST 时返回 (existing, False) 以便路由返回 200。
+    """
     if data.supplier_id is None:
         raise HTTPException(status_code=422, detail="supplier_id 不能为空")
 
@@ -74,22 +78,17 @@ def create_url(db: Session, data: ProductSupplierUrlCreate) -> tuple[PrdProductS
         if data.is_default and not existing.is_default:
             _clear_other_defaults(db, data.product_id, data.supplier_id, exclude_id=existing.id)
             existing.is_default = True
-            try:
-                db.commit()
-            except IntegrityError:
-                db.rollback()
-                return _refetch_existing(db, data), False
-            db.refresh(existing)
         return existing, False
 
     if data.is_default:
         _clear_other_defaults(db, data.product_id, data.supplier_id)
 
     url = PrdProductSupplierUrl(**data.model_dump())
+    db.add(url)
     try:
-        db.add(url)
-        db.commit()
+        db.flush()
     except IntegrityError:
+        # 并发场景：另一事务已插入相同 (product_id, supplier_id, url)
         db.rollback()
         return _refetch_existing(db, data), False
     db.refresh(url)
@@ -110,6 +109,7 @@ def get_url(db: Session, url_id: int) -> PrdProductSupplierUrl | None:
 
 
 def update_url(db: Session, url_id: int, data: ProductSupplierUrlUpdate) -> PrdProductSupplierUrl | None:
+    """更新 URL：仅 flush，由路由层统一提交。"""
     url = get_url(db, url_id)
     if not url:
         return None
@@ -135,12 +135,16 @@ def update_url(db: Session, url_id: int, data: ProductSupplierUrlUpdate) -> PrdP
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(url, field, value)
 
-    db.commit()
+    db.flush()
     db.refresh(url)
     return url
 
 
 def delete_url(db: Session, url_id: int) -> bool:
+    """删除 URL：仅 flush；删除默认项后自动提升最新一条为默认。
+
+    返回 was_default 标志，供路由层判断是否需要额外一次提交（提升默认项）。
+    """
     url = get_url(db, url_id)
     if not url:
         return False
@@ -150,19 +154,20 @@ def delete_url(db: Session, url_id: int) -> bool:
         raise HTTPException(status_code=409, detail="历史只读数据，禁止删除")
 
     was_default = url.is_default
+    product_id = url.product_id
+    supplier_id = url.supplier_id
     db.delete(url)
-    db.commit()
+    db.flush()
 
     if was_default:
         # 删除默认 URL 后，自动选择最新一条为默认
         next_default = db.query(PrdProductSupplierUrl).filter(
-            PrdProductSupplierUrl.product_id == url.product_id,
-            PrdProductSupplierUrl.supplier_id == url.supplier_id,
-            PrdProductSupplierUrl.id != url_id,
+            PrdProductSupplierUrl.product_id == product_id,
+            PrdProductSupplierUrl.supplier_id == supplier_id,
         ).order_by(PrdProductSupplierUrl.created_at.desc()).first()
         if next_default:
             next_default.is_default = True
-            db.commit()
+            db.flush()
 
     return True
 
