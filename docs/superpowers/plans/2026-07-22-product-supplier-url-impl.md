@@ -124,7 +124,7 @@ def upgrade():
         # 3.1 记录仍未匹配的 supplier_id（保留 NULL）
         # 由运维人员手动 SELECT COUNT(*) FROM po_1688_purchase WHERE supplier_id IS NULL
 
-        # 4. 历史 URL 导入新表（v3 修订：用 ROW_NUMBER 去重 + 同组最早一条插入）
+        # 4. 历史 URL 导入新表（v4 修订：用 max_id_in_group 判断 is_default，过滤 supplier_name 空值）
         conn.execute(sa.text("""
             INSERT INTO prd_product_supplier_url
                 (product_id, supplier_id, supplier_name, url, is_default, created_at)
@@ -134,7 +134,7 @@ def upgrade():
                     p.supplier_id,
                     p.supplier_name,
                     p.product_url,
-                    CASE WHEN p.row_num_desc = 1 THEN 1 ELSE 0 END,
+                    CASE WHEN p.id = p.max_id_in_group THEN 1 ELSE 0 END,
                     p.created_at
                 FROM (
                     SELECT
@@ -143,26 +143,27 @@ def upgrade():
                         p1.supplier_name,
                         p1.product_url,
                         p1.created_at,
+                        p1.id,
                         ROW_NUMBER() OVER (
-                            PARTITION BY
-                                p1.product_id,
-                                COALESCE(p1.supplier_id, 0),
-                                p1.product_url
+                            PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0), p1.product_url
                             ORDER BY p1.created_at ASC, p1.id ASC
                         ) AS row_num_asc,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY
-                                p1.product_id,
-                                COALESCE(p1.supplier_id, 0),
-                                p1.product_url
-                            ORDER BY p1.created_at DESC, p1.id DESC
-                        ) AS row_num_desc
+                        MAX(p1.id) OVER (
+                            PARTITION BY p1.product_id, COALESCE(p1.supplier_id, 0), p1.product_url
+                        ) AS max_id_in_group
                     FROM po_1688_purchase p1
                     WHERE p1.product_url IS NOT NULL AND p1.product_url <> ''
+                      AND p1.supplier_name IS NOT NULL AND p1.supplier_name <> ''
                 ) p
                 WHERE p.row_num_asc = 1
             ) final
         """))
+
+        # 5. 输出迁移统计
+        conn.execute(sa.text("SELECT COUNT(*) FROM po_1688_purchase"))  # total
+        conn.execute(sa.text("SELECT COUNT(*) FROM po_1688_purchase WHERE supplier_id IS NOT NULL"))  # matched
+        conn.execute(sa.text("SELECT COUNT(*) FROM po_1688_purchase WHERE supplier_id IS NULL"))  # unmatched
+        conn.execute(sa.text("SELECT COUNT(*) FROM prd_product_supplier_url"))  # history imported
 
 
 def downgrade():
@@ -261,6 +262,7 @@ class ProductSupplierUrlResponse(BaseModel):
 
 ```python
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from backend.models.product_supplier_url import PrdProductSupplierUrl
 from backend.schemas.product_supplier_url import ProductSupplierUrlCreate, ProductSupplierUrlUpdate
 from fastapi import HTTPException
@@ -286,7 +288,10 @@ def list_urls(db: Session, product_id: int, supplier_id: int | None = None, supp
 
 
 def create_url(db: Session, data: ProductSupplierUrlCreate) -> tuple[PrdProductSupplierUrl, bool]:
-    """返回 (记录, 是否新建)。URL 重复时返回已有记录，必要时升级 is_default"""
+    """v4 修订：补全默认升级 + 处理并发 IntegrityError"""
+    if data.supplier_id is None:
+        # v4 修订：新建必须传 supplier_id
+        raise HTTPException(status_code=422, detail="supplier_id is required for new URL records")
     existing = db.query(PrdProductSupplierUrl).filter(
         PrdProductSupplierUrl.product_id == data.product_id,
         PrdProductSupplierUrl.supplier_id == data.supplier_id,
@@ -294,10 +299,14 @@ def create_url(db: Session, data: ProductSupplierUrlCreate) -> tuple[PrdProductS
     ).first()
 
     if existing:
-        # 升级默认（如请求要求）
         if data.is_default and not existing.is_default:
-            _promote_to_default(db, existing)
-            db.commit()
+            _clear_other_defaults(db, data.product_id, data.supplier_id, exclude_id=existing.id)
+            existing.is_default = True  # v4 必加
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                return _refetch_existing(db, data), False
             db.refresh(existing)
         return existing, False
 
@@ -305,10 +314,23 @@ def create_url(db: Session, data: ProductSupplierUrlCreate) -> tuple[PrdProductS
         _clear_other_defaults(db, data.product_id, data.supplier_id)
 
     url = PrdProductSupplierUrl(**data.model_dump())
-    db.add(url)
-    db.commit()
+    try:
+        db.add(url)
+        db.commit()
+    except IntegrityError:
+        # 并发：另一个请求已插入
+        db.rollback()
+        return _refetch_existing(db, data), False
     db.refresh(url)
     return url, True
+
+
+def _refetch_existing(db: Session, data: ProductSupplierUrlCreate) -> PrdProductSupplierUrl:
+    return db.query(PrdProductSupplierUrl).filter_by(
+        product_id=data.product_id,
+        supplier_id=data.supplier_id,
+        url=data.url,
+    ).first()
 
 
 def update_url(db: Session, url_id: int, data: ProductSupplierUrlUpdate) -> PrdProductSupplierUrl | None:
@@ -442,10 +464,31 @@ def update_url(url_id: int, data: ProductSupplierUrlUpdate, db: Session = Depend
 
 
 @router.delete("/{url_id}", status_code=204)
-def delete_url(url_id: int, db: Session = Depends(get_db)):
-    ok = crud.delete_url(db, url_id)
-    if not ok:
+def delete_url(
+    url_id: int,
+    db: Session = Depends(get_db),
+    dept_id: str = Depends(get_current_dept_id),   # v4 修订：使用部门依赖
+):
+    from backend.models.customer import CrmCustomer
+    url = crud.get_url(db, url_id)
+    if not url:
         raise HTTPException(status_code=404, detail="URL not found")
+    if url.supplier_id is None:
+        # 旧历史数据，禁止删除
+        raise HTTPException(status_code=409, detail="历史只读数据，禁止删除")
+    # v4 修订：通过 crm_customer.dept_id 间接校验产品归属
+    product = (
+        db.query(PrdCustomerProduct)
+        .join(CrmCustomer, CrmCustomer.id == PrdCustomerProduct.customer_id)
+        .filter(
+            PrdCustomerProduct.id == url.product_id,
+            CrmCustomer.dept_id == dept_id,
+        )
+        .first()
+    )
+    if not product:
+        raise HTTPException(status_code=404, detail="URL 不属于当前部门")
+    crud.delete_url(db, url_id)
 ```
 
 - [ ] **步骤 2：在 `backend/main.py` 中注册路由**
@@ -910,11 +953,13 @@ async function onShopUrlChange(url: string) {
   userEditedShopUrl = true
   if (!url) return
   const pid = item.value?.product_id
-  if (pid && form.supplier_name) {
+  const supplierId = (form.supplier as any)?.id
+  // v4 修订：supplier_id 必填（spec §3.3.1），没有 supplier_id 时跳过远端持久化
+  if (pid && supplierId && form.supplier_name) {
     try {
       await productSupplierUrlsApi.create({
         product_id: pid,
-        supplier_id: (form.supplier as any)?.id ?? null,
+        supplier_id: supplierId,
         supplier_name: form.supplier_name,
         url,
       })
@@ -1057,17 +1102,25 @@ function onItemUrlChange(index: number, url: string) {
 await reloadAllUrls()
 ```
 
-- [ ] **步骤 4：提交（v3 修订：不再写 URL 历史）**
+- [ ] **步骤 4：提交（v4 修订：不再写 URL 历史）**
 
-v3 修订：删除前端的 `persistSupplierUrlsAfterPurchase()`。URL 历史完全由后端事务（任务 4）写入。前端提交时只负责把 `row.link` 放进 `items[i].link` 提交，路由层在同一事务内一并入库。
+v4 修订：删除前端的 `persistSupplierUrlsAfterPurchase()`。URL 历史完全由后端事务（任务 4）写入。前端提交时只负责把 `row.link` 放进 `items[i].link` 提交，路由层在同一事务内一并入库。
+
+**v4 明确顶层 `linkUrl` 与每行 `row.link` 职责：**
+
+| 字段 | 含义 | 提交时写入 |
+|------|------|----------|
+| `linkUrl`（顶层 ref） | 供应商店铺链接 | `PurchaseCreateOnline.shop_link`（不参与每行） |
+| `row.link`（表格行） | 产品 URL | `PurchaseCreateOnline.items[i].link` |
 
 ```typescript
 // PurchaseDialog 的 onSubmit 中，items 已经包含 link：
 const onlinePayload: PurchaseCreateOnline = {
   // ...
+  shop_link: linkUrl.value || null,  // 供应商店铺链接
   items: items.value.map((it: any) => ({
     product_id: it.product_id,
-    link: it.link || null,  // v3 关键：每行独立 URL
+    link: it.link || null,  // v4 关键：每行独立 URL
     // ...其他字段保持原样
   })),
 }
