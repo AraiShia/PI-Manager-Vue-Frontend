@@ -1622,6 +1622,15 @@ function open(source: OrderDetailItem, customerName?: string, customerCountry?: 
   if (!editItem.id || !form.factory_code) {
     form.factory_code = form.customer_model
   }
+  // 已有供应商时，根据平台填入采购方式
+  if (form.supplier) {
+    const platformMap: Record<string, string> = {
+      '1688': '1688平台采购',
+      'wechat': '微信采购',
+      'offline': '线下采购',
+    }
+    form.purchase_option_name = platformMap[(form.supplier as any).platform] || '1688平台采购'
+  }
   initialFormSnapshot.value = createFormSnapshot()
   visible.value = true
 }
