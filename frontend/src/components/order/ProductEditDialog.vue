@@ -389,6 +389,7 @@
                 <FieldInput
                   v-model="form.purchase_option_name"
                   :status="getFieldStatus('purchase_option_name')"
+                  :disabled="formLocked"
                   @blur="saveField('purchase_option_name', form.purchase_option_name)"
                 />
               </div>
@@ -1982,6 +1983,13 @@ function onSupplierSelect(s: Supplier) {
   form.supplier_name = s.supplier_name
   form.supplier = s
   saveField('supplier_name', s.supplier_name)
+  // 根据供应商平台自动填入采购方式
+  const platformMap: Record<string, string> = {
+    '1688': '1688平台采购',
+    'wechat': '微信采购',
+    'offline': '线下采购',
+  }
+  form.purchase_option_name = platformMap[(s as any).platform] || '1688平台采购'
   // 供应商有 shop_link 时自动填入采购链接
   if (s.shop_link) {
     form.shop_url = s.shop_link
@@ -2012,6 +2020,13 @@ async function onNewSupplierCreated(created: Supplier) {
   }
   if (created) {
     form.supplier = created
+    // 根据供应商平台自动填入采购方式
+    const platformMap: Record<string, string> = {
+      '1688': '1688平台采购',
+      'wechat': '微信采购',
+      'offline': '线下采购',
+    }
+    form.purchase_option_name = platformMap[(created as any).platform] || '1688平台采购'
   }
   if (name) {
     saveField('supplier_name', name)
