@@ -30,6 +30,7 @@
               <FieldInput
                 v-model="form.factory_code"
                 :status="getFieldStatus('company_code')"
+                :disabled="formLocked"
                 @blur="saveField('company_code', form.factory_code)"
               />
             </div>
@@ -1617,8 +1618,8 @@ function open(source: OrderDetailItem, customerName?: string, customerCountry?: 
   initFromItem(editItem)
   syncCategoryFromItem()
   syncModelFromItem()
-  // 新增产品时，我司产品编号默认等于客户型号
-  if (!editItem.id) {
+  // 没有我司产品编号时，默认等于客户型号（新增或已有但为空都适用）
+  if (!editItem.id || !form.factory_code) {
     form.factory_code = form.customer_model
   }
   initialFormSnapshot.value = createFormSnapshot()
