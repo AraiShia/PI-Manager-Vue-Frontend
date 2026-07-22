@@ -2000,6 +2000,7 @@ function onSupplierSelect(s: Supplier) {
     'offline': '线下采购',
   }
   form.purchase_option_name = platformMap[(s as any).platform] || '1688平台采购'
+  saveField('purchase_option_name', form.purchase_option_name)
   // 供应商有 shop_link 时自动填入采购链接
   if (s.shop_link) {
     form.shop_url = s.shop_link
@@ -2037,6 +2038,7 @@ async function onNewSupplierCreated(created: Supplier) {
       'offline': '线下采购',
     }
     form.purchase_option_name = platformMap[(created as any).platform] || '1688平台采购'
+    saveField('purchase_option_name', form.purchase_option_name)
   }
   if (name) {
     saveField('supplier_name', name)
