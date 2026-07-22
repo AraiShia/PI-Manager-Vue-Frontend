@@ -27,6 +27,7 @@ from routers.setting import router as setting_router
 from routers.memo_record import router as memo_router
 from routers.order_file import router as order_file_router
 from routers.purchase_package import router as purchase_package_router
+from routers.product_supplier_url import router as product_supplier_url_router
 from routers.order_import import router as order_import_router, product_router as order_product_router
 from routers.export import router as export_router
 from routers.bff import router as bff_router
@@ -87,6 +88,7 @@ app.include_router(setting_router)
 app.include_router(memo_router)
 app.include_router(order_file_router)
 app.include_router(purchase_package_router)
+app.include_router(product_supplier_url_router, prefix="/api")
 app.include_router(export_router)
 app.include_router(bff_router, prefix="/api")
 app.include_router(migration_router)
