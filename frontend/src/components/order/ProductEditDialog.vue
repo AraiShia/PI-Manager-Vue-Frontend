@@ -356,11 +356,23 @@
               <!-- 第4行：供应商链接 + 产品特性内容 -->
               <div class="purchase-cost-head ">供应商链接</div>
               <div class="purchase-cost-cell link-cell">
-                <FieldInput
+                <el-select
                   v-model="form.shop_url"
-                  :status="getFieldStatus('shop_url')"
-                  @blur="saveField('shop_url', form.shop_url)"
-                />
+                  filterable
+                  allow-create
+                  default-first-option
+                  placeholder="选择或输入 1688 链接"
+                  :disabled="formLocked"
+                  style="width: 100%"
+                  @change="onShopUrlChange"
+                >
+                  <el-option
+                    v-for="u in supplierUrlOptions"
+                    :key="u.id || u.url"
+                    :label="u.display_name || u.url"
+                    :value="u.url"
+                  />
+                </el-select>
               </div>
               <div class="purchase-cost-cell invoice-type-cell">
                 <el-select
@@ -674,6 +686,7 @@ import { orderSummaryApi } from '@/api/orderSummary'
 import { type Supplier, pendingSupplierState } from '@/api/suppliers'
 import { productsApi } from '@/api/products'
 import { splitOeInput } from '@/api/customerProduct'
+import { productSupplierUrlsApi, type ProductSupplierUrl } from '@/api/productSupplierUrls'
 import SupplierFormDialog from '@/components/supplier/SupplierFormDialog.vue'
 import SupplierSearchSelect from '@/components/common/SupplierSearchSelect.vue'
 import { apiUrl, assetUrl } from '@/api/base'
@@ -782,6 +795,10 @@ const categories = ref<ProductCategory[]>([])
 const categoryLevel1 = ref('')
 const categoryLevel2 = ref('')
 const inboundRecords = ref<InboundRecord[]>([])
+
+// 供应商 URL 下拉选项
+const supplierUrlOptions = ref<ProductSupplierUrl[]>([])
+let userEditedShopUrl = false
 
 // 新建供应商弹窗
 const newSupplierDialogVisible = ref(false)
@@ -1639,6 +1656,63 @@ function close() {
   visible.value = false
 }
 
+// 加载供应商 URL 历史下拉选项
+async function loadSupplierUrls() {
+  if (!form.supplier_name) { supplierUrlOptions.value = []; return }
+  const pid = (item.value as any)?.product_id
+  if (!pid) { supplierUrlOptions.value = []; return }
+  const supplierId = (form.supplier as any)?.id
+  if (!supplierId) { supplierUrlOptions.value = []; return }
+  try {
+    const res = await productSupplierUrlsApi.list(pid, supplierId, form.supplier_name)
+    supplierUrlOptions.value = res.data || []
+  } catch (e) { supplierUrlOptions.value = [] }
+}
+
+// 1688 链接变更处理
+async function onShopUrlChange(url: string) {
+  userEditedShopUrl = true
+  if (!url) return
+  const pid = (item.value as any)?.product_id
+  const supplierId = (form.supplier as any)?.id
+  if (pid && supplierId && form.supplier_name) {
+    try {
+      await productSupplierUrlsApi.create({
+        product_id: pid,
+        supplier_id: supplierId,
+        supplier_name: form.supplier_name,
+        url,
+      })
+      await loadSupplierUrls()
+    } catch (e) { console.warn('[ProductEditDialog] 保存采购链接失败', e) }
+  }
+  saveField('shop_url', url)
+}
+
+// 根据优先级应用供应商链接
+function applyShopUrlFromPriority() {
+  if (userEditedShopUrl) return
+  const defaultUrl = supplierUrlOptions.value.find(u => u.is_default)
+  if (defaultUrl) {
+    form.shop_url = defaultUrl.url
+    saveField('shop_url', defaultUrl.url)
+    return
+  }
+  if (supplierUrlOptions.value.length > 0) {
+    form.shop_url = supplierUrlOptions.value[0].url
+    saveField('shop_url', form.shop_url)
+    return
+  }
+  const supLink = (form.supplier as any)?.shop_link
+  if (supLink) {
+    form.shop_url = supLink
+    saveField('shop_url', supLink)
+  } else {
+    form.shop_url = ''
+    saveField('shop_url', '')
+  }
+}
+
 async function requestClose(done?: () => void) {
   console.debug('[ProductEdit] requestClose visible=%s hasUnsaved=%s snapshot=%s current=%s',
     visible.value,
@@ -2012,12 +2086,18 @@ function onSupplierSelect(s: Supplier) {
   pendingSupplierState.shop_link = s.shop_link || null
   pendingSupplierState.wechat_id = s.wechat_id || null
   pendingSupplierState.wechat_nickname = s.wechat_nickname || null
+
+  // 加载并应用该供应商的历史 URL
+  await loadSupplierUrls()
+  applyShopUrlFromPriority()
 }
 
 function onSupplierClear() {
   form.supplier_name = ''
   form.supplier = null
   saveField('supplier_name', '')
+  supplierUrlOptions.value = []
+  userEditedShopUrl = false
 }
 
 function openNewSupplierDialog() {
@@ -2049,6 +2129,10 @@ async function onNewSupplierCreated(created: Supplier) {
   pendingSupplierState.shop_link = created?.shop_link || null
   pendingSupplierState.wechat_id = created?.wechat_id || null
   pendingSupplierState.wechat_nickname = created?.wechat_nickname || null
+
+  // 加载并应用该供应商的历史 URL
+  await loadSupplierUrls()
+  applyShopUrlFromPriority()
 }
 
 defineExpose({ open, close })

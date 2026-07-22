@@ -39,6 +39,26 @@
             <el-input-number v-model="row.shipping_fee" :min="0" :precision="2" size="small" @change="recalcTotal($index)" />
           </template>
         </el-table-column>
+        <el-table-column label="1688链接" width="220">
+          <template #default="{ row, $index }">
+            <el-select
+              v-model="row.link"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入链接"
+              size="small"
+              @change="(url: string) => onItemUrlChange($index, url)"
+            >
+              <el-option
+                v-for="u in (row._urlOptions || [])"
+                :key="u.id || u.url"
+                :label="u.display_name || u.url"
+                :value="u.url"
+              />
+            </el-select>
+          </template>
+        </el-table-column>
         <el-table-column label="总金额" width="120">
           <template #default="{ row }">
             <span class="total-amount">{{ formatMoney(row._total || 0) }}</span>
@@ -197,6 +217,7 @@ import { purchaseApi, type PurchasePayload, type PurchaseItem, createOnlinePurch
 import { apiUrl } from '@/api/base'
 import { SUPPLIERS } from '@/api/endpoints'
 import { pendingSupplierState } from '@/api/suppliers'
+import { productSupplierUrlsApi, type ProductSupplierUrl } from '@/api/productSupplierUrls'
 import SupplierFormDialog from '@/components/supplier/SupplierFormDialog.vue'
 import type { Supplier } from '@/api/suppliers'
 import type { OrderDetailItem } from '@/types/orderSummary'
@@ -338,6 +359,8 @@ async function open(
         if (pending.wechat_id) {
           contactWechat.value = pending.wechat_id
         }
+        // 加载所有产品行的 URL 历史下拉
+        await reloadAllUrls()
       } else if (supplierPlatform === 'wechat') {
         // 微信供应商：回填微信号和昵称，不填 1688 店铺名称。
         wechatId.value = pending.wechat_id || pending.supplier!.wechat_id || pending.supplier!.supplier_name || ''
@@ -445,6 +468,29 @@ function resetForm() {
   generateContract.value = true
   invoiceAmount.value = 0
   invoiceCurrency.value = 'CNY'
+}
+
+// URL 选项携带接口（用于扩展 row._urlOptions 类型）
+interface UrlOptionCarrier {
+  _urlOptions?: ProductSupplierUrl[]
+}
+
+// 重新加载所有行的 URL 历史下拉选项
+async function reloadAllUrls() {
+  const supplier = pendingSupplierState.supplier
+  if (!supplier) return
+  for (const row of items.value as any[]) {
+    if (!row.product_id) continue
+    try {
+      const res = await productSupplierUrlsApi.list(row.product_id, supplier.id, supplier.supplier_name)
+      row._urlOptions = res.data || []
+    } catch (e) { row._urlOptions = [] }
+  }
+}
+
+// 行 URL 变更处理（URL 历史由后端事务写入，前端只更新 row.link）
+function onItemUrlChange(index: number, url: string) {
+  ;(items.value[index] as any).link = url
 }
 
 // 加载初始费用（从最近采购记录 + 历史 1688 链接）
