@@ -101,7 +101,19 @@ def upgrade():
                       AND p1.supplier_name IS NOT NULL AND p1.supplier_name <> ''
                 ) p
                 WHERE p.row_num_asc = 1
-            ) final
+            ) p1
+            WHERE NOT EXISTS (
+                SELECT 1 FROM prd_product_supplier_url psu2
+                WHERE psu2.product_id = p1.product_id
+                  AND psu2.url = p1.product_url
+                  AND (
+                      (p1.supplier_id IS NOT NULL AND psu2.supplier_id IS NOT NULL
+                       AND COALESCE(psu2.supplier_id, 0) = COALESCE(p1.supplier_id, 0))
+                      OR
+                      (p1.supplier_id IS NULL AND psu2.supplier_id IS NULL
+                       AND psu2.supplier_name = p1.supplier_name)
+                  )
+            )
         """))
 
         # 5. 输出迁移统计

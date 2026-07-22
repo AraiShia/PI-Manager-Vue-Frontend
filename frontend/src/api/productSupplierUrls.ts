@@ -37,18 +37,18 @@ export const productSupplierUrlsApi = {
     const params = new URLSearchParams({ product_id: String(productId) })
     if (supplierId != null) params.set('supplier_id', String(supplierId))
     if (supplierName) params.set('supplier_name', supplierName)
-    return client.get(`${BASE}?${params.toString()}`)
+    return client.get(`${BASE}?${params.toString()}`).then(r => r.data)
   },
 
   create(data: ProductSupplierUrlCreate): Promise<ProductSupplierUrl> {
-    return client.post(BASE, data)
+    return client.post(BASE, data).then(r => r.data)
   },
 
   update(id: number, data: ProductSupplierUrlUpdate): Promise<ProductSupplierUrl> {
-    return client.put(`${BASE}/${id}`, data)
+    return client.put(`${BASE}/${id}`, data).then(r => r.data)
   },
 
   remove(id: number): Promise<void> {
-    return client.delete(`${BASE}/${id}`)
+    return client.delete(`${BASE}/${id}`).then(r => r.data)
   },
 }

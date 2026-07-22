@@ -1665,7 +1665,7 @@ async function loadSupplierUrls() {
   if (!supplierId) { supplierUrlOptions.value = []; return }
   try {
     const res = await productSupplierUrlsApi.list(pid, supplierId, form.supplier_name)
-    supplierUrlOptions.value = res.data || []
+    supplierUrlOptions.value = res || []
   } catch (e) { supplierUrlOptions.value = [] }
 }
 
@@ -2063,7 +2063,7 @@ async function handleArchiveChange(key: string, file: any) {
 }
 
 // 供应商选择回调（由 SupplierSearchSelect 触发）
-function onSupplierSelect(s: Supplier) {
+async function onSupplierSelect(s: Supplier) {
   form.supplier_name = s.supplier_name
   form.supplier = s
   saveField('supplier_name', s.supplier_name)

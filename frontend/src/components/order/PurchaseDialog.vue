@@ -483,7 +483,7 @@ async function reloadAllUrls() {
     if (!row.product_id) continue
     try {
       const res = await productSupplierUrlsApi.list(row.product_id, supplier.id, supplier.supplier_name)
-      row._urlOptions = res.data || []
+      row._urlOptions = res || []
     } catch (e) { row._urlOptions = [] }
   }
 }
