@@ -362,7 +362,6 @@
                   allow-create
                   default-first-option
                   placeholder="选择或输入 1688 链接"
-                  :disabled="formLocked"
                   style="width: 100%"
                   @change="onShopUrlChange"
                 >
@@ -1628,6 +1627,8 @@ function createFormSnapshot() {
 
 function open(source: OrderDetailItem, customerName?: string, customerCountry?: string, isLocked = false) {
   formLocked.value = isLocked
+  supplierUrlOptions.value = []
+  userEditedShopUrl = false
   const editItem = source as ProductEditItem
   editItem.customer_name = customerName || ''
   editItem.customer_country = customerCountry || ''
