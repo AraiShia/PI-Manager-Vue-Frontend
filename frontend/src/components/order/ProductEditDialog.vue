@@ -1646,10 +1646,14 @@ async function open(source: OrderDetailItem, customerName?: string, customerCoun
   if (form.supplier_name && !form.supplier) {
     try {
       const res = await suppliersApi.list({ skip: 0, limit: 20, keyword: form.supplier_name })
-      const matched = (res.data || []).find((s: Supplier) => s.supplier_name === form.supplier_name)
-      if (matched) form.supplier = matched
+      const matched = (res.data || []).find((s: Supplier) => s.supplier_name?.trim() === form.supplier_name?.trim())
+      if (matched) {
+        form.supplier = matched
+      } else {
+        form.supplier = { id: 0, supplier_name: form.supplier_name } as Supplier
+      }
     } catch {
-      // URL 当前值仍会作为本地候选项保留
+      form.supplier = { id: 0, supplier_name: form.supplier_name } as Supplier
     }
   }
   // 已有供应商时，根据平台填入采购方式
@@ -2042,6 +2046,7 @@ async function onSaveClick() {
       ['purchase_price', form.purchase_price],
       ['product_detail', form.product_detail],
       ['supplier_name', form.supplier_name || form.supplier?.supplier_name || ''],
+      ['factory_name', form.supplier_name || form.supplier?.supplier_name || ''],
       ['carton_length_cm', form.carton_length],
       ['carton_width_cm', form.carton_width],
       ['carton_height_cm', form.carton_height],
