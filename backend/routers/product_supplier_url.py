@@ -48,11 +48,14 @@ def create_url(data: ProductSupplierUrlCreate, db: Session = Depends(get_db)):
         url = crud._refetch_existing(db, data)
         if not url:
             raise HTTPException(status_code=409, detail="URL 已存在或并发冲突")
+        db.refresh(url)
         return JSONResponse(
             content=jsonable_encoder(ProductSupplierUrlResponse.model_validate(url)),
             status_code=200,
         )
 
+    # 刷新以填充 server_default（created_at）字段，避免序列化时 datetime=None
+    db.refresh(url)
     status_code = 201 if created else 200
     return JSONResponse(
         content=jsonable_encoder(ProductSupplierUrlResponse.model_validate(url)),
