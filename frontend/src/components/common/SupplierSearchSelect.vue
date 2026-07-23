@@ -15,7 +15,7 @@
     @visible-change="onVisibleChange"
   >
     <el-option
-      v-for="item in options"
+      v-for="item in computedOptions"
       :key="item.id"
       :label="labelOf(item)"
       :value="item"
@@ -50,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { suppliersApi, type Supplier } from '@/api/suppliers'
 
 interface Props {
@@ -78,6 +78,13 @@ const emit = defineEmits<{
 
 const selectedItem = ref(props.modelValue ?? null)
 const options = ref<Supplier[]>([])
+const computedOptions = computed(() => {
+  const opts = [...options.value]
+  if (selectedItem.value && !opts.some(o => o.id === selectedItem.value!.id)) {
+    opts.unshift(selectedItem.value)
+  }
+  return opts
+})
 const loading = ref(false)
 const keyword = ref('')
 let searchTimer: ReturnType<typeof setTimeout> | null = null
