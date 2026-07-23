@@ -682,7 +682,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Close } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
 import { orderSummaryApi } from '@/api/orderSummary'
-import { type Supplier, pendingSupplierState } from '@/api/suppliers'
+import { suppliersApi, type Supplier, pendingSupplierState } from '@/api/suppliers'
 import { productsApi } from '@/api/products'
 import { splitOeInput } from '@/api/customerProduct'
 import { productSupplierUrlsApi, type ProductSupplierUrl } from '@/api/productSupplierUrls'
@@ -1625,7 +1625,7 @@ function createFormSnapshot() {
   })
 }
 
-function open(source: OrderDetailItem, customerName?: string, customerCountry?: string, isLocked = false) {
+async function open(source: OrderDetailItem, customerName?: string, customerCountry?: string, isLocked = false) {
   formLocked.value = isLocked
   supplierUrlOptions.value = []
   userEditedShopUrl = false
@@ -1651,6 +1651,19 @@ function open(source: OrderDetailItem, customerName?: string, customerCountry?: 
   }
   initialFormSnapshot.value = createFormSnapshot()
   visible.value = true
+
+  // 重新打开时 initFromItem 会清空 form.supplier；按已保存名称恢复供应商，
+  // 这样才能用 supplier_id 加载产品-供应商 URL 历史。
+  if (form.supplier_name && !form.supplier) {
+    try {
+      const res = await suppliersApi.list({ skip: 0, limit: 20, keyword: form.supplier_name })
+      const matched = (res.data || []).find((s: Supplier) => s.supplier_name === form.supplier_name)
+      if (matched) form.supplier = matched
+    } catch {
+      // URL 当前值仍会作为本地候选项保留
+    }
+  }
+  await loadSupplierUrls()
 }
 
 function close() {
@@ -1666,7 +1679,20 @@ async function loadSupplierUrls() {
   if (!supplierId) { supplierUrlOptions.value = []; return }
   try {
     const res = await productSupplierUrlsApi.list(pid, supplierId, form.supplier_name)
-    supplierUrlOptions.value = res || []
+    const options = Array.isArray(res) ? [...res] : []
+    if (form.shop_url && !options.some((u) => u.url === form.shop_url)) {
+      options.unshift({
+        id: 0,
+        product_id: pid,
+        supplier_id: supplierId,
+        supplier_name: form.supplier_name,
+        url: form.shop_url,
+        display_name: null,
+        is_default: false,
+        created_at: '',
+      })
+    }
+    supplierUrlOptions.value = options
   } catch (e) { supplierUrlOptions.value = [] }
 }
 
