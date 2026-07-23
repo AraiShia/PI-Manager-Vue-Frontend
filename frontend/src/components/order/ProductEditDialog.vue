@@ -1676,7 +1676,6 @@ async function loadSupplierUrls() {
   const pid = (item.value as any)?.product_id
   if (!pid) { supplierUrlOptions.value = []; return }
   const supplierId = (form.supplier as any)?.id
-  if (!supplierId) { supplierUrlOptions.value = []; return }
   try {
     const res = await productSupplierUrlsApi.list(pid, supplierId, form.supplier_name)
     const options = Array.isArray(res) ? [...res] : []
@@ -1684,7 +1683,7 @@ async function loadSupplierUrls() {
       options.unshift({
         id: 0,
         product_id: pid,
-        supplier_id: supplierId,
+        supplier_id: supplierId || null,
         supplier_name: form.supplier_name,
         url: form.shop_url,
         display_name: null,
