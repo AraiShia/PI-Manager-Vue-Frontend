@@ -1640,20 +1640,9 @@ async function open(source: OrderDetailItem, customerName?: string, customerCoun
   if (!editItem.id || !form.factory_code) {
     form.factory_code = form.customer_model
   }
-  // 已有供应商时，根据平台填入采购方式
-  if (form.supplier) {
-    const platformMap: Record<string, string> = {
-      '1688': '1688平台采购',
-      'wechat': '微信采购',
-      'offline': '线下采购',
-    }
-    form.purchase_option_name = platformMap[(form.supplier as any).platform] || '1688平台采购'
-  }
-  initialFormSnapshot.value = createFormSnapshot()
-  visible.value = true
-
   // 重新打开时 initFromItem 会清空 form.supplier；按已保存名称恢复供应商，
   // 这样才能用 supplier_id 加载产品-供应商 URL 历史。
+  // 必须在 visible=true 之前完成，否则 SupplierSearchSelect 以 null 挂载导致回填丢失。
   if (form.supplier_name && !form.supplier) {
     try {
       const res = await suppliersApi.list({ skip: 0, limit: 20, keyword: form.supplier_name })
@@ -1663,7 +1652,19 @@ async function open(source: OrderDetailItem, customerName?: string, customerCoun
       // URL 当前值仍会作为本地候选项保留
     }
   }
+  // 已有供应商时，根据平台填入采购方式
+  if (form.supplier) {
+    const platformMap: Record<string, string> = {
+      '1688': '1688平台采购',
+      'wechat': '微信采购',
+      'offline': '线下采购',
+    }
+    form.purchase_option_name = platformMap[(form.supplier as any).platform] || '1688平台采购'
+  }
   await loadSupplierUrls()
+  // 在供应商恢复完毕后再创建快照，避免异步回填造成假的"未保存"脏状态
+  initialFormSnapshot.value = createFormSnapshot()
+  visible.value = true
 }
 
 function close() {
