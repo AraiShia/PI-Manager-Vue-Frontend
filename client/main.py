@@ -1565,10 +1565,11 @@ class SupplierDialog(QDialog):
 
 class MainWindow(QMainWindow):
 
-    def __init__(self, api_client: ApiClient, dept_id: str):
+    def __init__(self, api_client: ApiClient, dept_id: str, index_path: str = None):
         super().__init__()
         self.api_client = api_client
         self.dept_id = dept_id
+        self.index_path = index_path
         # 全局变量
         self.default_profit_margin = 25.0  # 默认毛利率
         self.exchange_rate = 7.24          # 默认汇率
@@ -1900,7 +1901,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(self._web_container_widget)
         layout.setContentsMargins(0, 0, 0, 0)
         if HAS_WEB_CONTAINER:
-            web_view = WebContainerView(get_frontend_url(), self)
+            web_view = WebContainerView(remote_url=None, parent=self, index_path=self.index_path)
         else:
             web_view = QLabel("Web 容器模块不可用（缺少 PySide6 QtWebEngine 组件）")
             web_view.setAlignment(Qt.AlignmentFlag.AlignCenter)

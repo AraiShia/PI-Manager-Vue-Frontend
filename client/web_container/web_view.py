@@ -1,13 +1,15 @@
 """QWebEngineView 封装：Vue SPA 容器"""
+import os
 import urllib.parse
 from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QContextMenuEvent
 from .channel_bridge import NativeBridge
 from .native_api import NativeAPI
 
-# 允许加载的前端域名白名单
+# 允许加载的前端域名白名单（仅 http/https 远程地址生效）
 ALLOWED_HOSTS = (
     'piapi.wakabashia.tj.cn',
     'localhost',
@@ -45,29 +47,8 @@ def build_web_url(remote_url: str, path: str) -> str:
 class WebContainerView(QWebEngineView):
     """Vue SPA 容器，通过 QWebChannel 与 Vue 通信"""
 
-    def __init__(self, remote_url: str = None, parent=None):
+    def __init__(self, remote_url: str = None, parent=None, index_path: str = None):
         super().__init__(parent)
-        if remote_url:
-            # 显式传入的地址也走白名单校验
-            try:
-                self.remote_url = _validate_host(remote_url.rstrip('/'))
-            except ValueError as e:
-                raise ValueError(f'WebContainer 启动失败: {e}') from e
-        else:
-            # 从本地配置读取前端地址
-            try:
-                from config.local_settings_manager import get_frontend_url
-                self.remote_url = _validate_host(get_frontend_url().rstrip('/'))
-            except ValueError as e:
-                raise ValueError(
-                    f'WebContainer 配置非法: {e}。'
-                    f'请在 local_settings.json 中将 frontend_url 设置为白名单内的地址。'
-                ) from e
-            except Exception as e:
-                print(f"[WebContainer] 读取前端地址失败: {e}")
-                # 兜底默认地址也走白名单校验（piapi.wakabashia.tj.cn 已在白名单内）
-                self.remote_url = "https://piapi.wakabashia.tj.cn"
-
         print("[WebContainer] custom contextMenuEvent will suppress native menu")
 
         # 保留默认 page，但安装自定义 channel
@@ -78,7 +59,33 @@ class WebContainerView(QWebEngineView):
         self._native_bridge = NativeBridge(self._native_api)
         self.channel.registerObject('nativeBridge', self._native_bridge)
 
-        self.load(QUrl(self.remote_url))
+        if index_path:
+            # 离线模式：从本地文件路径加载 Vue App
+            self.settings().setAttribute(
+                QWebEngineSettings.LocalContentCanAccessRemoteUrls, True
+            )
+            self.load(QUrl.fromLocalFile(os.path.abspath(index_path)))
+        elif remote_url:
+            # 在线模式：从 HTTP URL 加载
+            try:
+                self.remote_url = _validate_host(remote_url.rstrip('/'))
+            except ValueError as e:
+                raise ValueError(f'WebContainer 启动失败: {e}') from e
+            self.load(QUrl(self.remote_url))
+        else:
+            # 从本地配置读取默认地址
+            try:
+                from config.local_settings_manager import get_frontend_url
+                self.remote_url = _validate_host(get_frontend_url().rstrip('/'))
+            except ValueError as e:
+                raise ValueError(
+                    f'WebContainer 配置非法: {e}。'
+                    f'请在 local_settings.json 中将 frontend_url 设置为白名单内的地址。'
+                ) from e
+            except Exception as e:
+                print(f"[WebContainer] 读取前端地址失败: {e}")
+                self.remote_url = "https://piapi.wakabashia.tj.cn"
+            self.load(QUrl(self.remote_url))
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         """吞掉 QWebEngineView 默认的 Chromium 右键菜单。
@@ -94,7 +101,10 @@ class WebContainerView(QWebEngineView):
         event.accept()
 
     def navigate_to(self, path: str):
-        """路由跳转"""
+        """路由跳转。离线模式（index_path 加载）不支持 navigate_to。"""
+        if not getattr(self, 'remote_url', None):
+            print('[WebContainer] navigate_to 在 index_path 模式下不可用')
+            return
         self.load(QUrl(build_web_url(self.remote_url, path)))
 
     def reload_current(self):
