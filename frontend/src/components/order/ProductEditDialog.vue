@@ -361,16 +361,23 @@
                   filterable
                   allow-create
                   default-first-option
+                  :clearable="!formLocked"
                   placeholder="选择或输入 1688 链接"
                   style="width: 100%"
                   @change="onShopUrlChange"
+                  @clear="onShopUrlClear"
                 >
                   <el-option
-                    v-for="u in supplierUrlOptions"
+                    v-for="u in filteredSupplierUrlOptions"
                     :key="u.id || u.url"
-                    :label="u.display_name || u.url"
+                    :label="formatUrlLabel(u)"
                     :value="u.url"
-                  />
+                  >
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                      <span style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 68%;">{{ formatUrlLabel(u) }}</span>
+                      <span style="color: #909399; font-size: 11px; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ u.url }}</span>
+                    </div>
+                  </el-option>
                 </el-select>
               </div>
               <div class="purchase-cost-cell invoice-type-cell">
@@ -797,7 +804,48 @@ const inboundRecords = ref<InboundRecord[]>([])
 
 // 供应商 URL 下拉选项
 const supplierUrlOptions = ref<ProductSupplierUrl[]>([])
+const initialShopUrl = ref('')
 let userEditedShopUrl = false
+
+const filteredSupplierUrlOptions = computed(() => {
+  if (form.shop_url) {
+    const matched = supplierUrlOptions.value.find(u => u.url === form.shop_url)
+    if (matched) {
+      return [matched]
+    }
+    return [{
+      id: 0,
+      product_id: (item.value as any)?.product_id || 0,
+      supplier_id: (form.supplier as any)?.id || null,
+      supplier_name: form.supplier_name || '',
+      url: form.shop_url,
+      display_name: form.product_name || null,
+      is_default: false,
+      created_at: '',
+    }]
+  }
+  return supplierUrlOptions.value
+})
+
+function formatUrlLabel(u: { url: string; display_name?: string | null }): string {
+  if (u.display_name && u.display_name.trim()) return u.display_name.trim()
+  if (form.product_name && form.product_name.trim()) return form.product_name.trim()
+  return formatUrlFallback(u.url)
+}
+
+function formatUrlFallback(url: string): string {
+  if (!url) return ''
+  const match1688 = url.match(/offer\/(\d+)\.html/)
+  if (match1688) {
+    return `1688商品链接 (#${match1688[1]})`
+  }
+  try {
+    const parsed = new URL(url)
+    return `${parsed.hostname}${parsed.pathname}`
+  } catch {
+    return url
+  }
+}
 
 // 新建供应商弹窗
 const newSupplierDialogVisible = ref(false)
@@ -1629,6 +1677,7 @@ async function open(source: OrderDetailItem, customerName?: string, customerCoun
   formLocked.value = isLocked
   supplierUrlOptions.value = []
   userEditedShopUrl = false
+  initialShopUrl.value = (source as any).shop_url || ''
   const editItem = source as ProductEditItem
   editItem.customer_name = customerName || ''
   editItem.customer_country = customerCountry || ''
@@ -1700,10 +1749,48 @@ async function loadSupplierUrls() {
   } catch (e) { supplierUrlOptions.value = [] }
 }
 
+let isConfirmingUrlClear = false
+
+async function onShopUrlClear() {
+  const previousUrl = initialShopUrl.value || form.shop_url
+  if (!previousUrl) {
+    form.shop_url = ''
+    initialShopUrl.value = ''
+    saveField('shop_url', '')
+    return
+  }
+  isConfirmingUrlClear = true
+  try {
+    await ElMessageBox.confirm(
+      '确认要清空当前供应商链接吗？清空后可重新选择或输入新的链接。',
+      '清空链接确认',
+      {
+        confirmButtonText: '确认清空',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    form.shop_url = ''
+    initialShopUrl.value = ''
+    userEditedShopUrl = true
+    saveField('shop_url', '')
+    ElMessage.success('已清空供应商链接')
+  } catch {
+    form.shop_url = previousUrl
+  } finally {
+    isConfirmingUrlClear = false
+  }
+}
+
 // 1688 链接变更处理
 async function onShopUrlChange(url: string) {
+  if (isConfirmingUrlClear) return
   userEditedShopUrl = true
-  if (!url) return
+  if (!url) {
+    onShopUrlClear()
+    return
+  }
+  initialShopUrl.value = url
   const pid = (item.value as any)?.product_id
   const supplierId = (form.supplier as any)?.id
   if (pid && supplierId && form.supplier_name) {
@@ -1713,6 +1800,7 @@ async function onShopUrlChange(url: string) {
         supplier_id: supplierId,
         supplier_name: form.supplier_name,
         url,
+        display_name: form.product_name || null,
       })
       await loadSupplierUrls()
     } catch (e) { console.warn('[ProductEditDialog] 保存采购链接失败', e) }
@@ -1723,6 +1811,10 @@ async function onShopUrlChange(url: string) {
 // 根据优先级应用供应商链接
 function applyShopUrlFromPriority() {
   if (userEditedShopUrl) return
+  if (initialShopUrl.value) {
+    form.shop_url = initialShopUrl.value
+    return
+  }
   const defaultUrl = supplierUrlOptions.value.find(u => u.is_default)
   if (defaultUrl) {
     form.shop_url = defaultUrl.url
