@@ -61,7 +61,7 @@ if os.path.isdir(keys_src):
 
 a = Analysis(
     [ENTRY_SCRIPT],
-    pathex=[BACKEND_DIR, CLIENT_DIR, PROJECT_ROOT],
+    pathex=[CLIENT_DIR, BACKEND_DIR, PROJECT_ROOT],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
