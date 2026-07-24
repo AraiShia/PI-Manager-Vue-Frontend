@@ -40,16 +40,59 @@ from frontend_manager import FrontendManager
 from qt_bridge import QtBridge
 
 
+# ---- 统一的 Qt 枚举导入 ----
+# PySide6 和 PyQt5 枚举值不同，统一在这里处理
+_QT_IMPORTS = None
+
+
+def _init_qt():
+    global _QT_IMPORTS
+    if _QT_IMPORTS is not None:
+        return _QT_IMPORTS
+    try:
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+        from PySide6.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
+        from PySide6.QtWebChannel import QWebChannel
+        from PySide6.QtCore import QUrl
+        _QT_IMPORTS = {
+            'Qt': Qt,
+            'QApplication': QApplication,
+            'QWebEngineView': QWebEngineView,
+            'QWebEngineSettings': QWebEngineSettings,
+            'QWebChannel': QWebChannel,
+            'QUrl': QUrl,
+            'AA_EnableHighDpiScaling': Qt.ApplicationAttribute.AA_EnableHighDpiScaling,
+            'LocalContentCanAccessRemoteUrls': QWebEngineSettings.LocalContentCanAccessRemoteUrls,
+        }
+        return _QT_IMPORTS
+    except ImportError:
+        from PyQt5.QtCore import Qt, QUrl
+        from PyQt5.QtWidgets import QApplication
+        from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
+        from PyQt5.QtWebChannel import QWebChannel
+        _QT_IMPORTS = {
+            'Qt': Qt,
+            'QApplication': QApplication,
+            'QWebEngineView': QWebEngineView,
+            'QWebEngineSettings': QWebEngineSettings,
+            'QWebChannel': QWebChannel,
+            'QUrl': QUrl,
+            'AA_EnableHighDpiScaling': 20,  # Qt.AA_EnableHighDpiScaling
+            'LocalContentCanAccessRemoteUrls': QWebEngineSettings.LocalContentCanAccessRemoteUrls,
+        }
+        return _QT_IMPORTS
+
+
 def _show_mode_dialog(app) -> str:
     """弹出模式选择对话框，返回 'online' | 'offline' | 'vue-only'。"""
+    Qt = _init_qt()['Qt']
     try:
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QHBoxLayout, QPushButton
-        from PySide6.QtCore import Qt
     except ImportError:
         from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QHBoxLayout, QPushButton
-        from PyQt5.QtCore import Qt
 
-    result = {'mode': 'online'}  # 默认在线模式
+    result = {'mode': 'online'}
 
     dlg = QDialog()
     dlg.setWindowTitle('PI Manager - 选择运行模式')
@@ -93,26 +136,20 @@ def _get_frontend_index() -> str:
 def _run_vue_only(app, index_path: str):
     """轻量模式：仅启动 WebEngine 加载 Vue App。"""
     logger.info('[Combined] 启动 Vue-only 轻量模式...')
-    try:
-        from PySide6.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
-        from PySide6.QtWebChannel import QWebChannel
-        from PySide6.QtCore import QUrl
-    except ImportError:
-        from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
-        from PyQt5.QtWebChannel import QWebChannel
-        from PyQt5.QtCore import QUrl
+    qt = _init_qt()
 
     bridge = QtBridge()
-    channel = QWebChannel()
+    channel = qt['QWebChannel']()
     channel.registerObject('nativeBridge', bridge)
 
-    page = QWebEngineView()
+    page = qt['QWebEngineView']()
     page.page().setWebChannel(channel)
-    settings = page.page().settings()
-    settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+    page.page().settings().setAttribute(
+        qt['LocalContentCanAccessRemoteUrls'], True
+    )
 
     abs_path = os.path.abspath(index_path)
-    page.load(QUrl.fromLocalFile(abs_path))
+    page.load(qt['QUrl'].fromLocalFile(abs_path))
     page.setWindowTitle('PI Manager')
     page.resize(1280, 800)
     page.show()
@@ -125,11 +162,7 @@ def _run_full_desktop(app, index_path: str, offline: bool):
     bridge = QtBridge()
     logger.info('[Combined] QtBridge(QWebChannel->SQLite) 已就绪')
 
-    try:
-        from PySide6.QtCore import QTimer
-    except ImportError:
-        from PyQt5.QtCore import QTimer
-
+    qt = _init_qt()
     from main import MainWindow
     from api.client import ApiClient
     from config import Config
@@ -140,7 +173,10 @@ def _run_full_desktop(app, index_path: str, offline: bool):
     window.show()
 
     if not offline and Config.AUTO_CHECK_UPDATE:
-        QTimer.singleShot(1000, window._check_update_async)
+        from PySide6.QtCore import QTimer
+    else:
+        from PyQt5.QtCore import QTimer
+    QTimer.singleShot(1000, window._check_update_async)
 
     sys.exit(app.exec())
 
@@ -156,13 +192,9 @@ def main():
     print('[Combined] 前端入口: ' + index_path)
 
     # 创建 Qt 应用对象（对话框需要先有 app）
-    try:
-        from PySide6.QtWidgets import QApplication
-    except ImportError:
-        from PyQt5.QtWidgets import QApplication
-
-    QApplication.setAttribute(20, True)  # AA_EnableHighDpiScaling
-    app = QApplication(sys.argv)
+    qt = _init_qt()
+    qt['QApplication'].setAttribute(qt['AA_EnableHighDpiScaling'], True)
+    app = qt['QApplication'](sys.argv)
 
     # 弹出模式选择对话框
     mode = _show_mode_dialog(app)
@@ -172,7 +204,7 @@ def main():
         _run_vue_only(app, index_path)
     elif mode == 'offline':
         _run_full_desktop(app, index_path, offline=True)
-    else:  # online
+    else:
         _run_full_desktop(app, index_path, offline=False)
 
 
