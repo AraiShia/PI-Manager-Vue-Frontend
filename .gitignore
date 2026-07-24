@@ -9,6 +9,24 @@ dist/
 __pycache__/
 *.py[cod]
 *$py.class
-backend/routers/__pycache__/customer_reply.cpython-310.pyc
-backend/__pycache__/main.cpython-310.pyc
-backend/data/pimain.db
+*.pyc
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# 开发/调试工具（不参与构建）
+backend/scratch_generate_keys.py
+backend/extract_qwebchannel.py
+
+# 配置和本地数据（每个部署不同）
+backend/config.json
+backend/data/
+frontend/.env.development
+frontend/.env.production
+
+# PyInstaller / build artifacts
+backend/*.spec
+
+# 不属于主仓库的 client 独立客户端目录（另行管理）
+client/
