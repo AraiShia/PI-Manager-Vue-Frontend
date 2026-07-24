@@ -18,8 +18,7 @@ from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 
-SPEC_DIR = os.path.dirname(os.path.abspath(SPEC))
-PROJECT_ROOT = os.path.dirname(SPEC_DIR)
+PROJECT_ROOT = os.path.dirname(os.path.abspath(SPEC))
 BACKEND_DIR = os.path.join(PROJECT_ROOT, 'backend')
 CLIENT_DIR = os.path.join(PROJECT_ROOT, 'client')
 ENTRY_SCRIPT = os.path.join(BACKEND_DIR, 'run_combined.py')
