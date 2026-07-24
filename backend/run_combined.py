@@ -52,7 +52,9 @@ def _init_qt():
     try:
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QApplication
-        from PySide6.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+        # QWebEngineSettings 在 PySide6 中位于 QtWebEngineCore
+        from PySide6.QtWebEngineCore import QWebEngineSettings
         from PySide6.QtWebChannel import QWebChannel
         from PySide6.QtCore import QUrl
         _QT_IMPORTS = {
