@@ -22,9 +22,9 @@
 │         │                    │                    │         │
 │         └────────────────────┼────────────────────┘         │
 │                              │ QWebChannel (PyQt5)          │
-│                     ┌────────▼────────┐                     │
-│                     │  dist/index.html │ (file:// 协议)     │
-│                     └─────────────────┘                     │
+│                     ┌────────▼──────────────┐               │
+│                     │dist-v1.0.0.x/index.h  │(file:// 协议) │
+│                     └───────────────────────┘               │
 └──────────────────────────────────────────────────────────────┘
          │                              │
          │  CDN / Nginx                 │  axios → remote API
@@ -45,7 +45,7 @@
 ### 1.3 exe 职责（仅启动器）
 
 - 启动 PyQt5 WebEngine 加载前端页面
-- 管理前端包下载、解压、原子替换
+- 管理前端包下载、解压、版本目录隔离更新（避免 Windows 文件锁冲突）
 - 通过 QWebChannel 向前端暴露基础 API（离线模式使用）
 - 检测联网状态、版本更新提示
 - **不**监听任何 HTTP 端口
@@ -68,16 +68,16 @@
     │               ├── 已是最新 → 进入步骤 2
     │               │
     │               └── 发现新版本 →
-    │                       ├── 后台下载 dist.zip
-    │                       ├── 解压到 AppData/dist_tmp/
-    │                       ├── MD5 校验完整性
-    │                       ├── 原子替换：dist/ → dist_bak/，dist_tmp/ → dist/
+    │                       ├── 后台下载 dist-v1.0.0.x.zip
+    │                       ├── 解压到 AppData/frontend/dist-v1.0.0.x/
+    │                       ├── SHA-256 校验完整性
+    │                       ├── 写入 config.json: active_version
     │                       └── Toast: "新版本已就绪，点击刷新"
     │
-    ├── 2. 选择前端加载路径
+    ├── 2. 选择前端加载路径（依据 config.json 的 active_version）
     │       │
-    │       ├── AppData/YourApp/dist/index.html 存在？ → 加载它
-    │       └── 不存在 → 加载 exe 内置 _MEIPASS/dist/index.html（兜底）
+    │       ├── AppData/frontend/dist-{active_version}/index.html 存在？ → 加载它
+    │       └── 不存在 → 加载 exe 内置 _MEIPASS/frontend_dist/index.html（兜底）
     │
     └── 3. 启动 WebEngine 并加载
             │
@@ -88,8 +88,8 @@
 
 ```
 优先级高
-  1. AppData/dist/          ← CDN 下载的更新包（最新）
-  2. _MEIPASS/dist/         ← exe 内置兜底包（永不更新）
+  1. AppData/frontend/dist-v{active_version}/  ← CDN 下载的最新版本（可热更）
+  2. _MEIPASS/frontend_dist/                   ← exe 内置兜底包（永不更新）
 优先级低
 ```
 
@@ -204,74 +204,94 @@ CDN 服务器上放置 `version.json`：
 {
   "version": "1.0.0.35",
   "dist_url": "https://cdn.example.com/pi-manager/dist-v1.0.0.35.zip",
-  "md5": "a3f5c8d9e1b2...",
+  "sha256": "a3f5c8d9e1b2...",
   "min_app_version": "1.0.0.28"
 }
 ```
 
 exe 启动时请求此文件，对比 `min_app_version` 与当前 exe 版本，决定是否下载。
 
-### 4.2 原子化更新流程
+### 4.2 基于版本目录的更新流程 (规避 Windows 文件独占锁)
+
+由于 Windows 操作系统中，若 PyQt5 WebEngine 占用了正在运行的静态资源文件，直接对运行中的 `dist` 目录进行覆盖或重命名会导致 `PermissionError: [WinError 5] 拒绝访问`。因此采用基于版本号子目录的隔离更新流程：
 
 ```
-dist_new/ (临时目录)
+下载 dist-v1.0.0.35.zip → 临时解压目录
     │
-    ├── 下载 dist.zip → dist_tmp/
-    ├── 解压到 dist_tmp/
-    ├── MD5 校验
-    ├── dist/ → dist_bak/ (旧版本备份)
-    ├── dist_tmp/ → dist/ (原子替换)
+    ├── 解压到 AppData/frontend/dist-v1.0.0.35/ (全新独立目录)
+    ├── SHA-256 校验，确认解压内容完整
+    ├── 修改本地配置文件 config.json: active_version = "1.0.0.35"
     │
     └── 前端提示刷新
             │
-            ├── 用户点击刷新 → window.location.reload() + "?v=timestamp"
+            ├── 用户点击刷新 → window.location.reload() (WebEngine 重新加载 active_version 指定的新路径)
             │
-            └── 用户忽略 → 下次启动自动加载新版本
+            └── 用户忽略 → 下次启动自动加载新版本目录
 ```
 
-### 4.3 回滚机制
+### 4.3 回滚与清理机制
 
 ```
-启动时检测 dist/ 是否损坏（index.html 存在性）
+启动或刷新时检测当前 active_version 对应的 index.html 是否存在
     │
-    ├── 损坏 → 检查 dist_bak/ 是否存在
-    │       ├── 存在 → 回滚到 dist_bak/
-    │       └── 也不存在 → 加载 _MEIPASS 内置兜底
+    ├── 损坏或丢失 → 遍历 AppData/frontend/ 下所有 dist-v*/ 目录
+    │       ├── 找到可用的最新版本 → 更新 config.json 的 active_version → 加载它
+    │       └── 均不可用 → 加载 _MEIPASS 内置的 frontend_dist/ 目录
     │
-    └── 正常 → 正常加载
+    └── 定期清理：启动成功后，异步删除除当前 active_version 外、超过 3 个版本以上的历史 dist-v* 目录，避免占用过多磁盘空间
 ```
 
 ---
 
-## 5. 错误处理与降级
+## 5. 错误处理与安全降级
 
 ### 5.1 降级链路
 
 | 场景 | 降级路径 |
 |------|----------|
-| CDN 下载失败 | 使用本地已缓存 dist 或内置兜底 |
-| MD5 校验失败 | 删除损坏的 dist_tmp/，保留旧版本 |
-| dist/index.html 损坏 | 回滚到 dist_bak/ 或内置兜底 |
+| CDN 下载失败 | 使用本地最新已下载的 `dist-v*` 版本或内置兜底 |
+| SHA-256 校验失败 | 清理已下载的临时目录，保留当前 `active_version` |
+| 当前版本 `index.html` 损坏 | 扫描本地其他 `dist-v*` 目录回滚，或加载内置兜底 |
 | QWebChannel 初始化失败 | 前端降级到纯 Web 模式（需配置远程 API 地址） |
 | Python 端 DB 操作失败 | 通过 QWebChannel error 信号通知前端，弹窗提示 |
+
+> 注：原 §2.1 早期提到的"dist/ → dist_bak/"两目录互斥方案已被 §4.2 的"版本目录隔离"方案取代，避免 Windows 平台 PyQt5 WebEngine 文件独占锁导致的 `PermissionError`。
 
 ### 5.2 前端降级模式
 
 当 `file://` 加载但 QWebChannel 不可用时，前端弹出配置框让用户输入远程 API 地址：
 
 ```typescript
-// 检测降级
+// 检测降级逻辑，在 file 协议且无 Bridge 时引导用户手动配置 API
 if (window.location.protocol === 'file:') {
   const hasQtBridge = !!(window as any).pywebview
   if (!hasQtBridge) {
     ElMessageBox.prompt('请输入 API 服务器地址', '离线模式无可用桥接', {
       inputValue: 'https://piapi.wakabashia.tj.cn',
     }).then(({ value }) => {
+      // 降级保存本地 fallback API 配置以供后续 axios 访问使用
       localStorage.setItem('fallback_api_base', value)
-      // 切换到 axios 模式
     })
   }
 }
+```
+
+### 5.3 安全配置与跨域 (CORS) 处理
+
+#### 1. PyQt5 允许本地 file 协议跨域访问远程 API
+当在线模式下前端通过 `file://` 加载时，访问远程 API 域名会触发 CORS 限制（由于 Origin 为 `null`）。必须在 PyQt5 启动时放开限制：
+```python
+# PyQt5 启动配置，放开本地 content 对远程 API URL 的访问限制
+settings = QWebEngineSettings.globalSettings()
+settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+```
+
+#### 2. 安全沙箱与 API 防护
+- **Bridge 最小化暴露：** `QtBridge` 绝对不要暴露任何操作系统执行 shell 的通用 slot 方法，只允许暴露经过参数类型校验的 SQLite 数据读写 slot。
+- **输入合法性过滤：** Python 侧所有 `@pyqtSlot` 方法在接收到前端参数后，必须进行严格的数据格式校验与 SQL 注入过滤。
+- **内容安全策略 (CSP)：** 在前端的 `index.html` 中注入严格的 Content Security Policy，只允许加载本地打包的 JS 资源，防范 XSS 劫持：
+```html
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' file: https:; script-src 'self' 'unsafe-inline' file:; style-src 'self' 'unsafe-inline' file:;">
 ```
 
 ---
@@ -283,8 +303,10 @@ if (window.location.protocol === 'file:') {
 离线模式下，前端通过 QWebChannel 调用 Python 方法操作 SQLite。数据库文件路径：
 
 ```
-AppData/YourApp/data/pimain.db
+%APPDATA%\PIManager\data\pimain.db
 ```
+
+> 注：`PIManager` 是当前 PyInstaller 打包产物的应用目录名（`PI-Manager-Server.exe` 对应 `PIManager`）。如有调整需同步修改此路径。
 
 ### 6.2 Schema 版本管理
 
@@ -345,13 +367,26 @@ if not os.path.exists(dist_path):
 
 ### 7.2 前端 vite.config.ts 适配
 
+由于 PyQt5 WebEngine 的 Chromium 内核版本可能较旧（例如 PyQt5 v5.15 使用 Chrome 83 内核），前端构建产物必须适配旧版 JS 语法（防止出现可选链 `?.`、空值合并 `??` 或顶层 `await` 导致的白屏 SyntaxError）：
+
 ```typescript
 // vite.config.ts
+import { defineConfig } from 'vite'
+import legacy from '@vitejs/plugin-legacy'
+
 export default defineConfig({
-  base: './',  // 确保相对路径，file:// 协议下必须
+  base: './',  // 确保相对路径，file:// 协议下运行必须
+  plugins: [
+    // 增加 Legacy 浏览器兼容插件支持，确保兼容旧版 JS 特性
+    legacy({
+      targets: ['chrome >= 80', 'es2015'],
+      additionalLegacyPolyfills: ['regenerator-runtime/runtime']
+    })
+  ],
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
+    target: 'chrome80' // 指定编译目标，避免采用过新语法的 esnext
   },
 })
 ```
@@ -365,7 +400,7 @@ export default defineConfig({
 | `backend/qt_bridge.py` | QWebChannel API 暴露（业务方法 + 生命周期） |
 | `backend/run_qt.py` | Qt 应用入口（替代 run.py 的 Qt 模式） |
 | `backend/frontend_manager.py` | 前端包下载、解压、原子更新 |
-| `backend/check_update.py` | 版本检测、MD5 校验 |
+| `backend/check_update.py` | 版本检测、SHA-256 校验 |
 | `frontend/src/api/nativeBridge.ts` | 扩展支持所有业务 QWebChannel 接口 |
 | `frontend/src/api/base.ts` | 通信模式自动切换（QWebChannel vs axios） |
 | `frontend/src/utils/modeDetector.ts` | 加载模式检测与降级处理 |
@@ -382,8 +417,8 @@ export default defineConfig({
 
 ### M2: 前端更新机制
 - CDN 版本检测
-- 原子化下载/解压/替换
-- 回滚保护
+- 基于版本目录隔离的下载/解压（避免 Windows 文件锁）
+- 回滚保护（config.json active_version 切换）
 - 前端刷新提示
 
 ### M3: 数据库迁移集成
@@ -392,14 +427,15 @@ export default defineConfig({
 
 ### M4: 降级与异常处理
 - QWebChannel 初始化失败降级
-- 损坏 dist 的回滚
-- MD5 校验失败处理
+- 损坏 dist-v* 目录的回滚
+- SHA-256 校验失败处理
 
 ---
 
-## 10. 已知限制
+## 10. 已知限制与性能开销
 
 - **CDN 服务器需自行搭建或使用第三方服务**
 - **离线模式功能受限于 QWebChannel 暴露的 API 范围**，复杂查询可能需要补充接口
-- **PyQt5 WebEngine 对前端框架版本有兼容性要求**（Vue 3 + Vite 构建产物通常兼容）
+- **Chromium 版本兼容性要求**：需要通过 Vite legacy 插件保证打包产物不包含 ES 新语法特性。
+- **内存占用开销**：PyQt5 WebEngine 会拉起多个 Chromium 辅助进程，应用常驻内存开销一般在 100MB - 300MB 之间。
 - **首次部署需要人工确认 exe 版本与前端版本匹配**
