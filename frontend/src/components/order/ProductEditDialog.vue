@@ -355,7 +355,7 @@
               <div class="purchase-cost-head invoice-group-head">开票情况</div>
               <!-- 第4行：供应商链接 + 产品特性内容 -->
               <div class="purchase-cost-head ">供应商链接</div>
-              <div class="purchase-cost-cell link-cell">
+              <div class="purchase-cost-cell link-cell" style="display: flex; align-items: center; gap: 4px;">
                 <el-select
                   v-model="form.shop_url"
                   filterable
@@ -363,22 +363,37 @@
                   default-first-option
                   :clearable="!formLocked"
                   placeholder="选择或输入 1688 链接"
-                  style="width: 100%"
+                  style="flex: 1; min-width: 0;"
                   @change="onShopUrlChange"
                   @clear="onShopUrlClear"
                 >
                   <el-option
-                    v-for="u in filteredSupplierUrlOptions"
+                    v-for="u in supplierUrlOptions"
                     :key="u.id || u.url"
-                    :label="formatUrlLabel(u)"
+                    :label="u.display_name ? `${u.display_name} (${u.url})` : u.url"
                     :value="u.url"
                   >
-                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                      <span style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 68%;">{{ formatUrlLabel(u) }}</span>
-                      <span style="color: #909399; font-size: 11px; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ u.url }}</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 12px;">
+                      <span style="font-weight: 500; font-size: 13px; color: #303133; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%;">
+                        {{ u.display_name || u.url }}
+                      </span>
+                      <span style="color: #909399; font-size: 11px; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 38%;">
+                        {{ u.url }}
+                      </span>
                     </div>
                   </el-option>
                 </el-select>
+                <el-tooltip content="打开网页链接" placement="top" :disabled="!form.shop_url">
+                  <el-button
+                    type="primary"
+                    link
+                    :disabled="!form.shop_url"
+                    style="padding: 0 4px;"
+                    @click="openShopUrl"
+                  >
+                    <el-icon :size="16"><TopRight /></el-icon>
+                  </el-button>
+                </el-tooltip>
               </div>
               <div class="purchase-cost-cell invoice-type-cell">
                 <el-select
@@ -686,7 +701,7 @@
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, toRaw } from 'vue'
 import { FALLBACK_PARENT_CATEGORIES, FALLBACK_CHILD_CATEGORIES } from '@/constants/productCategories'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Close } from '@element-plus/icons-vue'
+import { Plus, Close, TopRight } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
 import { orderSummaryApi } from '@/api/orderSummary'
 import { suppliersApi, type Supplier, pendingSupplierState } from '@/api/suppliers'
@@ -807,44 +822,13 @@ const supplierUrlOptions = ref<ProductSupplierUrl[]>([])
 const initialShopUrl = ref('')
 let userEditedShopUrl = false
 
-const filteredSupplierUrlOptions = computed(() => {
-  if (form.shop_url) {
-    const matched = supplierUrlOptions.value.find(u => u.url === form.shop_url)
-    if (matched) {
-      return [matched]
-    }
-    return [{
-      id: 0,
-      product_id: (item.value as any)?.product_id || 0,
-      supplier_id: (form.supplier as any)?.id || null,
-      supplier_name: form.supplier_name || '',
-      url: form.shop_url,
-      display_name: form.product_name || null,
-      is_default: false,
-      created_at: '',
-    }]
+function openShopUrl() {
+  if (!form.shop_url) return
+  let target = form.shop_url.trim()
+  if (!/^https?:\/\//i.test(target)) {
+    target = `https://${target}`
   }
-  return supplierUrlOptions.value
-})
-
-function formatUrlLabel(u: { url: string; display_name?: string | null }): string {
-  if (u.display_name && u.display_name.trim()) return u.display_name.trim()
-  if (form.product_name && form.product_name.trim()) return form.product_name.trim()
-  return formatUrlFallback(u.url)
-}
-
-function formatUrlFallback(url: string): string {
-  if (!url) return ''
-  const match1688 = url.match(/offer\/(\d+)\.html/)
-  if (match1688) {
-    return `1688商品链接 (#${match1688[1]})`
-  }
-  try {
-    const parsed = new URL(url)
-    return `${parsed.hostname}${parsed.pathname}`
-  } catch {
-    return url
-  }
+  window.open(target, '_blank', 'noopener,noreferrer')
 }
 
 // 新建供应商弹窗
@@ -1726,19 +1710,26 @@ function close() {
 
 // 加载供应商 URL 历史下拉选项
 async function loadSupplierUrls() {
-  if (!form.supplier_name) { supplierUrlOptions.value = []; return }
   const pid = (item.value as any)?.product_id
   if (!pid) { supplierUrlOptions.value = []; return }
-  const supplierId = (form.supplier as any)?.id
+  const rawId = (form.supplier as any)?.id
+  const supplierId = rawId && rawId > 0 ? rawId : null
+  const supplierName = form.supplier_name || null
   try {
-    const res = await productSupplierUrlsApi.list(pid, supplierId, form.supplier_name)
-    const options = Array.isArray(res) ? [...res] : []
+    const res = await productSupplierUrlsApi.list(pid, supplierId, supplierName)
+    let options = Array.isArray(res) ? [...res] : []
+    if (options.length === 0) {
+      const allRes = await productSupplierUrlsApi.list(pid, null, null)
+      if (Array.isArray(allRes) && allRes.length > 0) {
+        options = [...allRes]
+      }
+    }
     if (form.shop_url && !options.some((u) => u.url === form.shop_url)) {
       options.unshift({
         id: 0,
         product_id: pid,
-        supplier_id: supplierId || null,
-        supplier_name: form.supplier_name,
+        supplier_id: supplierId,
+        supplier_name: form.supplier_name || '',
         url: form.shop_url,
         display_name: null,
         is_default: false,
