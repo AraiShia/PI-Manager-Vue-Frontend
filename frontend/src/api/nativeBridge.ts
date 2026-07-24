@@ -59,6 +59,28 @@ export const nativeBridge = {
     return bridge !== null
   },
 
+  /**
+   * 统一 RPC 调用方法，将请求序列化并发送至 Python 端的 call 槽方法
+   * 
+   * @param {string} method 远程方法名，例如 "suppliers.list"
+   * @param {any} params 方法参数，默认为空对象
+   * @returns {Promise<any>} 返回 Python 执行完毕后的解析数据
+   */
+  async call(method: string, params: any = {}): Promise<any> {
+    const b = getBridge()
+    if (!b.call) {
+      throw new Error(`本地桥接不支持 RPC 调用方法: ${method}`)
+    }
+    const paramsJson = JSON.stringify(params)
+    const resultJson = await b.call(method, paramsJson)
+    const result = JSON.parse(resultJson)
+    if (result.success) {
+      return result.data
+    } else {
+      throw new Error(result.error || '未知的本地 RPC 错误')
+    }
+  },
+
   async selectFile(filter: string): Promise<string> {
     return getBridge().selectFile(filter)
   },
@@ -132,6 +154,10 @@ export const nativeBridge = {
   },
 }
 
+export async function call(method: string, params: any = {}): Promise<any> {
+  return nativeBridge.call(method, params)
+}
+
 export async function selectFile(filter: string): Promise<string> {
   return getBridge().selectFile(filter)
 }
@@ -172,4 +198,42 @@ export function onFileSelected(callback: (path: string) => void) {
   if (b.fileSelected && b.fileSelected.connect) {
     b.fileSelected.connect(callback)
   }
+}
+
+// 离线模式供应商 URL 历史
+export interface OfflineSupplierUrl {
+  id: number
+  product_id: number
+  supplier_id: number | null
+  supplier_name: string | null
+  url: string
+  display_name: string | null
+  is_default: boolean
+  created_at: string | null
+}
+
+export interface CreateSupplierUrlResult extends OfflineSupplierUrl {
+  created: boolean
+}
+
+// 补充 productSupplierUrls 离线 RPC 封装
+export async function listSupplierUrls(params: {
+  product_id: number
+  supplier_id?: number
+  supplier_name?: string
+}): Promise<OfflineSupplierUrl[]> {
+  const result = await call('productSupplierUrls.list', params)
+  return result as OfflineSupplierUrl[]
+}
+
+export async function createSupplierUrl(params: {
+  product_id: number
+  supplier_id: number
+  supplier_name: string
+  url: string
+  display_name?: string
+  is_default?: boolean
+}): Promise<CreateSupplierUrlResult> {
+  const result = await call('productSupplierUrls.create', params)
+  return result as CreateSupplierUrlResult
 }
