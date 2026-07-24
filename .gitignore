@@ -28,5 +28,4 @@ frontend/.env.production
 # PyInstaller / build artifacts
 backend/*.spec
 
-# 不属于主仓库的 client 独立客户端目录（另行管理）
-client/
+# client/ 是 PyQt 独立客户端，与前端/后端共存于同一仓库
