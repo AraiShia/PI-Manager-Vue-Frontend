@@ -165,21 +165,32 @@ def _run_vue_only(app, index_path: str):
 
 def _run_full_desktop(app, index_path: str, offline: bool):
     """完整桌面模式：启动 client/main.py 的 MainWindow，加载 Vue App。"""
-    logger.info('[Combined] 启动完整桌面模式（offline=%s）...', offline)
-    # client/main.py 需要 client/ 在 sys.path 最前，避免被 backend/main.py 覆盖
+    import importlib.util
     import sys
-    client_dir = os.path.join(os.path.dirname(_BACKEND_DIR), 'client')
-    if client_dir not in sys.path:
-        sys.path.insert(0, client_dir)
-    elif sys.path[0] != client_dir:
-        sys.path.remove(client_dir)
-        sys.path.insert(0, client_dir)
+    logger.info('[Combined] 启动完整桌面模式（offline=%s）...', offline)
+    # 按路径显式加载 client/main.py，避免被 backend/main.py 的 fastapi 歧义覆盖
+    client_main_path = os.path.join(_CLIENT_DIR, 'main.py')
+    spec = importlib.util.spec_from_file_location('client_main', client_main_path)
+    client_main = importlib.util.module_from_spec(spec)
+    sys.modules['main'] = client_main  # 缓存到 sys.modules
+    spec.loader.exec_module(client_main)
+    MainWindow = client_main.MainWindow
     bridge = QtBridge()
     logger.info('[Combined] QtBridge(QWebChannel->SQLite) 已就绪')
     qt = _init_qt()
-    from main import MainWindow
-    from api.client import ApiClient
-    from config import Config
+    # api.client 和 config 也按路径加载
+    client_api_path = os.path.join(_CLIENT_DIR, 'api', 'client.py')
+    spec2 = importlib.util.spec_from_file_location('api_client', client_api_path)
+    client_api = importlib.util.module_from_spec(spec2)
+    sys.modules['api.client'] = client_api
+    spec2.loader.exec_module(client_api)
+    ApiClient = client_api.ApiClient
+    client_config_path = os.path.join(_CLIENT_DIR, 'config', '__init__.py')
+    spec3 = importlib.util.spec_from_file_location('client_config', client_config_path)
+    client_config = importlib.util.module_from_spec(spec3)
+    sys.modules['config'] = client_config
+    spec3.loader.exec_module(client_config)
+    Config = client_config.Config
 
     api_client = ApiClient(base_url=Config.API_BASE_URL)
     dept_id = 'S'
