@@ -170,18 +170,16 @@ function runtimeApiBase() {
     }
   }
 
-  // HTTPS 页面下：直接使用 window.location.origin，避免任何环境变量配错导致 Mixed Content
+  // HTTPS 页面下：直接使用 window.location.origin
   if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
     return window.location.origin
   }
-  const base = normalizeApiBase(import.meta.env.VITE_API_BASE_URL || '')
-  if (
-    typeof window !== 'undefined'
-    && window.location.protocol === 'https:'
-    && /^https?:\/\/piapi\.wakabashia\.tj\.cn/i.test(base)
-  ) {
-    return window.location.origin
-  }
+
+  // HTTP 页面（包括本地 file:// + API 探测成功）或无 window 环境：
+  // 优先使用 VITE_API_BASE_URL，否则回退到生产默认地址
+  const base = normalizeApiBase(
+    import.meta.env.VITE_API_BASE_URL || 'https://piapi.wakabashia.tj.cn'
+  )
   return base
 }
 

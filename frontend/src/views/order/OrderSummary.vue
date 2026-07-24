@@ -13,18 +13,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { useOrderSummaryStore } from '@/stores/orderSummaryStore'
 import OrderListPanel from './OrderListPanel.vue'
 import OrderDetailPanel from './OrderDetailPanel.vue'
-import { nativeBridge } from '@/api/nativeBridge'
 
 const store = useOrderSummaryStore()
 const route = useRoute()
 const router = useRouter()
 
 onMounted(() => {
-  nativeBridge.init().then(() => {
-    console.log('Native bridge initialized')
-  }).catch(() => {
-    console.log('Running in browser mode (no native bridge)')
-  })
+  // QWebChannel 初始化已在 main.ts 统一执行，这里不再重复 init()。
+  // 业务 store 调用本身不直接依赖 bridge，网络请求通过 client.ts adapter 路由分发。
 
   if (route.params.id) {
     const id = Number(route.params.id)

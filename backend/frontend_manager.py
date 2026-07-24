@@ -30,24 +30,64 @@ from app.database import get_data_dir
 logger = logging.getLogger("frontend_manager")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-# ECDSA 公钥：优先从环境变量读取，避免硬编码在代码中
-# 用法：set PI_MANAGER_PUBLIC_KEY_PEM=-----BEGIN PUBLIC KEY-----\nMFkw...\n-----END PUBLIC KEY-----
-# Windows PowerShell: $env:PI_MANAGER_PUBLIC_KEY_PEM="-----BEGIN PUBLIC KEY-----`nMFkw...`n-----END PUBLIC KEY-----"
-_PUBLIC_KEY_PEM_ENV = os.getenv("PI_MANAGER_PUBLIC_KEY_PEM", "").replace("\\n", "\n")
-if _PUBLIC_KEY_PEM_ENV:
-    PUBLIC_KEY_PEM = _PUBLIC_KEY_PEM_ENV.encode("utf-8")
-else:
-    # 测试/开发环境使用默认密钥，但明确警告不安全
+# ECDSA 公钥：优先从受保护文件路径读取（环境变量只能传文件路径，不能直接传 PEM 内容）。
+# 生产环境：
+#   1. 优先：PI_MANAGER_PUBLIC_KEY_FILE 环境变量指向磁盘上的受保护密钥文件
+#   2. 兜底（同目录）：exe 同级 keys/public_key.pem（PyInstaller 打包后指向 _MEIPASS）
+#   3. 以上均不存在时：抛出异常，阻止启动（生产环境必须有正式公钥）
+#
+# ⚠️ 不再支持 PI_MANAGER_PUBLIC_KEY_PEM 环境变量直接传 PEM 内容。
+#    因为环境变量可被普通用户修改，攻击者可替换为自己的公钥从而签发恶意前端包。
+
+def _load_public_key() -> bytes:
     import warnings
-    warnings.warn(
-        "[安全警告] PI_MANAGER_PUBLIC_KEY_PEM 未设置，使用测试公钥！"
-        "生产部署必须通过环境变量配置正式的 ECDSA 公钥。",
-        UserWarning,
-    )
-    PUBLIC_KEY_PEM = b"""-----BEGIN PUBLIC KEY-----
+
+    # 优先从文件路径加载
+    key_file = os.getenv("PI_MANAGER_PUBLIC_KEY_FILE", "").strip()
+    if key_file:
+        key_file = os.path.expandvars(key_file)  # 支持 %APPDATA%\xxx 或 $HOME/xxx
+        if os.path.isfile(key_file):
+            with open(key_file, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+            if "BEGIN PUBLIC KEY" in content:
+                logger.info(f"[FrontendManager] ECDSA 公钥从文件加载: {key_file}")
+                return content.encode("utf-8")
+            else:
+                raise ValueError(f"PI_MANAGER_PUBLIC_KEY_FILE 不是有效的公钥文件: {key_file}")
+
+    # 兜底：exe 同级 keys/public_key.pem（PyInstaller 环境指向 _MEIPASS）
+    base_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+    fallback_key_file = os.path.join(base_dir, "keys", "public_key.pem")
+    if os.path.isfile(fallback_key_file):
+        with open(fallback_key_file, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+        if "BEGIN PUBLIC KEY" in content:
+            logger.info(f"[FrontendManager] ECDSA 公钥从兜底文件加载: {fallback_key_file}")
+            return content.encode("utf-8")
+
+    # 以上均无：生产环境必须拒绝启动，开发/测试环境发警告
+    import sys as _sys
+    frozen = getattr(sys, 'frozen', False)
+    if frozen:
+        raise FileNotFoundError(
+            "[安全错误] 生产环境缺少 ECDSA 公钥文件。"
+            "请在 exe 同级创建 keys/public_key.pem，或设置 "
+            "PI_MANAGER_PUBLIC_KEY_FILE 环境变量指向受保护路径。"
+        )
+    else:
+        warnings.warn(
+            "[安全警告] 未配置 ECDSA 公钥，使用测试公钥（不安全，勿用于生产）。"
+            "请在 exe 同级创建 keys/public_key.pem，或设置 "
+            "PI_MANAGER_PUBLIC_KEY_FILE 环境变量。",
+            UserWarning,
+        )
+        return b"""-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE+smxcuJhzpE1i/5oxPAa5BmwefHr
 2sX4o59kyVA+ZlH+/2NeU0llzDxKc0I5zi8vgNaC3IIKITyhPoHabJW52w==
 -----END PUBLIC KEY-----"""
+
+
+PUBLIC_KEY_PEM = _load_public_key()
 
 # 基线/初始版本号
 BASELINE_VERSION = "1.0.0.0"
@@ -159,6 +199,21 @@ class FrontendManager:
         self._write_config_atomic(config)
         return newest_ver
 
+    def _compare_versions(self, v1: str, v2: str) -> int:
+        """比较两个语义化版本号，返回 -1/0/1。"""
+        def normalize(ver: str) -> list:
+            return [int(x) if x.isdigit() else 0 for x in ver.lstrip("v").split(".")]
+        p1, p2 = normalize(v1), normalize(v2)
+        max_len = max(len(p1), len(p2))
+        p1 += [0] * (max_len - len(p1))
+        p2 += [0] * (max_len - len(p2))
+        for a, b in zip(p1, p2):
+            if a < b:
+                return -1
+            if a > b:
+                return 1
+        return 0
+
     def verify_manifest_signature(self, manifest: Dict) -> bool:
         """验证自 CDN 下载的 version.json 的数字签名是否合法"""
         try:
@@ -218,12 +273,27 @@ class FrontendManager:
                     except Exception as e:
                         logger.error(f"释放基线前端资源失败: {e}")
 
-    def update_frontend(self, manifest: Dict) -> bool:
-        """从 Manifest 下载前端包，校验数字签名与包完整性后原子更新"""
+    def update_frontend(self, manifest: Dict, current_app_version: str = "") -> bool:
+        """从 Manifest 下载前端包，校验数字签名与包完整性后原子更新。
+
+        Args:
+            manifest: CDN version.json 内容（包含 version/dist_url/sha256/min_app_version/signature）。
+            current_app_version: 当前 exe 版本号（如 "1.0.0.28"）。若不满足 min_app_version 则拒绝更新。
+        """
         # 1. 安全验签
         if not self.verify_manifest_signature(manifest):
             logger.error("数字签名校验失败，停止下载更新")
             return False
+
+        # 2. min_app_version 兼容性校验
+        min_app_version = manifest.get("min_app_version", "")
+        if current_app_version and min_app_version:
+            if self._compare_versions(current_app_version, min_app_version) < 0:
+                logger.error(
+                    f"前端包要求最低 exe 版本 {min_app_version}，"
+                    f"当前 exe 版本 {current_app_version} 不满足，拒绝激活。"
+                )
+                return False
 
         version = manifest["version"]
         dist_url = manifest["dist_url"]
@@ -253,10 +323,21 @@ class FrontendManager:
             if not self.verify_file_sha256(target_zip, expected_sha256):
                 raise RuntimeError("下载包 SHA-256 校验失败")
 
-            # 4. 解压至临时目录
+            # 4. 解压至临时目录（路径穿越防护：逐成员校验路径合法性）
             logger.info("解压缩文件并验证完整性...")
+            os.makedirs(temp_extract_dir, exist_ok=True)
             with zipfile.ZipFile(target_zip, "r") as zf:
-                zf.extractall(temp_extract_dir)
+                for member in zf.infolist():
+                    member_path = os.path.abspath(os.path.join(temp_extract_dir, member.filename))
+                    # 拒绝绝对路径或包含 .. 的成员，防止路径穿越攻击
+                    if not member_path.startswith(os.path.abspath(temp_extract_dir) + os.sep):
+                        raise ValueError(
+                            f"ZIP 成员包含非法路径（路径穿越风险）: {member.filename}"
+                        )
+                    # 拒绝符号链接（S_IFLNK == 0o120000），防止解压后劫持路径
+                    if (member.external_attr >> 28) == 0o12:
+                        raise ValueError(f"ZIP 成员包含符号链接（不安全）: {member.filename}")
+                    zf.extract(member, temp_extract_dir)
 
             # 验证解压产物中是否包含 index.html 核心入口
             if not os.path.exists(os.path.join(temp_extract_dir, "index.html")):
