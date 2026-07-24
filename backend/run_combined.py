@@ -138,18 +138,23 @@ def _get_frontend_index() -> str:
 def _run_vue_only(app, index_path: str):
     """轻量模式：仅启动 WebEngine 加载 Vue App。"""
     logger.info('[Combined] 启动 Vue-only 轻量模式...')
+    import sys
+    # client/main.py 需要 client/ 在 sys.path 最前，避免被 backend/main.py 覆盖
+    client_dir = os.path.join(os.path.dirname(_BACKEND_DIR), 'client')
+    if client_dir not in sys.path:
+        sys.path.insert(0, client_dir)
+    elif sys.path and sys.path[0] != client_dir:
+        sys.path.remove(client_dir)
+        sys.path.insert(0, client_dir)
     qt = _init_qt()
-
     bridge = QtBridge()
     channel = qt['QWebChannel']()
     channel.registerObject('nativeBridge', bridge)
-
     page = qt['QWebEngineView']()
     page.page().setWebChannel(channel)
     page.page().settings().setAttribute(
         qt['LocalContentCanAccessRemoteUrls'], True
     )
-
     abs_path = os.path.abspath(index_path)
     page.load(qt['QUrl'].fromLocalFile(abs_path))
     page.setWindowTitle('PI Manager')
@@ -161,9 +166,16 @@ def _run_vue_only(app, index_path: str):
 def _run_full_desktop(app, index_path: str, offline: bool):
     """完整桌面模式：启动 client/main.py 的 MainWindow，加载 Vue App。"""
     logger.info('[Combined] 启动完整桌面模式（offline=%s）...', offline)
+    # client/main.py 需要 client/ 在 sys.path 最前，避免被 backend/main.py 覆盖
+    import sys
+    client_dir = os.path.join(os.path.dirname(_BACKEND_DIR), 'client')
+    if client_dir not in sys.path:
+        sys.path.insert(0, client_dir)
+    elif sys.path[0] != client_dir:
+        sys.path.remove(client_dir)
+        sys.path.insert(0, client_dir)
     bridge = QtBridge()
     logger.info('[Combined] QtBridge(QWebChannel->SQLite) 已就绪')
-
     qt = _init_qt()
     from main import MainWindow
     from api.client import ApiClient
