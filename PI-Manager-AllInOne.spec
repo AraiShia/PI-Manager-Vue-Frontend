@@ -84,7 +84,7 @@ exe = EXE(
     pyz,
     a.scripts,
     [],
-    exclude_binaries=False,
+    exclude_binaries=True,
     name='PI-Manager-AllInOne',
     debug=False,
     bootloader_ignore_signals=False,
@@ -96,4 +96,15 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='PI-Manager-AllInOne',
 )
