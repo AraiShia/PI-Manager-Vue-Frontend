@@ -33,9 +33,6 @@ from qt_bridge import QtBridge
 logger = logging.getLogger("run_qt")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-# 读取当前 exe 版本（与 frontend_manager.BASELINE_VERSION 对齐）
-_EXE_VERSION = "1.0.0.28"  # TODO: 与 backend/version.json 同步，打包时由 CI 注入
-
 
 def main():
     logger.info("=== PI Manager 离线客户端启动 ===")
@@ -105,7 +102,7 @@ def main():
                 if resp.status == 200:
                     manifest = json.loads(resp.read().decode("utf-8"))
                     if frontend_manager.verify_manifest_signature(manifest):
-                        if frontend_manager.update_frontend(manifest, current_app_version=_EXE_VERSION):
+                        if frontend_manager.update_frontend(manifest):
                             new_ver = manifest.get("version", "")
                             logger.info(f"CDN 前端包已安全下载完成，通知前端刷新: {new_ver}")
                             bridge.emit_version_available(new_ver)

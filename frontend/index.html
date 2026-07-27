@@ -5,11 +5,6 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PI Manager</title>
-    <!--
-      qwebchannel.js 是 Qt 官方的 QWebChannel 客户端库（public/ 目录，Vite 直接复制不处理）。
-      不能加 type="module"——它是全局库，在 Vue 应用加载前必须作为普通脚本执行，
-      向 window.QWebChannel 和 window.qt 注入对象，供 src/api/nativeBridge.ts 使用。
-    -->
   </head>
   <body>
     <div id="app"></div>

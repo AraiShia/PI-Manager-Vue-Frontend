@@ -5,34 +5,42 @@
 </template>
 
 <script setup lang="ts">
-import { onVersionAvailable } from '@/api/nativeBridge'
+import { onMounted } from 'vue'
+import { isBridgeAvailable, onVersionAvailable, getBridge } from '@/api/nativeBridge'
 import { ElMessageBox } from 'element-plus'
 
-// onVersionAvailable 内部等待 bridgeReady，无需在 App.vue 中判断 isBridgeAvailable()。
-// 如果 bridge 不可用，onVersionAvailable 不会触发回调，升级通知静默忽略。
-onVersionAvailable((version: string) => {
-  ElMessageBox.confirm(
-    `检测到系统前端新版本 ${version} 已完成下载，是否立即刷新页面载入新版本？`,
-    '热更新就绪',
-    {
-      confirmButtonText: '立即刷新',
-      cancelButtonText: '稍后处理',
-      type: 'info',
+onMounted(() => {
+  // 当运行在 PyQt/PySide6 原生壳中且桥接就绪时，监听热更新版本发布通知
+  try {
+    if (isBridgeAvailable()) {
+      onVersionAvailable((version: string) => {
+        ElMessageBox.confirm(
+          `检测到系统前端新版本 ${version} 已完成下载，是否立即刷新页面载入新版本？`,
+          '热更新就绪',
+          {
+            confirmButtonText: '立即刷新',
+            cancelButtonText: '稍后处理',
+            type: 'info',
+          }
+        ).then(async () => {
+          try {
+            const b = getBridge()
+            if (b && (b as any).trigger_refresh) {
+              await (b as any).trigger_refresh()
+            } else {
+              window.location.reload()
+            }
+          } catch {
+            window.location.reload()
+          }
+        }).catch(() => {
+          // 用户忽略或稍后处理
+        })
+      })
     }
-  ).then(async () => {
-    try {
-      const b = (window as any).nativeBridge
-      if (b && b.trigger_refresh) {
-        await b.trigger_refresh()
-      } else {
-        window.location.reload()
-      }
-    } catch {
-      window.location.reload()
-    }
-  }).catch(() => {
-    // 用户忽略或稍后处理
-  })
+  } catch (e) {
+    console.debug('[App] 原生版本更新监听不可用 (浏览器运行模式):', e)
+  }
 })
 </script>
 

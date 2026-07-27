@@ -8,11 +8,9 @@ import { initNativeBridge } from '@/api/nativeBridge'
 import { ElMessageBox, ElMessage } from 'element-plus'
 
 onMounted(() => {
-  // Qt 标准注入名称：window.qt.webChannelTransport（不是 qtWebChannelTransport）
-  const transport = (window as any).qt?.webChannelTransport
-  if (window.QWebChannel && transport) {
+  if (window.QWebChannel && window.qtWebChannelTransport) {
     try {
-      new window.QWebChannel(transport, (channel: any) => {
+      new window.QWebChannel(window.qtWebChannelTransport, (channel: any) => {
         initNativeBridge(channel)
       })
     } catch (e) {

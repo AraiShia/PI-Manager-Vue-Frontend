@@ -68,12 +68,7 @@ async function onSelectFile() {
     if (!filePath) return
     selectedFile.value = filePath
 
-    const result = await readExcel(filePath)
-    if (result.error) {
-      ElMessage.error('读取文件失败：' + result.error)
-      return
-    }
-    const data = result.data
+    const data = await readExcel(filePath)
     if (data.length === 0) {
       ElMessage.warning('Excel 文件为空')
       return

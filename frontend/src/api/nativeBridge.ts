@@ -2,23 +2,11 @@
 import type { NativeBridge } from '@/types/native'
 
 let bridge: NativeBridge | null = null
-let _resolveBridgeReady: (() => void) | null = null
-
-/**
- * 全局 bootstrap promise。所有业务代码在发起离线请求前必须 await 此 promise。
- * 在 main.ts 中初始化，初始化完成后 resolve。
- */
-export const bridgeReady = new Promise<void>((resolve) => {
-  _resolveBridgeReady = resolve
-})
+let initPromise: Promise<void> | null = null
 
 export function initNativeBridge(channel: any) {
   bridge = channel.objects.nativeBridge
   console.log('[NativeBridge] initialized')
-  if (_resolveBridgeReady) {
-    _resolveBridgeReady()
-    _resolveBridgeReady = null
-  }
 }
 
 export function getBridge(): NativeBridge {
@@ -33,29 +21,27 @@ export function isBridgeAvailable(): boolean {
 }
 
 async function initQWebChannel(): Promise<void> {
-  // 已在初始化过程中，直接返回已解析的 bridgeReady
-  if (bridge !== null) {
-    return bridgeReady
+  if (initPromise) {
+    return initPromise
   }
 
-  if (typeof window === 'undefined') {
-    throw new Error('Window not available')
-  }
+  initPromise = new Promise((resolve, reject) => {
+    if (typeof window === 'undefined') {
+      reject(new Error('Window not available'))
+      return
+    }
 
-  // Qt 标准注入名称：window.qt.webChannelTransport（不是 qtWebChannelTransport）
-  const transport = (window as any).qt?.webChannelTransport
-  if (!window.QWebChannel || !transport) {
-    // 远程部署无 QWebChannel，安全跳过
-    console.log('[NativeBridge] QWebChannel not available (remote deployment), skipping')
-    return
-  }
-
-  return new Promise<void>((resolve) => {
-    new window.QWebChannel(transport, (channel: any) => {
-      initNativeBridge(channel)
-      resolve()
-    })
+    if (window.QWebChannel && window.qtWebChannelTransport) {
+      new window.QWebChannel(window.qtWebChannelTransport, (channel: any) => {
+        initNativeBridge(channel)
+        resolve()
+      })
+    } else {
+      reject(new Error('QWebChannel not available'))
+    }
   })
+
+  return initPromise
 }
 
 export const nativeBridge = {
@@ -103,33 +89,8 @@ export const nativeBridge = {
     return getBridge().saveFile(defaultName)
   },
 
-  async readExcel(path: string): Promise<{ taskId: string; data: any[]; error: string }> {
-    // 异步读取：通过 bridgeReady 确保 bridge 可用，
-    // 然后调用立即返回 task_id 的异步方法，并监听 excelReadComplete 信号获取结果。
-    await bridgeReady
-    const b = getBridge()
-    const taskId: string = b.readExcel(path)
-
-    return new Promise((resolve) => {
-      // 一次性监听：读取完成后自动断开，避免内存泄漏
-      const handler = (result: any) => {
-        if (result.task_id === taskId) {
-          if (b.excelReadComplete?.disconnect) {
-            b.excelReadComplete.disconnect(handler)
-          }
-          resolve({
-            taskId: result.task_id,
-            data: result.data || [],
-            error: result.error || '',
-          })
-        }
-      }
-      if (b.excelReadComplete?.connect) {
-        b.excelReadComplete.connect(handler)
-      } else {
-        resolve({ taskId, data: [], error: 'excelReadComplete signal 不可用' })
-      }
-    })
+  async readExcel(path: string): Promise<any[]> {
+    return getBridge().readExcel(path)
   },
 
   async writeExcel(path: string, data: any[]): Promise<boolean> {
@@ -179,13 +140,10 @@ export const nativeBridge = {
   },
 
   onVersionAvailable(callback: (version: string) => void) {
-    // 必须在 bridgeReady 后才能注册信号，否则 bridge 尚未初始化，信号永远收不到
-    bridgeReady.then(() => {
-      const b = getBridge()
-      if (b.versionAvailable && b.versionAvailable.connect) {
-        b.versionAvailable.connect(callback)
-      }
-    })
+    const b = getBridge()
+    if (b.versionAvailable && b.versionAvailable.connect) {
+      b.versionAvailable.connect(callback)
+    }
   },
 
   onFileSelected(callback: (path: string) => void) {
@@ -208,9 +166,8 @@ export async function saveFile(defaultName: string): Promise<string> {
   return getBridge().saveFile(defaultName)
 }
 
-export async function readExcel(path: string): Promise<{ taskId: string; data: any[]; error: string }> {
-  // 复用 nativeBridge.readExcel 的异步逻辑（包含 bridgeReady 等待和信号监听）
-  return nativeBridge.readExcel(path)
+export async function readExcel(path: string): Promise<any[]> {
+  return getBridge().readExcel(path)
 }
 
 export async function writeExcel(path: string, data: any[]): Promise<boolean> {
@@ -243,30 +200,13 @@ export function onFileSelected(callback: (path: string) => void) {
   }
 }
 
-// 离线模式供应商 URL 历史
-export interface OfflineSupplierUrl {
-  id: number
-  product_id: number
-  supplier_id: number | null
-  supplier_name: string | null
-  url: string
-  display_name: string | null
-  is_default: boolean
-  created_at: string | null
-}
-
-export interface CreateSupplierUrlResult extends OfflineSupplierUrl {
-  created: boolean
-}
-
 // 补充 productSupplierUrls 离线 RPC 封装
 export async function listSupplierUrls(params: {
   product_id: number
   supplier_id?: number
   supplier_name?: string
-}): Promise<OfflineSupplierUrl[]> {
-  const result = await call('productSupplierUrls.list', params)
-  return result as OfflineSupplierUrl[]
+}): Promise<any[]> {
+  return call('productSupplierUrls.list', params)
 }
 
 export async function createSupplierUrl(params: {
@@ -276,7 +216,6 @@ export async function createSupplierUrl(params: {
   url: string
   display_name?: string
   is_default?: boolean
-}): Promise<CreateSupplierUrlResult> {
-  const result = await call('productSupplierUrls.create', params)
-  return result as CreateSupplierUrlResult
+}): Promise<{ id: number; created: boolean }> {
+  return call('productSupplierUrls.create', params)
 }
