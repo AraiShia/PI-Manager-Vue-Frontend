@@ -45,14 +45,15 @@ async function initQWebChannel(): Promise<void> {
   // Qt 标准注入名称：window.qt.webChannelTransport（不是 qtWebChannelTransport）
   const transport = (window as any).qt?.webChannelTransport
   if (!window.QWebChannel || !transport) {
-    throw new Error('QWebChannel not available')
+    // 远程部署无 QWebChannel，安全跳过
+    console.log('[NativeBridge] QWebChannel not available (remote deployment), skipping')
+    resolve()
+    return
   }
 
-  return new Promise<void>((resolve, reject) => {
-    new window.QWebChannel(transport, (channel: any) => {
-      initNativeBridge(channel)
-      resolve()
-    })
+  new window.QWebChannel(transport, (channel: any) => {
+    initNativeBridge(channel)
+    resolve()
   })
 }
 
