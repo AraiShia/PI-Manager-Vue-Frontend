@@ -47,13 +47,14 @@ async function initQWebChannel(): Promise<void> {
   if (!window.QWebChannel || !transport) {
     // 远程部署无 QWebChannel，安全跳过
     console.log('[NativeBridge] QWebChannel not available (remote deployment), skipping')
-    resolve()
     return
   }
 
-  new window.QWebChannel(transport, (channel: any) => {
-    initNativeBridge(channel)
-    resolve()
+  return new Promise<void>((resolve) => {
+    new window.QWebChannel(transport, (channel: any) => {
+      initNativeBridge(channel)
+      resolve()
+    })
   })
 }
 
