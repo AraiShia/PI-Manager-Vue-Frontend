@@ -7,6 +7,7 @@
     top="3vh"
     :close-on-click-modal="false"
     destroy-on-close
+    :before-close="requestClose"
     @closed="onClosed"
   >
     <div class="product-management-edit-dialog">
@@ -491,7 +492,7 @@
     <!-- 底部操作按钮区域 -->
     <template #footer>
       <div class="dialog-footer-content">
-        <el-button @click="close">取消</el-button>
+        <el-button @click="requestClose()">取消</el-button>
         <el-button type="primary" :loading="saving" @click="saveProduct">保存</el-button>
       </div>
     </template>
@@ -512,7 +513,7 @@
  * @author Antigravity Architect Team
  */
 
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, toRaw } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules, type UploadFile } from 'element-plus'
 import { Plus, Close, TopRight } from '@element-plus/icons-vue'
 import { assetUrl } from '@/api/base'
@@ -556,6 +557,9 @@ const emit = defineEmits<{
 
 /** 对话框显隐状态 */
 const visible = ref<boolean>(false)
+
+/** 脏数据比对使用的表单初始状态深快照 */
+const initialFormSnapshot = ref<string>('')
 
 /** 表单提交 loading 状态 */
 const saving = ref<boolean>(false)
@@ -1059,6 +1063,91 @@ async function loadOptionsIfNeeded(): Promise<void> {
   }
 }
 
+// ================= 快照对比与未保存离开 Guard =================
+
+/**
+ * 创建表单与选定分类状态的序列化快照 JSON 字符串
+ * @returns 序列化快照字符串
+ */
+function createFormSnapshot(): string {
+  return JSON.stringify({
+    form: toRaw(form),
+    categoryLevel1: categoryLevel1.value,
+    categoryLevel2: categoryLevel2.value
+  })
+}
+
+/**
+ * 计算属性：对比初始快照，判断当前表单是否存在未保存的更动
+ */
+const hasUnsavedChanges = computed<boolean>(() => {
+  if (!visible.value) return false
+  return createFormSnapshot() !== initialFormSnapshot.value
+})
+
+/**
+ * 对话框关闭前确认拦截器
+ * 若检测到未保存改动，弹出双重二次确认弹窗防误触丢失数据
+ * @param done el-dialog :before-close 传入的组件关闭完成回调函数
+ */
+async function requestClose(done?: () => void): Promise<void> {
+  if (!hasUnsavedChanges.value) {
+    if (typeof done === 'function') {
+      done()
+    } else {
+      close()
+    }
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '当前产品编辑内容还有未保存的改动，关闭后这些改动可能丢失。是否继续关闭？',
+      '未保存提示',
+      {
+        confirmButtonText: '继续关闭',
+        cancelButtonText: '返回编辑',
+        type: 'warning'
+      }
+    )
+    await ElMessageBox.confirm(
+      '请再次确认：仍然关闭并放弃未保存改动吗？',
+      '二次确认',
+      {
+        confirmButtonText: '确认关闭',
+        cancelButtonText: '返回编辑',
+        type: 'warning'
+      }
+    )
+    initialFormSnapshot.value = createFormSnapshot()
+    if (typeof done === 'function') {
+      done()
+    } else {
+      close()
+    }
+  } catch {
+    // 用户选择返回编辑，取消关闭
+  }
+}
+
+/**
+ * 监听浏览器窗口关闭或刷新事件，有脏数据时弹出原生拦截提示
+ */
+function onBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!hasUnsavedChanges.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+// 挂载与卸载组件时管理浏览器全局 BeforeUnload 防误触事件
+onMounted(() => {
+  window.addEventListener('beforeunload', onBeforeUnload)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', onBeforeUnload)
+})
+
 // ================= 组件暴露 API 方法 =================
 
 /**
@@ -1148,6 +1237,8 @@ async function open(product: CustomerProduct | null = null, customerId?: number)
     supplierUrlOptions.value = []
   }
 
+  // 初始化初始数据快照，建立脏数据对比标准
+  initialFormSnapshot.value = createFormSnapshot()
   visible.value = true
 }
 
@@ -1184,6 +1275,8 @@ async function saveProduct(): Promise<void> {
     }
 
     const currentProduct = editingProduct.value
+    // 保存成功后更新快照，确保关闭不再误触未保存改动警告
+    initialFormSnapshot.value = createFormSnapshot()
     close()
     emit('success', currentProduct)
   } catch (error) {
@@ -1197,6 +1290,7 @@ async function saveProduct(): Promise<void> {
  * 对话框关闭回调
  */
 function onClosed(): void {
+  initialFormSnapshot.value = ''
   emit('closed')
 }
 
@@ -1594,63 +1688,63 @@ defineExpose({
 .cell-quote-head {
   grid-column: 1;
   grid-row: 1;
-  background-color: #ffe6ea !important;
-  color: #000 !important;
-  font-weight: bold;
+  background-color: #f7c7a7 !important;
+  color: #303133 !important;
+  font-weight: 600;
 }
 .cell-quote-val {
   grid-column: 1;
   grid-row: 2;
-  background-color: #ffe6ea !important;
+  background-color: #f7c7a7 !important;
 }
 
 /* 人民币采购价 - Col 2 */
 .cell-rmb-price-head {
   grid-column: 2;
   grid-row: 1;
-  background-color: #e2efda !important;
-  color: #000 !important;
-  font-weight: bold;
+  background-color: #f7c7a7 !important;
+  color: #303133 !important;
+  font-weight: 600;
 }
 .cell-rmb-price-val {
   grid-column: 2;
   grid-row: 2;
-  background-color: #e2efda !important;
+  background-color: #f7c7a7 !important;
 }
 
 /* 贴标费 - Col 3 */
 .cell-labeling-head {
   grid-column: 3;
   grid-row: 1;
-  background-color: #e2efda !important;
-  color: #000 !important;
-  font-weight: bold;
+  background-color: #f7c7a7 !important;
+  color: #303133 !important;
+  font-weight: 600;
 }
 .cell-labeling-val {
   grid-column: 3;
   grid-row: 2;
-  background-color: #e2efda !important;
+  background-color: #f7c7a7 !important;
 }
 
 /* 运费 - Col 4 */
 .cell-shipping-head {
   grid-column: 4;
   grid-row: 1;
-  background-color: #e2efda !important;
-  color: #000 !important;
-  font-weight: bold;
+  background-color: #f7c7a7 !important;
+  color: #303133 !important;
+  font-weight: 600;
 }
 .cell-shipping-val {
   grid-column: 4;
   grid-row: 2;
-  background-color: #e2efda !important;
+  background-color: #f7c7a7 !important;
 }
 
 /* 供应商 - Col 5 & 6 */
-.cell-supplier-head { grid-column: 5; grid-row: 1; }
+.cell-supplier-head { grid-column: 5; grid-row: 1; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
 .cell-supplier-content { grid-column: 6; grid-row: 1; }
 
-.cell-shop-url-head { grid-column: 5; grid-row: 2; }
+.cell-shop-url-head { grid-column: 5; grid-row: 2; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
 .cell-shop-url-content { grid-column: 6; grid-row: 2; display: flex; align-items: center; gap: 4px; }
 
 /* 开票情况 - Col 7 (就一列) */
@@ -1666,35 +1760,83 @@ defineExpose({
 
 /* --- 行 3a & 3b (中间块 2 子行高度) --- */
 /* 产品特性/选项/采购备注 - Col 1 (头), Col 2-3 (内容跨 2 列) */
-.cell-product-detail-head { grid-column: 1; grid-row: 3 / 5; }
+.cell-product-detail-head { grid-column: 1; grid-row: 3 / 5; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
 .cell-product-detail-content { grid-column: 2 / 4; grid-row: 3 / 5; justify-content: stretch; align-items: stretch; }
 
 /* 采购方式 & 开票工厂 (Row 3 / 行 3a: Col 4 头, Col 5 值; Col 6 头, Col 7 值) */
-.cell-purchase-option-head { grid-column: 4; grid-row: 3; }
+.cell-purchase-option-head { grid-column: 4; grid-row: 3; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
 .cell-purchase-option-content { grid-column: 5; grid-row: 3; }
 
-.cell-factory-invoice-head { grid-column: 6; grid-row: 3; }
+.cell-factory-invoice-head { grid-column: 6; grid-row: 3; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
 .cell-factory-invoice-content { grid-column: 7; grid-row: 3; }
 
 /* 付款方式 & 货源地 (Row 4 / 行 3b: Col 4 头, Col 5 值; Col 6 头, Col 7 值) */
-.cell-payment-method-head { grid-column: 4; grid-row: 4; }
+.cell-payment-method-head { grid-column: 4; grid-row: 4; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
 .cell-payment-method-content { grid-column: 5; grid-row: 4; }
 
-.cell-source-place-head { grid-column: 6; grid-row: 4; }
+.cell-source-place-head { grid-column: 6; grid-row: 4; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
 .cell-source-place-content { grid-column: 7; grid-row: 4; }
 
-/* --- 行 5 & 行 6 (纸箱包装与规格) --- */
-.cell-carton-pack-head { grid-column: 1 / 4; grid-row: 5; }
-.cell-pack-spec-head { grid-column: 4; grid-row: 5; }
-.cell-carton-gross-weight-head { grid-column: 5; grid-row: 5; }
+/* --- 行 5 & 行 6 (纸箱包装与规格，全行背景同步为灰底 #d9d9d9) --- */
+.cell-carton-pack-head { grid-column: 1 / 4; grid-row: 5; background-color: #d9d9d9 !important; font-weight: bold; }
+.cell-pack-spec-head { grid-column: 4; grid-row: 5; background-color: #d9d9d9 !important; font-weight: bold; }
+.cell-carton-gross-weight-head { grid-column: 5; grid-row: 5; background-color: #d9d9d9 !important; font-weight: bold; }
 .cell-estimated-volume-head { grid-column: 6; grid-row: 5; background-color: #d9d9d9 !important; font-weight: bold; }
 .cell-estimated-gross-weight-head { grid-column: 7; grid-row: 5; background-color: #d9d9d9 !important; font-weight: bold; }
 
-.cell-carton-length { grid-column: 1; grid-row: 6; }
-.cell-carton-width { grid-column: 2; grid-row: 6; }
-.cell-carton-height { grid-column: 3; grid-row: 6; }
-.cell-pack-spec-content { grid-column: 4; grid-row: 6; }
-.cell-carton-gross-weight-content { grid-column: 5; grid-row: 6; }
+.cell-carton-length { grid-column: 1; grid-row: 6; background-color: #d9d9d9 !important; }
+.cell-carton-width { grid-column: 2; grid-row: 6; background-color: #d9d9d9 !important; }
+.cell-carton-height { grid-column: 3; grid-row: 6; background-color: #d9d9d9 !important; }
+.cell-pack-spec-content { grid-column: 4; grid-row: 6; background-color: #d9d9d9 !important; }
+.cell-carton-gross-weight-content { grid-column: 5; grid-row: 6; background-color: #d9d9d9 !important; }
 .cell-estimated-volume-content { grid-column: 6; grid-row: 6; background-color: #d9d9d9 !important; }
 .cell-estimated-gross-weight-content { grid-column: 7; grid-row: 6; background-color: #d9d9d9 !important; }
+
+/* ================= 表格体无缝输入框与选中高亮样式 ================= */
+
+/* 1. 消除 Element Plus 表格内嵌套输入框的白边框、投影与背景，使单元格本身充当输入框 */
+.basic-info-table :deep(.el-input__wrapper),
+.basic-info-table :deep(.el-textarea__inner),
+.basic-info-table :deep(.field-input-wrapper),
+.purchase-cost-table-custom :deep(.el-input__wrapper),
+.purchase-cost-table-custom :deep(.el-textarea__inner),
+.purchase-cost-table-custom :deep(.field-input-wrapper),
+.table-cell :deep(.el-input__wrapper),
+.table-cell :deep(.el-textarea__inner),
+.table-cell :deep(.field-input-wrapper) {
+  box-shadow: none !important;
+  border-radius: 0;
+  padding: 0 4px;
+  background: transparent;
+  width: 100%;
+}
+
+.basic-info-table :deep(.el-input__inner),
+.purchase-cost-table-custom :deep(.el-input__inner),
+.table-cell :deep(.el-input__inner) {
+  font-size: 13px;
+  font-family: 'Times New Roman', 'SimSun', serif;
+  text-align: center;
+  color: #000;
+}
+
+/* 2. 隐藏数字输入框控制按钮，保持单元格排版整洁无缝 */
+.purchase-cost-table-custom :deep(.el-input-number .el-input-number__decrease),
+.purchase-cost-table-custom :deep(.el-input-number .el-input-number__increase) {
+  display: none;
+}
+.purchase-cost-table-custom :deep(.el-input-number .el-input__wrapper) {
+  padding: 0 4px !important;
+}
+
+/* 3. 焦点激活高亮效果：当前选中的输入框呈现柔和黄底与橙黄立体边框 (参考 ProductEditDialog.vue) */
+.basic-info-cell :deep(.el-input__wrapper:focus-within),
+.basic-info-cell :deep(.el-textarea__inner:focus-within),
+.table-cell :deep(.el-input__wrapper:focus-within),
+.table-cell :deep(.el-textarea__inner:focus-within),
+.table-cell :deep(.el-select .el-input__wrapper:focus-within) {
+  background-color: #fffbe6 !important;
+  outline: 2px solid #e6a23c !important;
+  border-radius: 3px;
+}
 </style>
