@@ -204,7 +204,7 @@
   <SupplierFormDialog
     v-model="createSupplierDialogVisible"
     :supplier="null"
-    :default-platform="purchaseType === 'offline' ? 'offline' : platform"
+    :default-platform="purchaseType"
     @success="onSupplierCreated"
   />
 </template>
