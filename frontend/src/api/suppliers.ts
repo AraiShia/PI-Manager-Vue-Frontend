@@ -84,14 +84,14 @@ export const suppliersApi = {
 
 export interface PendingSupplier {
   supplier: Supplier | null
-  platform: 'online' | 'offline'
+  platform: '1688' | 'wechat' | 'offline'
   wechat_id: string | null
   wechat_nickname: string | null
 }
 
 export const pendingSupplierState = reactive<PendingSupplier>({
   supplier: null,
-  platform: 'online',
+  platform: '1688',
   wechat_id: null,
   wechat_nickname: null,
 })

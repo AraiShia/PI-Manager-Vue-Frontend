@@ -376,7 +376,7 @@ async function open(
     
     // 清空共享状态（只消费一次）
     pendingSupplierState.supplier = null
-    pendingSupplierState.platform = 'online'
+    pendingSupplierState.platform = '1688'
     pendingSupplierState.wechat_id = null
     pendingSupplierState.wechat_nickname = null
   }
