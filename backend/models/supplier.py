@@ -22,7 +22,6 @@ class SupSupplier(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     # 平台分类字段（2026-07-17 新增）；platform NULL = 历史数据
     platform = Column(String(20), nullable=True)
-    shop_link = Column(String(500), nullable=True)
     wechat_id = Column(String(100), nullable=True)
     wechat_nickname = Column(String(100), nullable=True)
     is_dropship = Column(Boolean, default=False, nullable=False, server_default='0')

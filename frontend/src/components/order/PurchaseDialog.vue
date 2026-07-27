@@ -292,7 +292,6 @@ async function open(
   const pending = {
     supplier: pendingSupplierState.supplier,
     platform: pendingSupplierState.platform,
-    shop_link: pendingSupplierState.shop_link,
     wechat_id: pendingSupplierState.wechat_id,
     wechat_nickname: pendingSupplierState.wechat_nickname,
   }
@@ -363,9 +362,6 @@ async function open(
         const name = pending.supplier!.supplier_name || ''
         shopName.value = name
         autoFillShopName.value = name
-        if (pending.shop_link) {
-          linkUrl.value = pending.shop_link
-        }
         if (pending.wechat_id) {
           contactWechat.value = pending.wechat_id
         }
@@ -380,8 +376,7 @@ async function open(
     
     // 清空共享状态（只消费一次）
     pendingSupplierState.supplier = null
-    pendingSupplierState.platform = '1688'
-    pendingSupplierState.shop_link = null
+    pendingSupplierState.platform = 'online'
     pendingSupplierState.wechat_id = null
     pendingSupplierState.wechat_nickname = null
   }
@@ -453,9 +448,6 @@ function onSupplierCreated(created: Supplier) {
     if (platform.value === '1688') {
       autoFillShopName.value = created.supplier_name || ''
       shopName.value = created.supplier_name || ''
-      if (created.shop_link) {
-        linkUrl.value = created.shop_link
-      }
     }
   }
   createSupplierDialogVisible.value = false
@@ -642,7 +634,6 @@ async function onSubmit() {
         platform: platform.value,
         items: payload.items,
         supplier_name: platform.value === '1688' ? autoFillShopName.value : wechatNickname.value,
-        shop_link: platform.value === '1688' ? (linkUrl.value || null) : null,
         link: linkUrl.value || null,
         contact_wechat: platform.value === '1688' ? contactWechat.value : wechatId.value,
         screenshot: screenshotPath.value || null,

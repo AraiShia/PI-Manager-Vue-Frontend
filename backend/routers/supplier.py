@@ -14,17 +14,16 @@ router = APIRouter(prefix="/api/suppliers", tags=["供应商管理"])
 
 
 class FindOrCreateSupplierRequest(BaseModel):
-    """2026-07-17：线上采购（1688 店铺/微信昵称）按 dept_id+platform+name 查找或创建供应商"""
+    """按 dept_id+platform+name 查找或创建供应商"""
     supplier_name: str
     dept_id: Optional[str] = "S"
     contact_person: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
-    platform: Literal['1688', 'wechat', 'offline']   # 必填，缺失返回 422
-    shop_link: Optional[str] = None      # 新增：1688 店铺链接
-    wechat_id: Optional[str] = None      # 新增：微信号
-    wechat_nickname: Optional[str] = None  # 新增：微信昵称
-    is_dropship: Optional[bool] = None   # 新增：是否代发
+    platform: Literal['online', 'offline']   # 必填，缺失返回 422
+    wechat_id: Optional[str] = None
+    wechat_nickname: Optional[str] = None
+    is_dropship: Optional[bool] = None
 
 
 class FindOrCreateSupplierResponse(BaseModel):
@@ -53,18 +52,16 @@ def find_or_create_supplier_api(
         result = find_or_create_supplier_by_name(
             db,
             supplier_name=payload.supplier_name,
-            platform=payload.platform,  # Literal 必填，路由层无需二次校验
+            platform=payload.platform,
             dept_id=dept_id,
             contact_person=payload.contact_person,
             phone=payload.phone,
             address=payload.address,
-            shop_link=payload.shop_link,
             wechat_id=payload.wechat_id,
             wechat_nickname=payload.wechat_nickname,
             is_dropship=payload.is_dropship,
         )
     except ValueError as e:
-        # 平台校验 / 1688 shop_link 缺失等业务错误统一 422
         raise HTTPException(status_code=422, detail=str(e))
 
     if result is None:
@@ -110,7 +107,6 @@ def update_supplier_api(supplier_id: int, supplier: SupplierUpdate, db: Session 
     try:
         db_supplier = update_supplier(db, supplier_id, supplier)
     except ValueError as e:
-        # 平台变更锁定 / 1688 shop_link 缺失等业务错误统一 422
         raise HTTPException(status_code=422, detail=str(e))
     if db_supplier is None:
         raise HTTPException(status_code=404, detail="供应商不存在")

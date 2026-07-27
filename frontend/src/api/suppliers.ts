@@ -17,9 +17,8 @@ export interface Supplier {
   address?: string | null
   status: number
   created_at: string
-  // 平台分类字段（2026-07-20 新增）
-  platform?: '1688' | 'wechat' | 'offline' | null
-  shop_link?: string | null
+  // 平台分类字段
+  platform?: 'online' | 'offline' | null
   wechat_id?: string | null
   wechat_nickname?: string | null
   is_dropship?: boolean | null
@@ -34,8 +33,7 @@ export interface SupplierFormPayload {
   phone?: string | null
   email?: string | null
   address?: string | null
-  platform?: '1688' | 'wechat' | 'offline'
-  shop_link?: string | null
+  platform?: 'online' | 'offline'
   wechat_id?: string | null
   wechat_nickname?: string | null
   is_dropship?: boolean | null
@@ -86,16 +84,14 @@ export const suppliersApi = {
 
 export interface PendingSupplier {
   supplier: Supplier | null
-  platform: '1688' | 'wechat' | 'offline'
-  shop_link: string | null
+  platform: 'online' | 'offline'
   wechat_id: string | null
   wechat_nickname: string | null
 }
 
 export const pendingSupplierState = reactive<PendingSupplier>({
   supplier: null,
-  platform: '1688',
-  shop_link: null,
+  platform: 'online',
   wechat_id: null,
   wechat_nickname: null,
 })

@@ -51,12 +51,7 @@ def generate_supplier_code(db: Session, city_code: str) -> str:
 
 def _validate_platform_fields(supplier: SupplierCreate) -> None:
     """按 platform 强校验关键字段（运行时）"""
-    if supplier.platform == '1688':
-        if not supplier.shop_link or not supplier.shop_link.strip():
-            raise ValueError('1688 供应商必须填写店铺链接')
-    elif supplier.platform == 'wechat':
-        if not supplier.supplier_name or not supplier.supplier_name.strip():
-            raise ValueError('微信供应商名称（微信号）不能为空')
+    pass
 
 
 def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -> SupSupplier:
@@ -72,7 +67,6 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
         supplier_name=supplier.supplier_name,
         region=region,
         platform=supplier.platform,
-        shop_link=supplier.shop_link,
         wechat_id=supplier.wechat_id,
         wechat_nickname=supplier.wechat_nickname,
         is_dropship=bool(supplier.is_dropship) if supplier.is_dropship is not None else False,
@@ -142,43 +136,23 @@ def find_or_create_supplier_by_name(
     contact_person: str = None,
     phone: str = None,
     address: str = None,
-    shop_link: Optional[str] = None,
     wechat_id: Optional[str] = None,
     wechat_nickname: Optional[str] = None,
     is_dropship: Optional[bool] = None,
 ) -> tuple[SupSupplier, bool]:
-    """2026-07-20：线上采购按 dept_id + platform + supplier_name 查找或创建供应商
+    """2026-07-27：按 dept_id + platform + supplier_name 查找或创建供应商
 
     返回 (supplier, created)：
     - created=True  → 本次调用新创建了供应商
-    - created=False → 命中已有供应商（可能已补齐缺失字段）
-
-    前提：platform 必须非空（'1688'/'wechat'/'offline'），调用方应确保线上采购必传。
-
-    流程：
-    1. 运行时校验 platform ∈ ('1688','wechat','offline')，否则 ValueError
-    2. 按 supplier_name + dept_id + platform 精确查找现有供应商
-    3. 找到 → 补齐缺失字段后返回 (existing, False)
-    4. 找不到 → 用 SupplierCreate 创建，返回 (new_supplier, True)
+    - created=False → 命中已有供应商
     """
     if not supplier_name or not supplier_name.strip():
         return None
     supplier_name = supplier_name.strip()
 
-    # 运行时校验 platform：Python 类型标注不会阻止 None/空串
-    if platform not in ('1688', 'wechat', 'offline'):
-        raise ValueError('无效或缺失的供应商平台：必须是 1688 / wechat / offline')
-
     existing = get_supplier_by_name_and_platform(db, supplier_name, platform, dept_id)
     if existing:
-        # 1688 命中后必须补齐 shop_link
-        if platform == '1688' and not (existing.shop_link or shop_link):
-            raise ValueError('1688 供应商必须填写店铺链接，可在供应商详情中补充后重试')
-        # 补齐缺失字段（wechat_nickname/is_dropship 等）
         updated = False
-        if platform == '1688' and not existing.shop_link and shop_link:
-            existing.shop_link = shop_link
-            updated = True
         if wechat_id and not existing.wechat_id:
             existing.wechat_id = wechat_id
             updated = True
@@ -192,22 +166,20 @@ def find_or_create_supplier_by_name(
             db.add(existing)
             db.commit()
             db.refresh(existing)
-        return (existing, False)  # created=False 表示复用已有
+        return (existing, False)
 
-    # 创建新供应商（透传平台字段）
     create_payload = SupplierCreate(
         supplier_name=supplier_name,
         contact_person=contact_person or "",
         phone=phone or "",
         address=address or "",
         platform=platform,
-        shop_link=shop_link,
         wechat_id=wechat_id,
         wechat_nickname=wechat_nickname,
         is_dropship=bool(is_dropship) if is_dropship is not None else False,
     )
     new_supplier = create_supplier(db, create_payload, dept_id)
-    return (new_supplier, True)  # created=True 表示新建
+    return (new_supplier, True)
 
 def get_suppliers(db: Session, skip: int = 0, limit: int = 100, keyword: str | None = None):
     query = db.query(SupSupplier).options(
@@ -235,7 +207,6 @@ def get_suppliers(db: Session, skip: int = 0, limit: int = 100, keyword: str | N
             "status": s.status,
             "created_at": s.created_at,
             "platform": s.platform,
-            "shop_link": s.shop_link,
             "wechat_id": s.wechat_id,
             "wechat_nickname": s.wechat_nickname,
             "is_dropship": s.is_dropship,
@@ -255,17 +226,10 @@ def _validate_platform_fields_update(db_supplier: SupSupplier, supplier_update: 
     规则：
     1. platform 已存在时禁止修改（前端 UI 锁定，后端拒绝变更）
     2. platform=NULL 允许首次设置（历史数据分配平台）
-    3. 用"数据库旧值 + 本次更新值"合并后的最终值校验必填字段
     """
     if db_supplier.platform is not None and supplier_update.platform is not None:
         if supplier_update.platform != db_supplier.platform:
             raise ValueError(f'供应商平台不可修改（当前为 {db_supplier.platform}）')
-
-    final_platform = supplier_update.platform if supplier_update.platform is not None else db_supplier.platform
-    final_shop_link = supplier_update.shop_link if supplier_update.shop_link is not None else db_supplier.shop_link
-
-    if final_platform == '1688' and not (final_shop_link and str(final_shop_link).strip()):
-        raise ValueError('1688 供应商必须填写店铺链接')
 
 
 def update_supplier(db: Session, supplier_id: int, supplier_update: SupplierUpdate) -> SupSupplier:

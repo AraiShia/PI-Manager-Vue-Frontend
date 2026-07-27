@@ -187,7 +187,6 @@ export interface PurchaseCreateOnline {
   screenshot?: string | null
   remark?: string | null
   // 平台字段
-  shop_link?: string | null
   wechat_id?: string | null
   wechat_nickname?: string | null
   is_dropship?: boolean | null

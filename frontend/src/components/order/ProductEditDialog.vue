@@ -1692,11 +1692,10 @@ async function open(source: OrderDetailItem, customerName?: string, customerCoun
   // 已有供应商时，根据平台填入采购方式
   if (form.supplier) {
     const platformMap: Record<string, string> = {
-      '1688': '1688平台采购',
-      'wechat': '微信采购',
+      'online': '线上采购',
       'offline': '线下采购',
     }
-    form.purchase_option_name = platformMap[(form.supplier as any).platform] || '1688平台采购'
+    form.purchase_option_name = platformMap[(form.supplier as any).platform] || '线上采购'
   }
   await loadSupplierUrls()
   // 在供应商恢复完毕后再创建快照，避免异步回填造成假的"未保存"脏状态
@@ -1817,14 +1816,9 @@ function applyShopUrlFromPriority() {
     saveField('shop_url', form.shop_url)
     return
   }
-  const supLink = (form.supplier as any)?.shop_link
-  if (supLink) {
-    form.shop_url = supLink
-    saveField('shop_url', supLink)
-  } else {
-    form.shop_url = ''
-    saveField('shop_url', '')
-  }
+  // shop_link 已从 sup_supplier 移除，不再自动填入
+  form.shop_url = ''
+  saveField('shop_url', '')
 }
 
 async function requestClose(done?: () => void) {
@@ -2188,17 +2182,11 @@ async function onSupplierSelect(s: Supplier) {
     'wechat': '微信采购',
     'offline': '线下采购',
   }
-  form.purchase_option_name = platformMap[(s as any).platform] || '1688平台采购'
+  form.purchase_option_name = platformMap[(s as any).platform] || '线上采购'
   saveField('purchase_option_name', form.purchase_option_name)
-  // 供应商有 shop_link 时自动填入采购链接
-  if (s.shop_link) {
-    form.shop_url = s.shop_link
-    saveField('shop_url', s.shop_link)
-  }
   // 写入共享状态，供 PurchaseDialog 读取并回填
   pendingSupplierState.supplier = s
-  pendingSupplierState.platform = (s.platform as any) || '1688'
-  pendingSupplierState.shop_link = s.shop_link || null
+  pendingSupplierState.platform = (s.platform as any) || 'online'
   pendingSupplierState.wechat_id = s.wechat_id || null
   pendingSupplierState.wechat_nickname = s.wechat_nickname || null
 
@@ -2228,11 +2216,10 @@ async function onNewSupplierCreated(created: Supplier) {
     form.supplier = created
     // 根据供应商平台自动填入采购方式
     const platformMap: Record<string, string> = {
-      '1688': '1688平台采购',
-      'wechat': '微信采购',
+      'online': '线上采购',
       'offline': '线下采购',
     }
-    form.purchase_option_name = platformMap[(created as any).platform] || '1688平台采购'
+    form.purchase_option_name = platformMap[(created as any).platform] || '线上采购'
     saveField('purchase_option_name', form.purchase_option_name)
   }
   if (name) {
@@ -2240,8 +2227,7 @@ async function onNewSupplierCreated(created: Supplier) {
   }
   // 写入共享状态，供 PurchaseDialog 读取并回填
   pendingSupplierState.supplier = created || null
-  pendingSupplierState.platform = (created?.platform as any) || '1688'
-  pendingSupplierState.shop_link = created?.shop_link || null
+  pendingSupplierState.platform = (created?.platform as any) || 'online'
   pendingSupplierState.wechat_id = created?.wechat_id || null
   pendingSupplierState.wechat_nickname = created?.wechat_nickname || null
 

@@ -649,7 +649,6 @@ def resolve_online_supplier(db: Session, payload: PurchaseCreateOnline) -> int:
         supplier_name=str(payload.supplier_name).strip(),
         platform=payload.platform,
         dept_id=payload.dept_id,
-        shop_link=payload.shop_link,
         wechat_id=payload.wechat_id,
         wechat_nickname=payload.wechat_nickname,
         is_dropship=payload.is_dropship,

@@ -88,32 +88,6 @@ def test_find_or_create_blank_supplier_name_returns_422():
     assert "supplier_name" in r.json()["detail"]
 
 
-def test_find_or_create_1688_missing_shop_link_returns_422():
-    """1688 平台未传 shop_link → 422（运行时校验）"""
-    r = client.post("/api/suppliers/find-or-create", json={
-        "supplier_name": "1688 缺链接店",
-        "dept_id": "S",
-        "platform": "1688",
-        # shop_link 故意不传
-    })
-    assert r.status_code == 422, r.text
-    assert "店铺链接" in r.json()["detail"]
-
-
-def test_find_or_create_1688_with_shop_link_succeeds():
-    """1688 + shop_link 正常创建 → 200，created=True"""
-    r = client.post("/api/suppliers/find-or-create", json={
-        "supplier_name": "1688 正常店",
-        "dept_id": "S",
-        "platform": "1688",
-        "shop_link": "https://shop.1688.com/x",
-    })
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["created"] is True
-    assert body["supplier_name"] == "1688 正常店"
-
-
 def test_find_or_create_hits_existing_returns_created_false():
     """命中已有供应商 → 200，created=False"""
     # 先创建一个供应商

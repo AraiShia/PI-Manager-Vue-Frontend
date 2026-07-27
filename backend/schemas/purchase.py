@@ -46,8 +46,7 @@ class PurchaseCreateOnline(BaseModel):
     contact_wechat: Optional[str] = None
     screenshot: Optional[str] = None
     remark: Optional[str] = None
-    # 新增平台字段
-    shop_link: Optional[str] = None
+    # 平台字段
     wechat_id: Optional[str] = None
     wechat_nickname: Optional[str] = None
     is_dropship: Optional[bool] = None
