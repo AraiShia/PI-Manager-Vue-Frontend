@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Literal
 
 class SupplierBase(BaseModel):
     dept_id: str
