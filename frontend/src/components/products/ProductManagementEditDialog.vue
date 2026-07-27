@@ -396,7 +396,7 @@
                   v-model="form.factory_invoice_name"
                   :status="getFieldStatus('factory_invoice_name')"
                   :disabled="!invoiceFactoryEnabled"
-                  placeholder="开票工厂全称"
+                  :placeholder="factoryInvoicePlaceholder"
                   @blur="invoiceFactoryEnabled && onUnmappedBlur('factory_invoice_name')"
                 />
               </div>
@@ -738,6 +738,14 @@ const childCategoryOptions = computed(() => {
 
 /** 开票工厂全称激活判断 */
 const invoiceFactoryEnabled = computed(() => form.invoice_type === '增票' || form.invoice_type === '普票')
+
+/** 开票工厂全称动态提示词 (未选择增票/普票时提醒) */
+const factoryInvoicePlaceholder = computed<string>(() => {
+  if (invoiceFactoryEnabled.value) {
+    return '开票工厂全称'
+  }
+  return form.invoice_type === '不开票' ? '未选择开票' : '未选择开票类型'
+})
 
 /** 预估毛重计算 */
 const estimatedGrossWeight = computed(() => {

@@ -4,6 +4,7 @@
       :model-value="displayValue"
       :class="['field-input', statusClass]"
       :disabled="props.disabled"
+      :placeholder="props.placeholder"
       @update:model-value="onInput"
       @blur="onBlur"
     >
@@ -28,6 +29,7 @@ const props = defineProps<{
   modelValue: string | number | null | undefined
   status?: FieldStatus
   disabled?: boolean
+  placeholder?: string
 }>()
 
 const emit = defineEmits<{
