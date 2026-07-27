@@ -1,8 +1,10 @@
 <template>
   <el-select
     :model-value="selectedItem"
+    filterable
     remote
     :remote-method="onQuery"
+    :filter-method="() => true"
     :loading="loading"
     :placeholder="currentName || placeholder"
     :clearable="clearable"
