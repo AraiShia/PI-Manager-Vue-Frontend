@@ -802,6 +802,8 @@ async function onSubmitSingle() {
       const payload = {
         dept_id: 'S',
         customer_id: form.customer_id,
+        profit_margin: presetProfitMargin.value,
+        exchange_rate: presetExchangeRate.value,
         items: [{
           quantity: form.quantity,
           unit_price: form.unit_price,
