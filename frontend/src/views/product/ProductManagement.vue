@@ -253,7 +253,7 @@ function onPageSizeChange() {
 
 /** 打开新增产品弹窗 */
 function openCreate() {
-  editDialogRef.value?.open(null, filters.customerId)
+  editDialogRef.value?.open(null)
 }
 
 /** 打开编辑产品弹窗 */
