@@ -220,9 +220,18 @@
           <div class="section-title" style="background-color: #fde2d8; color: #b85c38;">价格与采购信息</div>
           <div class="section-body">
             <div class="purchase-cost-table-custom">
-              <!-- 行1：报价 USD / 人民币采购价 / 贴标费 / 运费 表头 + 供应商选择 + 开票情况 -->
+              <!-- 行1：7个表头 (报价 / 基础毛利率 / 预估美金价 / 预估毛利率 / 人民币采购价 / 贴标费 / 运费) -->
               <div class="table-head cell-quote-head required">
                 * 报价<br />PRICE/USD
+              </div>
+              <div class="table-head cell-base-profit-head">
+                基础毛利率
+              </div>
+              <div class="table-head cell-est-usd-head">
+                预估美金价
+              </div>
+              <div class="table-head cell-est-profit-head">
+                预估毛利率
               </div>
               <div class="table-head cell-rmb-price-head required">
                 * 人民币采购价
@@ -233,8 +242,75 @@
               <div class="table-head cell-shipping-head">
                 运费
               </div>
+
+              <!-- 行2：7个数值单元格 -->
+              <div class="table-cell cell-quote-val">
+                <el-input-number
+                  v-model="form.price_usd"
+                  :min="0"
+                  :precision="2"
+                  class="full-width"
+                  placeholder="0.00"
+                >
+                  <template #prefix>$</template>
+                </el-input-number>
+              </div>
+              <div class="table-cell cell-base-profit-val">
+                <el-input
+                  v-model="form.base_profit_margin"
+                  placeholder="0%"
+                  class="full-width"
+                />
+              </div>
+              <div class="table-cell cell-est-usd-val">
+                <el-input-number
+                  v-model="form.estimated_usd_price"
+                  :min="0"
+                  :precision="2"
+                  class="full-width"
+                  placeholder="0.00"
+                >
+                  <template #prefix>$</template>
+                </el-input-number>
+              </div>
+              <div class="table-cell cell-est-profit-val">
+                <el-input
+                  v-model="form.estimated_profit_margin"
+                  placeholder="0%"
+                  class="full-width"
+                />
+              </div>
+              <div class="table-cell cell-rmb-price-val">
+                <el-input-number
+                  v-model="form.price_rmb"
+                  :min="0"
+                  :precision="2"
+                  class="full-width"
+                  placeholder="0.00"
+                >
+                  <template #prefix>¥</template>
+                </el-input-number>
+              </div>
+              <div class="table-cell cell-labeling-val">
+                <el-input-number
+                  v-model="form.labeling_fee"
+                  :precision="2"
+                  class="full-width"
+                  placeholder="0.00"
+                />
+              </div>
+              <div class="table-cell cell-shipping-val">
+                <el-input-number
+                  v-model="form.shipping_fee"
+                  :precision="2"
+                  class="full-width"
+                  placeholder="0.00"
+                />
+              </div>
+
+              <!-- 行3 & 行4：供应商、供应商链接、产品特性、开票情况、开票工厂 -->
               <div class="table-head cell-supplier-head required">
-                * 供应商
+                * 供应商{{ form.factory_code ? `（${form.factory_code}）` : '' }}
               </div>
               <div class="table-cell cell-supplier-content" data-required-field="supplier_name">
                 <SupplierSearchSelect
@@ -259,53 +335,39 @@
                   </template>
                 </SupplierSearchSelect>
               </div>
+
+              <div class="table-head cell-product-detail-head required">
+                * 产品特性/<br />选项/采购备注
+              </div>
+              <div class="table-cell cell-product-detail-content" data-required-field="product_detail">
+                <el-input
+                  v-model="form.product_detail"
+                  type="textarea"
+                  :rows="4"
+                  resize="none"
+                  :disabled="formLocked"
+                  placeholder="产品特性说明"
+                  @blur="saveField('product_detail', form.product_detail)"
+                />
+              </div>
+
               <div class="table-head cell-invoice-group-head">
                 开票情况
               </div>
+              <div class="table-cell cell-invoice-type">
+                <el-select
+                  v-model="form.invoice_type"
+                  placeholder="类型"
+                  size="small"
+                  style="width: 100%"
+                  @change="saveField('invoice_type', form.invoice_type)"
+                >
+                  <el-option label="增票" value="增票" />
+                  <el-option label="普票" value="普票" />
+                  <el-option label="不开票" value="不开票" />
+                </el-select>
+              </div>
 
-              <!-- 行2：报价 USD 数值 / 人民币采购价数值 / 贴标费数值 / 运费数值 + 供应商链接 + 开票类型 & 备注 -->
-              <div class="table-cell cell-quote-val">
-                <el-input-number
-                  v-model="form.price_usd"
-                  :min="0"
-                  :precision="2"
-                  class="full-width"
-                  placeholder="0.00"
-                >
-                  <template #prefix>$</template>
-                </el-input-number>
-              </div>
-              <div class="table-cell cell-rmb-price-val">
-                <el-input-number
-                  v-model="form.price_rmb"
-                  :min="0"
-                  :precision="2"
-                  class="full-width"
-                  placeholder="0.00"
-                >
-                  <template #prefix>¥</template>
-                </el-input-number>
-              </div>
-              <div class="table-cell cell-labeling-val">
-                <el-input-number
-                  v-model="form.labeling_fee"
-                  :precision="2"
-                  class="full-width"
-                  placeholder="0.00"
-                >
-                  <template #prefix>¥</template>
-                </el-input-number>
-              </div>
-              <div class="table-cell cell-shipping-val">
-                <el-input-number
-                  v-model="form.shipping_fee"
-                  :precision="2"
-                  class="full-width"
-                  placeholder="0.00"
-                >
-                  <template #prefix>¥</template>
-                </el-input-number>
-              </div>
               <div class="table-head cell-shop-url-head">
                 供应商链接:
               </div>
@@ -349,47 +411,7 @@
                   </el-button>
                 </el-tooltip>
               </div>
-              <div class="table-cell cell-invoice-type">
-                <el-select
-                  v-model="form.invoice_type"
-                  placeholder="类型"
-                  size="small"
-                  style="width: 100%"
-                  @change="saveField('invoice_type', form.invoice_type)"
-                >
-                  <el-option label="增票" value="增票" />
-                  <el-option label="普票" value="普票" />
-                  <el-option label="不开票" value="不开票" />
-                </el-select>
-              </div>
 
-
-              <!-- 行3a/3b：产品特性 (跨两子行 1-4列) + 采购方式/付款方式 (5-6列) + 开票工厂/货源地 (7-8列) -->
-              <div class="table-head cell-product-detail-head required">
-                * 产品特性/<br />选项/采购备注
-              </div>
-              <div class="table-cell cell-product-detail-content" data-required-field="product_detail">
-                <el-input
-                  v-model="form.product_detail"
-                  type="textarea"
-                  :rows="4"
-                  resize="none"
-                  :disabled="formLocked"
-                  placeholder="产品特性说明"
-                  @blur="saveField('product_detail', form.product_detail)"
-                />
-              </div>
-
-              <div class="table-head cell-purchase-option-head">采购方式:</div>
-              <div class="table-cell cell-purchase-option-content">
-                <FieldInput
-                  v-model="form.purchase_option_name"
-                  :status="getFieldStatus('purchase_option_name')"
-                  :disabled="formLocked"
-                  placeholder="1688/微信联系/线下合同"
-                  @blur="saveField('purchase_option_name', form.purchase_option_name)"
-                />
-              </div>
               <div class="table-head cell-factory-invoice-head">开票工厂（全称）：</div>
               <div class="table-cell cell-factory-invoice-content">
                 <FieldInput
@@ -401,6 +423,17 @@
                 />
               </div>
 
+              <!-- 行5：采购方式 / 付款方式 / 空白占位 / 货源地 -->
+              <div class="table-head cell-purchase-option-head">采购方式:</div>
+              <div class="table-cell cell-purchase-option-content">
+                <FieldInput
+                  v-model="form.purchase_option_name"
+                  :status="getFieldStatus('purchase_option_name')"
+                  :disabled="formLocked"
+                  placeholder="1688/微信联系/线下合同"
+                  @blur="saveField('purchase_option_name', form.purchase_option_name)"
+                />
+              </div>
               <div class="table-head cell-payment-method-head">付款方式:</div>
               <div class="table-cell cell-payment-method-content">
                 <FieldInput
@@ -410,6 +443,7 @@
                   @blur="saveField('payment_method', form.payment_method)"
                 />
               </div>
+              <div class="table-cell cell-spacer-row5"></div>
               <div class="table-head cell-source-place-head">货源地</div>
               <div class="table-cell cell-source-place-content">
                 <FieldInput
@@ -420,7 +454,7 @@
                 />
               </div>
 
-              <!-- 行4 & 行5：纸箱包装与规格 (8 列对齐) -->
+              <!-- 行6 & 行7：纸箱包装与规格 (7 列对齐) -->
               <div class="table-head cell-carton-pack-head required">
                 * 纸箱包装：<br /><span style="font-size:10px;color:#909399;font-weight:normal;">长×宽×高 (cm)</span>
               </div>
@@ -638,6 +672,9 @@ interface ExtendedProductForm extends ProductFormPayload {
   estimated_volume?: number | undefined
   labeling_fee?: number | undefined
   shipping_fee?: number | undefined
+  base_profit_margin?: number | string | undefined
+  estimated_usd_price?: number | undefined
+  estimated_profit_margin?: number | string | undefined
 }
 
 /** 空表单默认结构 */
@@ -655,6 +692,9 @@ const emptyForm = (): ExtendedProductForm => ({
   category_id: '',
   price_usd: null,
   price_rmb: null,
+  base_profit_margin: undefined,
+  estimated_usd_price: undefined,
+  estimated_profit_margin: undefined,
   detail_desc: '',
   brand: '',
   specifications: '',
@@ -1191,6 +1231,9 @@ async function open(product: CustomerProduct | null = null, customerId?: number)
       category_id: product.category_id || '',
       price_usd: product.price_usd ?? null,
       price_rmb: product.price_rmb ?? null,
+      base_profit_margin: (product as any).base_profit_margin ?? (product as any).profit_margin ?? undefined,
+      estimated_usd_price: (product as any).estimated_usd_price ?? (product.price_usd ?? undefined),
+      estimated_profit_margin: (product as any).estimated_profit_margin ?? (product as any).estimated_margin ?? undefined,
       detail_desc: product.detail_desc || '',
       brand: product.brand || '',
       specifications: product.specifications || '',
@@ -1729,99 +1772,142 @@ defineExpose({
   background-color: #f7c7a7 !important;
 }
 
-/* 人民币采购价 - Col 2 */
-.cell-rmb-price-head {
+/* 基础毛利率 - Col 2 */
+.cell-base-profit-head {
   grid-column: 2;
   grid-row: 1;
   background-color: #f7c7a7 !important;
   color: #303133 !important;
   font-weight: 600;
 }
-.cell-rmb-price-val {
+.cell-base-profit-val {
   grid-column: 2;
   grid-row: 2;
   background-color: #f7c7a7 !important;
 }
 
-/* 贴标费 - Col 3 */
-.cell-labeling-head {
+/* 预估美金价 - Col 3 */
+.cell-est-usd-head {
   grid-column: 3;
+  grid-row: 1;
+  background-color: #f7c7a7 !important;
+  font-weight: 600;
+}
+.cell-est-usd-val {
+  grid-column: 3;
+  grid-row: 2;
+  background-color: #f7c7a7 !important;
+}
+
+/* 预估毛利率 - Col 4 */
+.cell-est-profit-head {
+  grid-column: 4;
+  grid-row: 1;
+  background-color: #f7c7a7 !important;
+  color: #303133 !important;
+  font-weight: 600;
+}
+.cell-est-profit-val {
+  grid-column: 4;
+  grid-row: 2;
+  background-color: #f7c7a7 !important;
+}
+
+/* 人民币采购价 - Col 5 */
+.cell-rmb-price-head {
+  grid-column: 5;
+  grid-row: 1;
+  background-color: #f7c7a7 !important;
+  color: #000 !important;
+  font-weight: 600;
+}
+.cell-rmb-price-val {
+  grid-column: 5;
+  grid-row: 2;
+  background-color: #f7c7a7 !important;
+}
+
+/* 贴标费 - Col 6 */
+.cell-labeling-head {
+  grid-column: 6;
   grid-row: 1;
   background-color: #f7c7a7 !important;
   color: #303133 !important;
   font-weight: 600;
 }
 .cell-labeling-val {
-  grid-column: 3;
+  grid-column: 6;
   grid-row: 2;
   background-color: #f7c7a7 !important;
 }
 
-/* 运费 - Col 4 */
+/* 运费 - Col 7 */
 .cell-shipping-head {
-  grid-column: 4;
+  grid-column: 7;
   grid-row: 1;
   background-color: #f7c7a7 !important;
-  color: #303133 !important;
   font-weight: 600;
 }
 .cell-shipping-val {
-  grid-column: 4;
+  grid-column: 7;
   grid-row: 2;
   background-color: #f7c7a7 !important;
 }
 
-/* 供应商 - Col 5 & 6 */
-.cell-supplier-head { grid-column: 5; grid-row: 1; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
-.cell-supplier-content { grid-column: 6; grid-row: 1; }
+/* --- 行 3 & 行 4 (供应商、供应商链接、产品特性、开票情况/开票工厂) --- */
+/* 供应商 - Col 1 & Col 2, Row 3 */
+.cell-supplier-head { grid-column: 1; grid-row: 3; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
+.cell-supplier-content { grid-column: 2; grid-row: 3; }
 
-.cell-shop-url-head { grid-column: 5; grid-row: 2; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
-.cell-shop-url-content { grid-column: 6; grid-row: 2; display: flex; align-items: center; gap: 4px; }
+/* 供应商链接 - Col 1 & Col 2, Row 4 */
+.cell-shop-url-head { grid-column: 1; grid-row: 4; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
+.cell-shop-url-content { grid-column: 2; grid-row: 4; display: flex; align-items: center; gap: 4px; }
 
-/* 开票情况 - Col 7 (就一列) */
+/* 产品特性/选项/采购备注 - Col 3 (头), Col 4-5 (内容跨 2 列) */
+.cell-product-detail-head { grid-column: 3; grid-row: 3 / 5; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
+.cell-product-detail-content { grid-column: 4 / 6; grid-row: 3 / 5; justify-content: stretch; align-items: stretch; }
+
+/* 开票情况 - Col 6 & Col 7, Row 3 */
 .cell-invoice-group-head {
-  grid-column: 7;
-  grid-row: 1;
+  grid-column: 6;
+  grid-row: 3;
   background-color: #e2efda !important;
   color: #000 !important;
   font-weight: bold;
   font-size: 14px;
 }
-.cell-invoice-type { grid-column: 7; grid-row: 2; background-color: #e2efda !important; }
+.cell-invoice-type { grid-column: 7; grid-row: 3; background-color: #e2efda !important; }
 
-/* --- 行 3a & 3b (中间块 2 子行高度) --- */
-/* 产品特性/选项/采购备注 - Col 1 (头), Col 2-3 (内容跨 2 列) */
-.cell-product-detail-head { grid-column: 1; grid-row: 3 / 5; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
-.cell-product-detail-content { grid-column: 2 / 4; grid-row: 3 / 5; justify-content: stretch; align-items: stretch; }
+/* 开票工厂 - Col 6 & Col 7, Row 4 */
+.cell-factory-invoice-head { grid-column: 6; grid-row: 4; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
+.cell-factory-invoice-content { grid-column: 7; grid-row: 4; }
 
-/* 采购方式 & 开票工厂 (Row 3 / 行 3a: Col 4 头, Col 5 值; Col 6 头, Col 7 值) */
-.cell-purchase-option-head { grid-column: 4; grid-row: 3; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
-.cell-purchase-option-content { grid-column: 5; grid-row: 3; }
+/* --- 行 5 (采购方式 Col 1-2, 付款方式 Col 3-4, 占位 Col 5, 货源地 Col 6-7) --- */
+.cell-purchase-option-head { grid-column: 1; grid-row: 5; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
+.cell-purchase-option-content { grid-column: 2; grid-row: 5; }
 
-.cell-factory-invoice-head { grid-column: 6; grid-row: 3; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
-.cell-factory-invoice-content { grid-column: 7; grid-row: 3; }
+.cell-payment-method-head { grid-column: 3; grid-row: 5; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
+.cell-payment-method-content { grid-column: 4; grid-row: 5; }
 
-/* 付款方式 & 货源地 (Row 4 / 行 3b: Col 4 头, Col 5 值; Col 6 头, Col 7 值) */
-.cell-payment-method-head { grid-column: 4; grid-row: 4; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
-.cell-payment-method-content { grid-column: 5; grid-row: 4; }
+.cell-spacer-row5 { grid-column: 5; grid-row: 5; background-color: #e2efda !important; }
 
-.cell-source-place-head { grid-column: 6; grid-row: 4; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
-.cell-source-place-content { grid-column: 7; grid-row: 4; }
+.cell-source-place-head { grid-column: 6; grid-row: 5; background-color: #e2efda !important; color: #000 !important; font-weight: bold; }
+.cell-source-place-content { grid-column: 7; grid-row: 5; }
 
-/* --- 行 5 & 行 6 (纸箱包装与规格，全行背景同步为灰底 #d9d9d9) --- */
-.cell-carton-pack-head { grid-column: 1 / 4; grid-row: 5; background-color: #d9d9d9 !important; font-weight: bold; }
-.cell-pack-spec-head { grid-column: 4; grid-row: 5; background-color: #d9d9d9 !important; font-weight: bold; }
-.cell-carton-gross-weight-head { grid-column: 5; grid-row: 5; background-color: #d9d9d9 !important; font-weight: bold; }
-.cell-estimated-volume-head { grid-column: 6; grid-row: 5; background-color: #d9d9d9 !important; font-weight: bold; }
-.cell-estimated-gross-weight-head { grid-column: 7; grid-row: 5; background-color: #d9d9d9 !important; font-weight: bold; }
+/* --- 行 6 & 行 7 (纸箱包装与规格，全行背景同步为灰底 #d9d9d9) --- */
+.cell-carton-pack-head { grid-column: 1 / 4; grid-row: 6; background-color: #d9d9d9 !important; font-weight: bold; }
+.cell-pack-spec-head { grid-column: 4; grid-row: 6; background-color: #d9d9d9 !important; font-weight: bold; }
+.cell-carton-gross-weight-head { grid-column: 5; grid-row: 6; background-color: #d9d9d9 !important; font-weight: bold; }
+.cell-estimated-volume-head { grid-column: 6; grid-row: 6; background-color: #d9d9d9 !important; font-weight: bold; }
+.cell-estimated-gross-weight-head { grid-column: 7; grid-row: 6; background-color: #d9d9d9 !important; font-weight: bold; }
 
-.cell-carton-length { grid-column: 1; grid-row: 6; background-color: #d9d9d9 !important; }
-.cell-carton-width { grid-column: 2; grid-row: 6; background-color: #d9d9d9 !important; }
-.cell-carton-height { grid-column: 3; grid-row: 6; background-color: #d9d9d9 !important; }
-.cell-pack-spec-content { grid-column: 4; grid-row: 6; background-color: #d9d9d9 !important; }
-.cell-carton-gross-weight-content { grid-column: 5; grid-row: 6; background-color: #d9d9d9 !important; }
-.cell-estimated-volume-content { grid-column: 6; grid-row: 6; background-color: #d9d9d9 !important; }
-.cell-estimated-gross-weight-content { grid-column: 7; grid-row: 6; background-color: #d9d9d9 !important; }
+.cell-carton-length { grid-column: 1; grid-row: 7; background-color: #d9d9d9 !important; }
+.cell-carton-width { grid-column: 2; grid-row: 7; background-color: #d9d9d9 !important; }
+.cell-carton-height { grid-column: 3; grid-row: 7; background-color: #d9d9d9 !important; }
+.cell-pack-spec-content { grid-column: 4; grid-row: 7; background-color: #d9d9d9 !important; }
+.cell-carton-gross-weight-content { grid-column: 5; grid-row: 7; background-color: #d9d9d9 !important; }
+.cell-estimated-volume-content { grid-column: 6; grid-row: 7; background-color: #d9d9d9 !important; }
+.cell-estimated-gross-weight-content { grid-column: 7; grid-row: 7; background-color: #d9d9d9 !important; }
 
 /* ================= 表格体无缝输入框与选中高亮样式 ================= */
 
