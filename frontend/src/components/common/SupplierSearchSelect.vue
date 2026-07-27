@@ -1,7 +1,6 @@
 <template>
   <el-select
     :model-value="selectedItem"
-    filterable
     remote
     :remote-method="onQuery"
     :loading="loading"
