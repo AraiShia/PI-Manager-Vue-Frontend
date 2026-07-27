@@ -239,7 +239,12 @@
           </template>
 
           <el-divider content-position="left">产品信息</el-divider>
-
+          <div class="preset-content">
+            <span>毛利率：</span>
+            <el-input-number v-model="presetProfitMargin" :min="0" :max="100" :controls="false" style="width: 100px;" />
+            <span style="margin-left: 16px;">汇率：</span>
+            <el-input-number v-model="presetExchangeRate" :min="0" :precision="2" :controls="false" style="width: 100px;" />
+          </div>
           <el-row :gutter="16">
             <el-col :span="12">
               <el-form-item label="客户型号" prop="customer_code">
