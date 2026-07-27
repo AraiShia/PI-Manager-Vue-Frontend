@@ -27,5 +27,6 @@ frontend/.env.production
 
 # PyInstaller / build artifacts
 backend/*.spec
+build/
 
 # client/ 是 PyQt 独立客户端，与前端/后端共存于同一仓库
