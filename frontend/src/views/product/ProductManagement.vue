@@ -117,57 +117,28 @@
       </div>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="editingProduct ? '编辑产品' : '新增产品'" width="820px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="108px" class="product-form">
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="客户" prop="customer_id">
-              <el-select v-model="form.customer_id" filterable placeholder="请选择客户" class="full-width">
-                <el-option v-for="item in customers" :key="item.id" :label="customerName(item)" :value="item.id" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="类别">
-              <el-select v-model="form.category_id" clearable filterable placeholder="请选择类别" class="full-width">
-                <el-option v-for="item in categories" :key="item.code || item.id" :label="item.name" :value="item.code" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12"><el-form-item label="产品名称"><el-input v-model="form.product_name" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="客户型号"><el-input v-model="form.customer_model" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="客户产品编号"><el-input v-model="codesText" placeholder="多个编号用逗号或换行分隔" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="OE号"><el-input v-model="oesText" placeholder="多个OE用逗号或换行分隔" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="品牌"><el-input v-model="form.brand" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="颜色"><el-input v-model="form.color" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="USD"><el-input-number v-model="form.price_usd" :min="0" :precision="2" class="full-width" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="RMB"><el-input-number v-model="form.price_rmb" :min="0" :precision="2" class="full-width" /></el-form-item></el-col>
-          <el-col :span="24"><el-form-item label="图片URL"><el-input v-model="form.image_url" /></el-form-item></el-col>
-          <el-col :span="24"><el-form-item label="规格"><el-input v-model="form.specifications" /></el-form-item></el-col>
-          <el-col :span="24"><el-form-item label="产品描述"><el-input v-model="form.detail_desc" type="textarea" :rows="3" /></el-form-item></el-col>
-          <el-col :span="24"><el-form-item label="客户备注"><el-input v-model="form.customer_remark" type="textarea" :rows="2" /></el-form-item></el-col>
-        </el-row>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="saveProduct">保存</el-button>
-      </template>
-    </el-dialog>
+    <!-- 产品新增/编辑弹窗组件 -->
+    <ProductManagementEditDialog
+      ref="editDialogRef"
+      :customers="customers"
+      :categories="categories"
+      @success="loadProducts(page)"
+    />
   </main>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import { assetUrl } from '@/api/base'
-import { productsApi, type CategoryOption, type CustomerOption, type CustomerProduct, type ProductFormPayload } from '@/api/products'
+import { productsApi, type CategoryOption, type CustomerOption, type CustomerProduct } from '@/api/products'
 import { FALLBACK_PARENT_CATEGORIES, FALLBACK_CHILD_CATEGORIES } from '@/constants/productCategories'
 import ProductSearchSelect from '@/components/common/ProductSearchSelect.vue'
+import ProductManagementEditDialog from '@/components/products/ProductManagementEditDialog.vue'
 import type { CustomerProductSearchItem } from '@/api/customerProduct'
 
 const loading = ref(false)
-const saving = ref(false)
 const products = ref<CustomerProduct[]>([])
 const customers = ref<CustomerOption[]>([])
 const categories = ref<any[]>([])
@@ -175,11 +146,9 @@ const selectedRows = ref<CustomerProduct[]>([])
 const page = ref(1)
 const pageSize = ref(100)
 const total = ref(0)
-const dialogVisible = ref(false)
-const editingProduct = ref<CustomerProduct | null>(null)
-const formRef = ref<FormInstance>()
-const codesText = ref('')
-const oesText = ref('')
+
+/** 编辑/新增弹窗组件引用 */
+const editDialogRef = ref<InstanceType<typeof ProductManagementEditDialog> | null>(null)
 
 const filters = reactive({
   search: '',
@@ -206,28 +175,6 @@ function onCategoryLevel2Change() {
   // 子类变化时无需额外处理
 }
 
-const emptyForm = (): ProductFormPayload => ({
-  customer_id: undefined as unknown as number,
-  product_name: '',
-  customer_model: '',
-  color: '',
-  customer_remark: '',
-  category_id: '',
-  price_usd: null,
-  price_rmb: null,
-  detail_desc: '',
-  brand: '',
-  specifications: '',
-  image_url: '',
-  codes: [],
-  oes: [],
-})
-
-const form = reactive<ProductFormPayload>(emptyForm())
-const rules: FormRules = {
-  customer_id: [{ required: true, message: '请选择客户', trigger: 'change' }],
-}
-
 const categoryMap = computed(() => new Map(categories.value.map(item => [item.code, item.name])))
 
 function customerName(item: CustomerOption) {
@@ -249,14 +196,6 @@ function formatRmb(value?: number | null) {
 
 function imageList(row: CustomerProduct) {
   return [row.image_url, ...(row.sub_images || [])].filter(Boolean).map(item => assetUrl(item!))
-}
-
-function splitList(value: string) {
-  return value.split(/[\n,，;；]+/).map(item => item.trim()).filter(Boolean)
-}
-
-function assignForm(payload: ProductFormPayload) {
-  Object.assign(form, emptyForm(), payload)
 }
 
 async function loadOptions() {
@@ -312,58 +251,14 @@ function onPageSizeChange() {
   loadProducts(1)
 }
 
+/** 打开新增产品弹窗 */
 function openCreate() {
-  editingProduct.value = null
-  assignForm(emptyForm())
-  codesText.value = ''
-  oesText.value = ''
-  dialogVisible.value = true
+  editDialogRef.value?.open(null)
 }
 
+/** 打开编辑产品弹窗 */
 function openEdit(row: CustomerProduct) {
-  editingProduct.value = row
-  assignForm({
-    customer_id: row.customer_id,
-    product_name: row.product_name || '',
-    customer_model: row.customer_model || '',
-    color: row.color || '',
-    customer_remark: row.customer_remark || '',
-    category_id: row.category_id || '',
-    price_usd: row.price_usd ?? null,
-    price_rmb: row.price_rmb ?? null,
-    detail_desc: row.detail_desc || '',
-    brand: row.brand || '',
-    specifications: row.specifications || '',
-    image_url: row.image_url || '',
-    sub_images: row.sub_images || [],
-  })
-  codesText.value = (row.codes || []).map(item => item.product_code).join('\n')
-  oesText.value = (row.oes || []).map(item => item.oe_number).join('\n')
-  dialogVisible.value = true
-}
-
-async function saveProduct() {
-  await formRef.value?.validate()
-  saving.value = true
-  try {
-    const payload: ProductFormPayload = {
-      ...form,
-      category_id: form.category_id || null,
-      codes: editingProduct.value ? undefined : splitList(codesText.value),
-      oes: editingProduct.value ? undefined : splitList(oesText.value),
-    }
-    if (editingProduct.value) {
-      await productsApi.update(editingProduct.value.id, payload)
-      ElMessage.success('产品已更新')
-    } else {
-      await productsApi.create(payload)
-      ElMessage.success('产品已创建')
-    }
-    dialogVisible.value = false
-    await loadProducts(page.value)
-  } finally {
-    saving.value = false
-  }
+  editDialogRef.value?.open(row)
 }
 
 async function deleteProduct(row: CustomerProduct) {
