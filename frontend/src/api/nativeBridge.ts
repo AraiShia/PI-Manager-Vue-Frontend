@@ -206,8 +206,9 @@ export async function saveFile(defaultName: string): Promise<string> {
   return getBridge().saveFile(defaultName)
 }
 
-export async function readExcel(path: string): Promise<any[]> {
-  return getBridge().readExcel(path)
+export async function readExcel(path: string): Promise<{ taskId: string; data: any[]; error: string }> {
+  // 复用 nativeBridge.readExcel 的异步逻辑（包含 bridgeReady 等待和信号监听）
+  return nativeBridge.readExcel(path)
 }
 
 export async function writeExcel(path: string, data: any[]): Promise<boolean> {

@@ -15,12 +15,14 @@
     "date-fns": "^3.6.0",
     "element-plus": "^2.7.0",
     "pinia": "^2.1.0",
+    "regenerator-runtime": "^0.14.1",
     "vue": "^3.4.0",
     "vue-router": "^4.3.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@vitejs/plugin-legacy": "^5.4.3",
     "@vitejs/plugin-vue": "^5.0.0",
     "@vue/test-utils": "^2.4.11",
     "happy-dom": "^14.12.3",

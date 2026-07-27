@@ -825,7 +825,13 @@ async function onImportProduct() {
         importLoading.value = false
         return
       }
-      excelData = await nativeBridge.readExcel(filePath)
+      const result = await nativeBridge.readExcel(filePath)
+      if (result.error) {
+        ElMessage.error(`读取失败: ${result.error}`)
+        importLoading.value = false
+        return
+      }
+      excelData = result.data
     } else {
       if (fileInputRef.value) {
         fileInputRef.value.click()

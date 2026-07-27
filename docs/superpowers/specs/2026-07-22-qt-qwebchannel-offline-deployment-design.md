@@ -76,12 +76,12 @@
     │
     ├── 2. 选择前端加载路径（依据 config.json 的 active_version）
     │       │
-    │       ├── AppData/frontend/dist-{active_version}/index.html 存在？ → 加载它
+    │       ├── AppData/frontend/dist-v{active_version}/index.html 存在？ → 加载它
     │       └── 不存在 → 加载 exe 内置 _MEIPASS/frontend_dist/index.html（兜底）
     │
     └── 3. 启动 WebEngine 并加载
             │
-            └── QWebChannel 初始化，暴露 API 对象到 window.pywebview.api
+            └── QWebChannel 初始化，绑定对象至 QWebChannel.objects.nativeBridge
 ```
 
 ### 2.2 前端加载路径优先级
@@ -97,100 +97,77 @@
 
 ## 3. QWebChannel API 设计
 
-### 3.1 Python 端暴露接口
+### 3.1 Python 端统一 RPC 接口
 
-位置：`backend/` 新建 `qt_bridge.py`，由 exe 入口加载。
+位置：`backend/qt_bridge.py`，由 exe 入口加载。
+为规避在 Qt QObject 中暴露大量零散的 slots 方法并简化安全控制，统一提供 `call(method, params_json)` 终结点：
 
 ```python
 # qt_bridge.py
 from PyQt5.QtCore import QObject, pyqtSlot, pyqtSignal
 
 class QtBridge(QObject):
-    # 信号：通知前端事件
-    version_available = pyqtSignal(str)  # 新版本可用
-    network_status_changed = pyqtSignal(bool)  # 联网状态变更
+    version_available = pyqtSignal(str)          # 新版本可用
+    network_status_changed = pyqtSignal(bool)   # 联网状态变更
 
-    @pyqtSlot(result=str)
-    def get_app_version(self):
-        """返回当前 exe 版本"""
-        return self._version
-
-    @pyqtSlot(str, result=str)
-    def get_db_version(self):
-        """返回 SQLite schema 版本"""
-        return self._get_schema_version()
-
-    @pyqtSlot(result=str)
-    def get_network_status(self):
-        """返回联网状态：'online' | 'offline'"""
-        return 'online' if self._check_network() else 'offline'
-
-    @pyqtSlot(result=str)
-    def get_frontend_version(self):
-        """返回当前加载的前端版本号（来自 index.html 同目录 version.json）"""
+    @pyqtSlot(str, str, result=str)
+    def call(self, method: str, params_json: str) -> str:
+        """
+        统一 RPC 通信端点。
+        接收 method (如 'suppliers.list') 和 JSON 参数串，执行 SQLite crud 操作并返回：
+        {"success": true, "data": ...} 或 {"success": false, "error": ...}
+        """
         ...
 
     @pyqtSlot(result=str)
-    def check_update(self):
-        """主动检查更新，返回 'latest' | 新版本号"""
-        ...
+    def get_app_version(self) -> str:
+        return "1.0.0.0"
 
     @pyqtSlot(result=str)
-    def trigger_refresh(self):
-        """强制刷新页面加载最新 dist"""
-        self._reload_browser()
-        return 'ok'
-
-    # --- 业务数据接口（离线模式使用）---
-
-    @pyqtSlot(int, int, int, result=str)
-    def list_suppliers(self, skip, limit, dept_id):
-        """查询供应商列表（JSON 字符串）"""
-        ...
-
-    @pyqtSlot(int, result=str)
-    def get_supplier(self, supplier_id):
-        ...
-
-    @pyqtSlot(str, result=str)
-    def create_or_get_supplier(self, payload_json):
-        """find-or-create 供应商"""
+    def trigger_refresh(self) -> str:
+        """利用 setUrl 重载至最新的版本路径，代替 reload()"""
         ...
 ```
 
-### 3.2 前端调用方式
+### 3.2 前端 RPC 调用与 Axios 离线适配器
 
+前端无需更改任何业务层调用 API（它们直接使用 `suppliersApi.list` 等方法），通过在 `client.ts` 中配置自定义 Axios `adapter` 来实现无缝切换。
+
+1. **三态判定器** (`modeDetector.ts`)：
 ```typescript
-// src/api/nativeBridge.ts 已有封装，扩展支持所有业务接口
-import { initQWebChannel, callQtApi } from '@/api/nativeBridge'
+export type AppMode = 'local-offline' | 'local-online' | 'remote-web'
 
-// 离线模式调用示例
-const suppliers = await callQtApi('list_suppliers', [0, 20, deptId])
-const parsed = JSON.parse(suppliers)
-
-// 在线模式仍使用 axios
-const suppliersOnline = await suppliersApi.list({ skip: 0, limit: 20 })
-```
-
-### 3.3 通信模式自动切换
-
-```typescript
-// src/api/base.ts 扩展
-function getApiBase(): string {
-  // file:// 协议加载 → 使用 QWebChannel（本地桥接）
-  if (window.location.protocol === 'file:') {
-    return 'qwebchannel://'
+export function detectAppMode(): AppMode {
+  if (typeof window === 'undefined' || window.location.protocol !== 'file:') {
+    return 'remote-web'
   }
-  // HTTPS 页面自动使用同源
-  if (window.location.protocol === 'https:') {
-    return window.location.origin
-  }
-  // HTTP 页面使用配置地址
-  return import.meta.env.VITE_API_BASE_URL || ''
+  const forceOffline = localStorage.getItem('app_offline_mode') === 'true'
+  return (forceOffline || !navigator.onLine) ? 'local-offline' : 'local-online'
 }
 ```
 
-所有业务 API 调用通过统一封装，根据加载来源自动选择 QWebChannel 或 axios。
+2. **Axios 拦截适配器** (`client.ts`)：
+```typescript
+const qwebchannelAdapter = async (config: any): Promise<any> => {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const matched = matchRpcRoute(config.url, config.method) // 路由映射为 suppliers.list 等
+      if (!matched) return reject(new Error('离线路由未定义'))
+      
+      const resultData = await nativeBridge.call(matched.rpcMethod, matched.mapParams(config))
+      resolve({
+        data: resultData, // 原生数组或对象，供 Axios 拦截器和页面正常使用
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config
+      })
+    } catch (err: any) {
+      reject({ message: err.message, config })
+    }
+  })
+}
+```
 
 ---
 
@@ -213,7 +190,7 @@ exe 启动时请求此文件，对比 `min_app_version` 与当前 exe 版本，�
 
 ### 4.2 基于版本目录的更新流程 (规避 Windows 文件独占锁)
 
-由于 Windows 操作系统中，若 PyQt5 WebEngine 占用了正在运行的静态资源文件，直接对运行中的 `dist` 目录进行覆盖或重命名会导致 `PermissionError: [WinError 5] 拒绝访问`。因此采用基于版本号子目录的隔离更新流程：
+由于 Windows 操作系统中，若 WebEngine 占用了正在运行的静态资源文件，直接对运行中的 `dist` 目录进行覆盖或重命名会导致 `PermissionError: [WinError 5] 拒绝访问`。因此采用基于版本号子目录的隔离更新流程：
 
 ```
 下载 dist-v1.0.0.35.zip → 临时解压目录
@@ -224,7 +201,7 @@ exe 启动时请求此文件，对比 `min_app_version` 与当前 exe 版本，�
     │
     └── 前端提示刷新
             │
-            ├── 用户点击刷新 → window.location.reload() (WebEngine 重新加载 active_version 指定的新路径)
+            ├── 用户点击刷新 → 调用 nativeBridge.trigger_refresh() 槽，Qt 重新 setUrl() 载入新版本绝对 file:// URL
             │
             └── 用户忽略 → 下次启动自动加载新版本目录
 ```
@@ -264,7 +241,7 @@ exe 启动时请求此文件，对比 `min_app_version` 与当前 exe 版本，�
 ```typescript
 // 检测降级逻辑，在 file 协议且无 Bridge 时引导用户手动配置 API
 if (window.location.protocol === 'file:') {
-  const hasQtBridge = !!(window as any).pywebview
+  const hasQtBridge = isBridgeAvailable()
   if (!hasQtBridge) {
     ElMessageBox.prompt('请输入 API 服务器地址', '离线模式无可用桥接', {
       inputValue: 'https://piapi.wakabashia.tj.cn',
@@ -308,26 +285,12 @@ settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
 
 > 注：`PIManager` 是当前 PyInstaller 打包产物的应用目录名（`PI-Manager-Server.exe` 对应 `PIManager`）。如有调整需同步修改此路径。
 
-### 6.2 Schema 版本管理
+### 6.2 Schema 版本管理与迁移机制 (sys_schema_version)
 
-```python
-# qt_bridge.py
-MIGRATIONS = [
-    ('1.0.0', lambda db: ...),   # 基础表结构
-    ('1.0.0.28', lambda db: ...),  # prd_product_supplier_url
-]
-
-def _get_schema_version(db) -> str:
-    # 从 version_info 表读取
-    return db.execute(text("SELECT value FROM system_info WHERE key='schema_version'")).fetchone()[0]
-
-def _run_migrations(db):
-    current = _get_schema_version(db)
-    for version, fn in MIGRATIONS:
-        if version > current:
-            fn(db)
-            db.execute(text("UPDATE system_info SET value=:v WHERE key='schema_version'"), {'v': version})
-```
+在 `migration_manager.py` 中引入增量迁移机制：
+1. **排他写锁**：启动时使用文件排他锁 (`FileLock`)，防范多实例重复运行冲突；
+2. **首次安装**：如果数据文件不存在，运行 `Base.metadata.create_all` 并在 `sys_schema_version` 中写入最新版本号；
+3. **旧库迁移**：如果存在业务表但无 `sys_schema_version`，设定基线版本为 `1.0.0.0`，按字典序增量应用 `migrations/` 中的 upgrade 逻辑并更新版本记录。每个 upgrade 跑在独立事务中，失败立即 rollback 并中止。
 
 ### 6.3 前端与后端 Schema 版本一致性
 
