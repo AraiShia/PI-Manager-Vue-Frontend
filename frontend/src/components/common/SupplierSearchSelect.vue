@@ -4,7 +4,6 @@
     filterable
     remote
     :remote-method="onQuery"
-    :filter-method="() => true"
     :loading="loading"
     :placeholder="currentName || placeholder"
     :clearable="clearable"
@@ -42,7 +41,7 @@
     <template #empty>
       <div class="ss-empty">
         <span v-if="loading">搜索中…</span>
-        <span v-else-if="keyword && !options.length">未找到匹配供应商</span>
+        <span v-else-if="keyword && !computedOptions.length">未找到匹配供应商</span>
         <span v-else>输入关键词搜索</span>
       </div>
       <slot name="empty-extra" :keyword="keyword" />
@@ -79,15 +78,33 @@ const emit = defineEmits<{
 
 const selectedItem = ref(props.modelValue ?? null)
 const options = ref<Supplier[]>([])
+const keyword = ref('')
+
 const computedOptions = computed(() => {
-  const opts = options.value.filter((o): o is Supplier => Boolean(o && o.id))
-  if (selectedItem.value && selectedItem.value.id && !opts.some(o => o.id === selectedItem.value!.id)) {
-    opts.unshift(selectedItem.value)
+  const opts = options.value.filter((o): o is Supplier => Boolean(o && o.supplier_name))
+  const kw = (keyword.value || '').trim().toLowerCase()
+  let filtered = opts
+  if (kw) {
+    filtered = opts.filter(item => {
+      const nameMatch = item.supplier_name?.toLowerCase().includes(kw)
+      const codeMatch = item.supplier_code?.toLowerCase().includes(kw)
+      const contactMatch = item.contact_person?.toLowerCase().includes(kw)
+      const phoneMatch = item.phone?.toLowerCase().includes(kw)
+      return nameMatch || codeMatch || contactMatch || phoneMatch
+    })
   }
-  return opts
+
+  if (
+    !kw &&
+    selectedItem.value &&
+    selectedItem.value.supplier_name &&
+    !filtered.some(o => (o.id && o.id === selectedItem.value!.id) || o.supplier_name === selectedItem.value!.supplier_name)
+  ) {
+    filtered.unshift(selectedItem.value)
+  }
+  return filtered
 })
 const loading = ref(false)
-const keyword = ref('')
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 let abortController: AbortController | null = null
 let requestSeq = 0

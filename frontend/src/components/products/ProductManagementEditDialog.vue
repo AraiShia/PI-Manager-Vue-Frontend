@@ -271,7 +271,9 @@
                   :precision="2"
                   class="full-width"
                   placeholder="0.00"
-                />
+                >
+                  <template #prefix>$</template>
+                </el-input-number>
               </div>
               <div class="table-cell cell-rmb-price-val">
                 <el-input-number
@@ -280,7 +282,9 @@
                   :precision="2"
                   class="full-width"
                   placeholder="0.00"
-                />
+                >
+                  <template #prefix>¥</template>
+                </el-input-number>
               </div>
               <div class="table-cell cell-labeling-val">
                 <el-input-number
@@ -288,7 +292,9 @@
                   :precision="2"
                   class="full-width"
                   placeholder="0.00"
-                />
+                >
+                  <template #prefix>¥</template>
+                </el-input-number>
               </div>
               <div class="table-cell cell-shipping-val">
                 <el-input-number
@@ -296,7 +302,9 @@
                   :precision="2"
                   class="full-width"
                   placeholder="0.00"
-                />
+                >
+                  <template #prefix>¥</template>
+                </el-input-number>
               </div>
               <div class="table-head cell-shop-url-head">
                 供应商链接:
@@ -1223,6 +1231,21 @@ async function open(product: CustomerProduct | null = null, customerId?: number)
       categoryLevel2.value = ''
     }
 
+    // 恢复供应商对象支持 SupplierSearchSelect 回填与检索
+    if (form.supplier_name && !form.supplier) {
+      try {
+        const res = await suppliersApi.list({ skip: 0, limit: 20, keyword: form.supplier_name })
+        const matched = (res.data || []).find((s: Supplier) => s.supplier_name?.trim() === form.supplier_name?.trim())
+        if (matched) {
+          form.supplier = matched
+        } else {
+          form.supplier = { id: 0, supplier_name: form.supplier_name } as Supplier
+        }
+      } catch {
+        form.supplier = { id: 0, supplier_name: form.supplier_name } as Supplier
+      }
+    }
+
     await loadSupplierUrls()
   } else {
     // 新增模式：清空表单，并尝试使用传入的 customerId 或第一个客户
@@ -1794,14 +1817,27 @@ defineExpose({
 
 /* ================= 表格体无缝输入框与选中高亮样式 ================= */
 
-/* 1. 消除 Element Plus 表格内嵌套输入框的白边框、投影与背景，使单元格本身充当输入框 */
+/* 1. 消除 Element Plus 表格内嵌套输入框与下拉选的白边框、投影与背景，使单元格本身充当输入框 */
+.cell-supplier-content {
+  padding: 0;
+  width: 100%;
+}
+
+.cell-supplier-content :deep(.el-select),
+.cell-supplier-content :deep(.supplier-search-select) {
+  width: 100%;
+}
+
 .basic-info-table :deep(.el-input__wrapper),
+.basic-info-table :deep(.el-select__wrapper),
 .basic-info-table :deep(.el-textarea__inner),
 .basic-info-table :deep(.field-input-wrapper),
 .purchase-cost-table-custom :deep(.el-input__wrapper),
+.purchase-cost-table-custom :deep(.el-select__wrapper),
 .purchase-cost-table-custom :deep(.el-textarea__inner),
 .purchase-cost-table-custom :deep(.field-input-wrapper),
 .table-cell :deep(.el-input__wrapper),
+.table-cell :deep(.el-select__wrapper),
 .table-cell :deep(.el-textarea__inner),
 .table-cell :deep(.field-input-wrapper) {
   box-shadow: none !important;
@@ -1813,7 +1849,10 @@ defineExpose({
 
 .basic-info-table :deep(.el-input__inner),
 .purchase-cost-table-custom :deep(.el-input__inner),
-.table-cell :deep(.el-input__inner) {
+.table-cell :deep(.el-input__inner),
+.table-cell :deep(.el-select__selected-item),
+.table-cell :deep(.el-select__placeholder),
+.table-cell :deep(.el-input__prefix) {
   font-size: 13px;
   font-family: 'Times New Roman', 'SimSun', serif;
   text-align: center;
@@ -1829,12 +1868,13 @@ defineExpose({
   padding: 0 4px !important;
 }
 
-/* 3. 焦点激活高亮效果：当前选中的输入框呈现柔和黄底与橙黄立体边框 (参考 ProductEditDialog.vue) */
+/* 3. 焦点激活高亮效果：当前选中的输入框与下拉选择框呈现柔和黄底与橙黄立体边框 */
 .basic-info-cell :deep(.el-input__wrapper:focus-within),
+.basic-info-cell :deep(.el-select__wrapper:focus-within),
 .basic-info-cell :deep(.el-textarea__inner:focus-within),
 .table-cell :deep(.el-input__wrapper:focus-within),
-.table-cell :deep(.el-textarea__inner:focus-within),
-.table-cell :deep(.el-select .el-input__wrapper:focus-within) {
+.table-cell :deep(.el-select__wrapper:focus-within),
+.table-cell :deep(.el-textarea__inner:focus-within) {
   background-color: #fffbe6 !important;
   outline: 2px solid #e6a23c !important;
   border-radius: 3px;
