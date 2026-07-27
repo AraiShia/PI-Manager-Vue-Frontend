@@ -390,6 +390,7 @@ const form = reactive({
   quantity: 1,
   unit_price: 0,
   product_id: null as number | null,
+  image_url: '' as string,
 })
 
 const rules: FormRules = {
@@ -657,6 +658,7 @@ function onProductSelect(item: CustomerProductSearchItem) {
   form.detail_desc = item.product_name || ''
   form.unit_price = item.price_usd || 0
   form.product_id = item.id
+  form.image_url = item.image_url || ''
 }
 
 // ============== Excel 解析 ==============
@@ -811,6 +813,7 @@ async function onSubmitSingle() {
           customer_model: form.customer_model || undefined,
           oe_number: form.oe_number || undefined,
           product_id: form.product_id ?? null,
+          image_url: form.image_url || undefined,
         }],
         payment_stages: [],
       }
