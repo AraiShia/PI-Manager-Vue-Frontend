@@ -17,6 +17,7 @@
   >
     <el-option
       v-for="item in computedOptions"
+      v-if="item && item.id"
       :key="item.id"
       :label="labelOf(item)"
       :value="item"
@@ -80,7 +81,7 @@ const emit = defineEmits<{
 const selectedItem = ref(props.modelValue ?? null)
 const options = ref<Supplier[]>([])
 const computedOptions = computed(() => {
-  const opts = [...options.value]
+  const opts = options.value.filter(Boolean)
   if (selectedItem.value && !opts.some(o => o.id === selectedItem.value!.id)) {
     opts.unshift(selectedItem.value)
   }
