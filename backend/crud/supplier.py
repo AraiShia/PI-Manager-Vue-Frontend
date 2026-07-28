@@ -1,14 +1,28 @@
+"""供应商 (Supplier) CRUD 数据访问层服务模块。
+
+包含供应商创建、查询、分页列表、查找或创建、增量更新及相关验证逻辑。
+符合 Google Python 编程规范并提供详细的中文注释。
+"""
+
+from typing import Optional, Any, Literal, cast
 from sqlalchemy.orm import Session, joinedload
-from typing import Optional
 from models import SupSupplier, SupSupplierContact
 from schemas import SupplierCreate, SupplierUpdate
 from region_data import get_city_code
 
 
-def split_region(region: str | None) -> tuple[str | None, str | None]:
+def split_region(region: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """拆分 region 字符串为省份和城市。
+
+    Args:
+        region: 格式为 "省份 城市" 的字符串，或 None。
+
+    Returns:
+        tuple[Optional[str], Optional[str]]: (省份, 城市) 二元组。
+    """
     if not region:
         return None, None
-    parts = [part.strip() for part in str(region).split() if part.strip()]
+    parts = [part.strip() for part in region.split() if part.strip()]
     if len(parts) >= 2:
         return parts[0], parts[1]
     if len(parts) == 1:
@@ -16,29 +30,46 @@ def split_region(region: str | None) -> tuple[str | None, str | None]:
     return None, None
 
 
-def enrich_supplier(supplier: SupSupplier | None) -> SupSupplier | None:
+def enrich_supplier(supplier: Optional[SupSupplier]) -> Optional[SupSupplier]:
+    """为供应商实体注入省份、城市和城市代码扩展属性。
+
+    Args:
+        supplier: 供应商 SQLAlchemy 数据库实体。
+
+    Returns:
+        Optional[SupSupplier]: 注入扩展字段后的供应商对象。
+    """
     if not supplier:
         return None
-    province, city = split_region(supplier.region)
+    region_str = str(supplier.region) if supplier.region is not None else None
+    province, city = split_region(region_str)
     setattr(supplier, "province", province)
     setattr(supplier, "city", city)
     setattr(supplier, "city_code", get_city_code(province, city) if province and city else None)
     return supplier
 
-def int_to_base32(n):
-    chars = "0123456789ABCDEFGHIJKLMNOPQRSTUV"
-    return chars[n]
 
 def generate_supplier_code(db: Session, city_code: str) -> str:
+    """生成唯一供应商编号（例如: SP000001）。
+
+    Args:
+        db: 数据库 Session。
+        city_code: 城市行政代码。
+
+    Returns:
+        str: 自动递增的供应商编号。
+    """
     prefix = f"SP{city_code}" if city_code else "SP000"
-    base_query = db.query(SupSupplier.supplier_code).filter(
-        SupSupplier.supplier_code.like(f"{prefix}%")
-    ).order_by(SupSupplier.supplier_code.desc())
+    base_query = (
+        db.query(SupSupplier.supplier_code)
+        .filter(SupSupplier.supplier_code.like(f"{prefix}%"))
+        .order_by(SupSupplier.supplier_code.desc())
+    )
 
     max_code = base_query.first()
 
     if max_code:
-        suffix = max_code[0][len(prefix):]
+        suffix = max_code[0][len(prefix) :]
         if len(suffix) == 3:
             try:
                 last_num = int(suffix)
@@ -49,27 +80,42 @@ def generate_supplier_code(db: Session, city_code: str) -> str:
 
     return f"{prefix}001"
 
+
 def _validate_platform_fields(supplier: SupplierCreate) -> None:
-    """按 platform 强校验关键字段（运行时）"""
+    """创建时对 platform 关键字段进行运行时强校验。"""
     pass
 
 
-def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -> SupSupplier:
-    _validate_platform_fields(supplier)  # 平台强校验
+def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -> Optional[SupSupplier]:
+    """新建供应商主表记录及默认主联系人。
+
+    Args:
+        db: 数据库 Session。
+        supplier: 供应商创建 Schema 载荷。
+        dept_id: 部门 ID，默认为 "S"。
+
+    Returns:
+        Optional[SupSupplier]: 创建并补全扩展字段后的供应商实体。
+    """
+    _validate_platform_fields(supplier)
     city_code = supplier.city_code or "000"
     supplier_code = generate_supplier_code(db, city_code)
 
     region = f"{supplier.province} {supplier.city}" if supplier.province and supplier.city else ""
+
+    platform_val: Any = supplier.platform if supplier.platform in ("online", "offline") else None
 
     db_supplier = SupSupplier(
         supplier_code=supplier_code,
         dept_id=dept_id,
         supplier_name=supplier.supplier_name,
         region=region,
-        platform=supplier.platform,
+        platform=platform_val,
         wechat_id=supplier.wechat_id,
         wechat_nickname=supplier.wechat_nickname,
         is_dropship=bool(supplier.is_dropship) if supplier.is_dropship is not None else False,
+        supply_mode=supplier.supply_mode,
+        supplier_wechat=supplier.supplier_wechat,
     )
 
     db.add(db_supplier)
@@ -83,27 +129,36 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
             phone=supplier.phone,
             email=supplier.email,
             address=supplier.address,
-            is_primary=1
+            is_primary=1,
         )
         db.add(contact)
         db.commit()
 
     return enrich_supplier(db_supplier)
 
-def get_supplier(db: Session, supplier_id: int) -> SupSupplier:
+
+def get_supplier(db: Session, supplier_id: int) -> Optional[SupSupplier]:
+    """通过主键 ID 查询供应商。"""
     return enrich_supplier(db.query(SupSupplier).filter(SupSupplier.id == supplier_id).first())
 
-def get_supplier_by_code(db: Session, supplier_code: str) -> SupSupplier:
+
+def get_supplier_by_code(db: Session, supplier_code: str) -> Optional[SupSupplier]:
+    """通过供应商编号精准查询供应商。"""
     return db.query(SupSupplier).filter(SupSupplier.supplier_code == supplier_code).first()
 
-def get_supplier_by_name(db: Session, supplier_name: str, dept_id: str = "S") -> SupSupplier:
-    """按名称精确查找供应商（同部门内）"""
+
+def get_supplier_by_name(db: Session, supplier_name: str, dept_id: str = "S") -> Optional[SupSupplier]:
+    """按名称在同一部门内精准查找供应商。"""
     if not supplier_name:
         return None
-    return db.query(SupSupplier).filter(
-        SupSupplier.supplier_name == supplier_name,
-        SupSupplier.dept_id == dept_id,
-    ).first()
+    return (
+        db.query(SupSupplier)
+        .filter(
+            SupSupplier.supplier_name == supplier_name,
+            SupSupplier.dept_id == dept_id,
+        )
+        .first()
+    )
 
 
 def get_supplier_by_name_and_platform(
@@ -112,10 +167,16 @@ def get_supplier_by_name_and_platform(
     platform: Optional[str] = None,
     dept_id: str = "S",
 ) -> Optional[SupSupplier]:
-    """按部门 + 平台 + 名称精确查找供应商（线上采购场景）
+    """按部门 + 平台 + 名称精准查找供应商。
 
     Args:
-        platform: 必填且非空；调用方需保证已通过 Literal / 业务校验
+        db: 数据库 Session。
+        supplier_name: 供应商名称。
+        platform: 平台标识（如 online / offline / 1688 / wechat 等）。
+        dept_id: 部门编号。
+
+    Returns:
+        Optional[SupSupplier]: 匹配到的供应商对象。
     """
     if not supplier_name:
         return None
@@ -131,36 +192,47 @@ def get_supplier_by_name_and_platform(
 def find_or_create_supplier_by_name(
     db: Session,
     supplier_name: str,
-    platform: str,  # 必填，调用方须保证非空；放在所有带默认值参数之前
+    platform: str,
     dept_id: str = "S",
-    contact_person: str = None,
-    phone: str = None,
-    address: str = None,
+    contact_person: Optional[str] = None,
+    phone: Optional[str] = None,
+    address: Optional[str] = None,
     wechat_id: Optional[str] = None,
     wechat_nickname: Optional[str] = None,
     is_dropship: Optional[bool] = None,
-) -> tuple[SupSupplier, bool]:
-    """2026-07-27：按 dept_id + platform + supplier_name 查找或创建供应商
+) -> Optional[tuple[SupSupplier, bool]]:
+    """按 dept_id + platform + supplier_name 查找或快速创建供应商。
 
-    返回 (supplier, created)：
-    - created=True  → 本次调用新创建了供应商
-    - created=False → 命中已有供应商
+    Args:
+        db: 数据库 Session。
+        supplier_name: 供应商名称。
+        platform: 采购平台类型。
+        dept_id: 部门标识。
+        contact_person: 联系人（选填）。
+        phone: 电话（选填）。
+        address: 地址（选填）。
+        wechat_id: 微信号。
+        wechat_nickname: 微信昵称。
+        is_dropship: 是否一件代发。
+
+    Returns:
+        Optional[tuple[SupSupplier, bool]]: (供应商对象, 是否新创建)。若参数非法则返回 None。
     """
     if not supplier_name or not supplier_name.strip():
         return None
-    supplier_name = supplier_name.strip()
+    clean_name = supplier_name.strip()
 
-    existing = get_supplier_by_name_and_platform(db, supplier_name, platform, dept_id)
+    existing = get_supplier_by_name_and_platform(db, clean_name, platform, dept_id)
     if existing:
         updated = False
-        if wechat_id and not existing.wechat_id:
-            existing.wechat_id = wechat_id
+        if wechat_id and not getattr(existing, "wechat_id", None):
+            setattr(existing, "wechat_id", wechat_id)
             updated = True
-        if wechat_nickname and not existing.wechat_nickname:
-            existing.wechat_nickname = wechat_nickname
+        if wechat_nickname and not getattr(existing, "wechat_nickname", None):
+            setattr(existing, "wechat_nickname", wechat_nickname)
             updated = True
-        if is_dropship is not None and existing.is_dropship is False:
-            existing.is_dropship = bool(is_dropship)
+        if is_dropship is not None and getattr(existing, "is_dropship", False) is False:
+            setattr(existing, "is_dropship", is_dropship)
             updated = True
         if updated:
             db.add(existing)
@@ -168,35 +240,39 @@ def find_or_create_supplier_by_name(
             db.refresh(existing)
         return (existing, False)
 
+    platform_val: Any = platform if platform in ("online", "offline") else None
+
     create_payload = SupplierCreate(
-        supplier_name=supplier_name,
+        supplier_name=clean_name,
         contact_person=contact_person or "",
         phone=phone or "",
         address=address or "",
-        platform=platform,
+        platform=platform_val,
         wechat_id=wechat_id,
         wechat_nickname=wechat_nickname,
-        is_dropship=bool(is_dropship) if is_dropship is not None else False,
+        is_dropship=is_dropship if is_dropship is not None else False,
     )
     new_supplier = create_supplier(db, create_payload, dept_id)
+    if new_supplier is None:
+        return None
     return (new_supplier, True)
 
-def get_suppliers(db: Session, skip: int = 0, limit: int = 100, keyword: str | None = None):
-    query = db.query(SupSupplier).options(
-        joinedload(SupSupplier.contacts)
-    )
+
+def get_suppliers(db: Session, skip: int = 0, limit: int = 100, keyword: Optional[str] = None) -> list[dict[str, Any]]:
+    """分页获取供应商列表（包含首要联系人与扩展字段信息）。"""
+    query = db.query(SupSupplier).options(joinedload(SupSupplier.contacts))
     if keyword and keyword.strip():
         pattern = f"%{keyword.strip()}%"
         query = query.filter(
-            (SupSupplier.supplier_name.ilike(pattern)) |
-            (SupSupplier.supplier_code.ilike(pattern))
+            (SupSupplier.supplier_name.ilike(pattern)) | (SupSupplier.supplier_code.ilike(pattern))
         )
     suppliers = query.offset(skip).limit(limit).all()
 
     result = []
     for s in suppliers:
-        province, city = split_region(s.region)
-        supplier_dict = {
+        region_str = str(s.region) if s.region is not None else None
+        province, city = split_region(region_str)
+        supplier_dict: dict[str, Any] = {
             "id": s.id,
             "supplier_code": s.supplier_code,
             "supplier_name": s.supplier_name,
@@ -210,42 +286,56 @@ def get_suppliers(db: Session, skip: int = 0, limit: int = 100, keyword: str | N
             "wechat_id": s.wechat_id,
             "wechat_nickname": s.wechat_nickname,
             "is_dropship": s.is_dropship,
+            "supply_mode": s.supply_mode,
+            "supplier_wechat": s.supplier_wechat,
         }
         primary_contact = next((c for c in s.contacts if c.is_primary == 1), None)
         if primary_contact:
-            supplier_dict["contact_person"] = getattr(primary_contact, 'name', None)
-            supplier_dict["phone"] = getattr(primary_contact, 'phone', None)
-            supplier_dict["email"] = getattr(primary_contact, 'email', None)
-            supplier_dict["address"] = getattr(primary_contact, 'address', None)
+            supplier_dict["contact_person"] = getattr(primary_contact, "name", None)
+            supplier_dict["phone"] = getattr(primary_contact, "phone", None)
+            supplier_dict["email"] = getattr(primary_contact, "email", None)
+            supplier_dict["address"] = getattr(primary_contact, "address", None)
         result.append(supplier_dict)
     return result
 
+
 def _validate_platform_fields_update(db_supplier: SupSupplier, supplier_update: SupplierUpdate) -> None:
-    """更新时平台字段校验
+    """更新供应商平台字段时的强校验规则。
 
     规则：
-    1. platform 已存在时禁止修改（前端 UI 锁定，后端拒绝变更）
-    2. platform=NULL 允许首次设置（历史数据分配平台）
+    1. platform 已存在时禁止修改（前端 UI 锁定，后端拒绝变更）。
+    2. platform=NULL 允许首次设置（历史数据分配平台）。
     """
-    if db_supplier.platform is not None and supplier_update.platform is not None:
-        if supplier_update.platform != db_supplier.platform:
-            raise ValueError(f'供应商平台不可修改（当前为 {db_supplier.platform}）')
+    existing_platform = getattr(db_supplier, "platform", None)
+    if existing_platform is not None and supplier_update.platform is not None:
+        if supplier_update.platform != existing_platform:
+            raise ValueError(f"供应商平台不可修改（当前为 {existing_platform}）")
 
 
-def update_supplier(db: Session, supplier_id: int, supplier_update: SupplierUpdate) -> SupSupplier:
+def update_supplier(db: Session, supplier_id: int, supplier_update: SupplierUpdate) -> Optional[SupSupplier]:
+    """更新已有的供应商信息。
+
+    Args:
+        db: 数据库 Session。
+        supplier_id: 供应商 ID。
+        supplier_update: 更新载荷。
+
+    Returns:
+        Optional[SupSupplier]: 更新并重新丰富属性后的供应商实体。
+    """
     db_supplier = get_supplier(db, supplier_id)
     if not db_supplier:
         return None
 
-    _validate_platform_fields_update(db_supplier, supplier_update)  # 平台变更锁定
+    _validate_platform_fields_update(db_supplier, supplier_update)
 
-    update_data = supplier_update.dict(exclude_unset=True)
+    update_data = supplier_update.model_dump(exclude_unset=True)
     province = update_data.pop("province", None)
     city = update_data.pop("city", None)
     update_data.pop("city_code", None)
 
     if province is not None or city is not None:
-        db_supplier.region = f"{province or ''} {city or ''}".strip()
+        setattr(db_supplier, "region", f"{province or ''} {city or ''}".strip())
 
     for key, value in update_data.items():
         setattr(db_supplier, key, value)
@@ -254,39 +344,54 @@ def update_supplier(db: Session, supplier_id: int, supplier_update: SupplierUpda
     db.refresh(db_supplier)
     return enrich_supplier(db_supplier)
 
+
 def delete_supplier(db: Session, supplier_id: int) -> bool:
+    """通过 ID 删除供应商及其关联的主联系人。"""
     db_supplier = get_supplier(db, supplier_id)
     if not db_supplier:
         return False
 
     for contact in db_supplier.contacts:
         db.delete(contact)
-    
+
     db.delete(db_supplier)
     db.commit()
     return True
 
-def batch_create_suppliers(db: Session, supplier_list: list, dept_id: str = "S") -> dict:
+
+def batch_create_suppliers(db: Session, supplier_list: list[dict[str, Any]], dept_id: str = "S") -> dict[str, Any]:
+    """批量创建供应商记录。
+
+    Args:
+        db: 数据库 Session。
+        supplier_list: 供应商字典列表。
+        dept_id: 部门 ID。
+
+    Returns:
+        dict[str, Any]: 包含总条数、成功数、失败数及失败明细的汇总字典。
+    """
     success_count = 0
     fail_count = 0
     failed_items = []
-    
+
     for idx, supplier_data in enumerate(supplier_list):
         try:
             supplier_create = SupplierCreate(**supplier_data)
-            result = create_supplier(db, supplier_create, dept_id)
+            create_supplier(db, supplier_create, dept_id)
             success_count += 1
         except Exception as e:
             fail_count += 1
-            failed_items.append({
-                "index": idx,
-                "supplier_name": supplier_data.get("supplier_name", "未知"),
-                "error": str(e)
-            })
-    
+            failed_items.append(
+                {
+                    "index": idx,
+                    "supplier_name": supplier_data.get("supplier_name", "未知"),
+                    "error": str(e),
+                }
+            )
+
     return {
         "total": len(supplier_list),
         "success": success_count,
         "failed": fail_count,
-        "failed_items": failed_items
+        "failed_items": failed_items,
     }

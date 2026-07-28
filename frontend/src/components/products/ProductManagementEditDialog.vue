@@ -907,7 +907,8 @@ async function onSupplierSelect(s: Supplier): Promise<void> {
     'online': '线上采购',
     'offline': '线下采购',
   }
-  form.purchase_option_name = platformMap[(s as any).platform] || '1688平台采购'
+  // 优先使用供应商绑定的采购方式 (supply_mode)，不存在时回退至按平台划分的默认方式
+  form.purchase_option_name = s.supply_mode || platformMap[(s as any).platform] || '1688平台采购'
   pendingSupplierState.supplier = s
   pendingSupplierState.platform = (s.platform as any) || '1688'
   pendingSupplierState.wechat_id = s.wechat_id || null
@@ -939,7 +940,8 @@ async function onNewSupplierCreated(created: Supplier): Promise<void> {
       'online': '线上采购',
       'offline': '线下采购',
     }
-    form.purchase_option_name = platformMap[(created as any).platform] || '1688平台采购'
+    // 新建供应商后，优先选用新建供应商的 supply_mode 数据
+    form.purchase_option_name = created.supply_mode || platformMap[(created as any).platform] || '1688平台采购'
   }
   await loadSupplierUrls()
   applyShopUrlFromPriority()
@@ -1289,6 +1291,10 @@ async function open(product: CustomerProduct | null = null, customerId?: number)
         const matched = (res.data || []).find((s: Supplier) => s.supplier_name?.trim() === form.supplier_name?.trim())
         if (matched) {
           form.supplier = matched
+          // 若商品暂未填写采购方式，且匹配到的供应商配置了 supply_mode，自动回填
+          if (!form.purchase_option_name && matched.supply_mode) {
+            form.purchase_option_name = matched.supply_mode
+          }
         } else {
           form.supplier = { id: 0, supplier_name: form.supplier_name } as Supplier
         }

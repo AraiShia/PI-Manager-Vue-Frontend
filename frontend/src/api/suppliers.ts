@@ -22,6 +22,8 @@ export interface Supplier {
   wechat_id?: string | null
   wechat_nickname?: string | null
   is_dropship?: boolean | null
+  supply_mode?: string | null
+  supplier_wechat?: string | null
 }
 
 export interface SupplierFormPayload {
@@ -37,6 +39,8 @@ export interface SupplierFormPayload {
   wechat_id?: string | null
   wechat_nickname?: string | null
   is_dropship?: boolean | null
+  supply_mode?: string | null
+  supplier_wechat?: string | null
 }
 
 export interface FindOrCreateSupplierResponse {

@@ -25,6 +25,9 @@ class SupplierCreate(BaseModel):
     wechat_id: Optional[str] = None
     wechat_nickname: Optional[str] = None
     is_dropship: Optional[bool] = False
+    # 业务扩展字段（采购方式与微信）
+    supply_mode: Optional[str] = None
+    supplier_wechat: Optional[str] = None
 
 class SupplierUpdate(BaseModel):
     supplier_name: Optional[str] = None
@@ -43,6 +46,9 @@ class SupplierUpdate(BaseModel):
     wechat_id: Optional[str] = None
     wechat_nickname: Optional[str] = None
     is_dropship: Optional[bool] = None
+    # 业务扩展字段（采购方式与微信）
+    supply_mode: Optional[str] = None
+    supplier_wechat: Optional[str] = None
 
 class SupplierResponse(SupplierBase):
     id: int
@@ -57,6 +63,10 @@ class SupplierResponse(SupplierBase):
     wechat_id: Optional[str] = None
     wechat_nickname: Optional[str] = None
     is_dropship: Optional[bool] = None
+    # 业务扩展字段（采购方式与微信）
+    supply_mode: Optional[str] = None
+    supplier_wechat: Optional[str] = None
 
     class Config:
         from_attributes = True
+

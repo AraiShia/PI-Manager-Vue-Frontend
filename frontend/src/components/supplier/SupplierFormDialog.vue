@@ -22,6 +22,12 @@
       <el-form-item label="供应商名称" prop="supplier_name">
         <el-input v-model="form.supplier_name" placeholder="请输入供应商名称" />
       </el-form-item>
+      <el-form-item label="采购方式" prop="supply_mode">
+        <el-input v-model="form.supply_mode" placeholder="采购方式" />
+      </el-form-item>
+      <el-form-item label="微信" prop="supplier_wechat">
+        <el-input v-model="form.supplier_wechat" placeholder="微信号" />
+      </el-form-item>
 
       <!-- 通用字段 -->
       <el-form-item label="联系人">
@@ -88,6 +94,8 @@ const saving = ref(false)
 
 const form = ref({
   supplier_name: '',
+  supply_mode: '',
+  supplier_wechat: '',
   wechat_id: '',
   wechat_nickname: '',
   is_dropship: false,
@@ -102,16 +110,18 @@ watch(() => props.supplier, (s) => {
   if (s) {
     form.value = {
       supplier_name: s.supplier_name || '',
+      supply_mode: s.supply_mode || '',
+      supplier_wechat: s.supplier_wechat || '',
       wechat_id: s.wechat_id || '',
       wechat_nickname: s.wechat_nickname || '',
       is_dropship: s.is_dropship || false,
-      contact_person: (s as any).contact_person || '',
-      phone: (s as any).phone || '',
-      province: (s as any).province || '',
-      city: (s as any).city || '',
+      contact_person: s.contact_person || '',
+      phone: s.phone || '',
+      province: s.province || '',
+      city: s.city || '',
     }
   } else {
-    form.value = { supplier_name: '', wechat_id: '', wechat_nickname: '', is_dropship: false, contact_person: '', phone: '', province: '', city: '' }
+    form.value = { supplier_name: '', supply_mode: '', supplier_wechat: '', wechat_id: '', wechat_nickname: '', is_dropship: false, contact_person: '', phone: '', province: '', city: '' }
     currentPlatform.value = props.defaultPlatform || 'offline'
   }
 }, { immediate: true })
@@ -155,6 +165,8 @@ async function save() {
   try {
     const payload: any = {
       supplier_name: form.value.supplier_name,
+      supply_mode: form.value.supply_mode || null,
+      supplier_wechat: form.value.supplier_wechat || null,
       province: form.value.province || null,
       city: form.value.city || null,
       contact_person: form.value.contact_person || null,

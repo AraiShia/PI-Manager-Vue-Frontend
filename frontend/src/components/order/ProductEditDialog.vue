@@ -1689,7 +1689,7 @@ async function open(source: OrderDetailItem, customerName?: string, customerCoun
       form.supplier = { id: 0, supplier_name: form.supplier_name } as Supplier
     }
   }
-  // 已有供应商时，根据平台填入采购方式
+  // 已有供应商时，优先使用供应商绑定的 supply_mode 数据，不存在时根据平台填入采购方式
   if (form.supplier) {
     const platformMap: Record<string, string> = {
       '1688': '1688平台采购',
@@ -1697,7 +1697,7 @@ async function open(source: OrderDetailItem, customerName?: string, customerCoun
       'online': '线上采购',
       'offline': '线下采购',
     }
-    form.purchase_option_name = platformMap[(form.supplier as any).platform] || '1688平台采购'
+    form.purchase_option_name = form.supplier.supply_mode || platformMap[(form.supplier as any).platform] || '1688平台采购'
   }
   await loadSupplierUrls()
   // 在供应商恢复完毕后再创建快照，避免异步回填造成假的"未保存"脏状态
@@ -2178,14 +2178,14 @@ async function onSupplierSelect(s: Supplier) {
   form.supplier_name = s.supplier_name
   form.supplier = s
   saveField('supplier_name', s.supplier_name)
-  // 根据供应商平台自动填入采购方式
+  // 优先使用供应商绑定的采购方式 (supply_mode)，不存在时根据供应商平台自动填入采购方式
   const platformMap: Record<string, string> = {
     '1688': '1688平台采购',
     'wechat': '微信采购',
     'online': '线上采购',
     'offline': '线下采购',
   }
-  form.purchase_option_name = platformMap[(s as any).platform] || '1688平台采购'
+  form.purchase_option_name = s.supply_mode || platformMap[(s as any).platform] || '1688平台采购'
   saveField('purchase_option_name', form.purchase_option_name)
   // 写入共享状态，供 PurchaseDialog 读取并回填
   pendingSupplierState.supplier = s
@@ -2217,14 +2217,14 @@ async function onNewSupplierCreated(created: Supplier) {
   }
   if (created) {
     form.supplier = created
-    // 根据供应商平台自动填入采购方式
+    // 新建供应商后，优先选用新建供应商的 supply_mode 数据
     const platformMap: Record<string, string> = {
       '1688': '1688平台采购',
       'wechat': '微信采购',
       'online': '线上采购',
       'offline': '线下采购',
     }
-    form.purchase_option_name = platformMap[(created as any).platform] || '1688平台采购'
+    form.purchase_option_name = created.supply_mode || platformMap[(created as any).platform] || '1688平台采购'
     saveField('purchase_option_name', form.purchase_option_name)
   }
   if (name) {

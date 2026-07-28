@@ -26,6 +26,10 @@ class SupSupplier(Base):
     wechat_nickname = Column(String(100), nullable=True)
     is_dropship = Column(Boolean, default=False, nullable=False, server_default='0')
 
+    # 业务扩展字段（采购方式与微信）
+    supply_mode = Column(String(50), nullable=True, comment="采购方式（如：线上/线下/自采等）")
+    supplier_wechat = Column(String(100), nullable=True, comment="供应商微信号")
+
     contacts = relationship("SupSupplierContact", back_populates="supplier", lazy="select")
 
 class SupSupplierContact(Base):
