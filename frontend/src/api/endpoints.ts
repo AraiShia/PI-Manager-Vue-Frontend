@@ -179,3 +179,17 @@ export const IMAGES = {
 export const MIGRATIONS = {
   syncProductImages: '/api/migrations/sync-product-images',
 } as const
+
+// ----- 客户回复与往来需求 -----
+export const CUSTOMER_REPLIES = {
+  list: '/api/customer-replies',
+  byPi: (piId: number) => `/api/customer-replies/pi/${piId}`,
+  byPiList: (piId: number) => `/api/customer-replies/pi/${piId}/list`,
+  latestByPi: (piId: number) => `/api/customer-replies/pi/${piId}/latest`,
+  byCustomer: (customerId: number) => `/api/customer-replies/customer/${customerId}`,
+  create: '/api/customer-replies',
+  update: (id: number) => `/api/customer-replies/${id}`,
+  remove: (id: number) => `/api/customer-replies/${id}`,
+  export: '/api/customer-replies/export',
+} as const
+

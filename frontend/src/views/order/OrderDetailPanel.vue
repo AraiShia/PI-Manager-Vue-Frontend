@@ -1282,9 +1282,28 @@ async function handleContextMenuAction(action: string) {
   }
 }
 
+/**
+ * 删除订单项/产品逻辑 (带明细产品信息的二次确认)
+ * @param item 要删除的订单产品项
+ */
 async function deleteItem(item: OrderDetailItem) {
   try {
-    await ElMessageBox.confirm('确定要删除该产品吗？', '确认删除', { type: 'warning' })
+    // 提取产品名称标识，兜底使用工厂编号或通用名称
+    const productName = (item as any).product_name || (item as any).name_cn || (item as any).name_en || (item as any).factory_code || '此产品'
+
+    // 执行高危删除二次确认提示
+    await ElMessageBox.confirm(
+      `确定要从当前订单中删除产品 "${productName}" 吗？此操作无法撤销。`,
+      '确认删除产品',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger',
+        closeOnClickModal: false,
+      }
+    )
+
     const res = await fetch(apiUrl(PI_ITEMS.remove(item.id)), { method: 'DELETE' })
     if (res.ok) {
       ElMessage.success('删除成功')
@@ -1293,7 +1312,7 @@ async function deleteItem(item: OrderDetailItem) {
       ElMessage.error('删除失败')
     }
   } catch (e: any) {
-    if (e !== 'cancel') {
+    if (e !== 'cancel' && e !== 'close') {
       ElMessage.error('删除失败')
     }
   }
