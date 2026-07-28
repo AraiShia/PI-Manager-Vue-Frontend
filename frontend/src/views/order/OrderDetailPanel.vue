@@ -437,6 +437,10 @@ import {
   buildDisplayRemark,
   buildImportItemFromRow,
 } from '@/utils/orderImportMapping'
+import {
+  getItemSupplierName as getItemSupplierNameUtil,
+  isSupplierConsistent as isSupplierConsistentUtil,
+} from '@/utils/supplierConsistency'
 import PaymentDialog from '@/components/order/PaymentDialog.vue'
 import SupplementDialog from '@/components/order/SupplementDialog.vue'
 import ProductEditDialog from '@/components/order/ProductEditDialog.vue'
@@ -1048,6 +1052,10 @@ function onPurchaseAll() {
     ElMessage.warning('当前订单无产品可采购')
     return
   }
+  if (!isSupplierConsistent(store.detailItems)) {
+    ElMessage.warning('供应商不一致无法采购')
+    return
+  }
   openPurchaseDialog(store.detailItems)
 }
 
@@ -1055,6 +1063,10 @@ function onPurchaseSelected() {
   if (!ensureFormalRecord('采购')) return
   if (selectedRows.value.length === 0) {
     ElMessage.warning('请先勾选要采购的产品')
+    return
+  }
+  if (!isSupplierConsistent(selectedRows.value)) {
+    ElMessage.warning('供应商不一致无法采购')
     return
   }
   // 重复产品检测提示
@@ -1079,9 +1091,28 @@ function onPurchaseSelected() {
   }
 }
 
+/**
+ * 获取产品项有效供应商名称
+ * 优先读取产品自身 supplier_name / factory_name，若为空则取当前订单 PI 级别供应商名称
+ *
+ * @param item 订单明细产品对象
+ * @return 去除首尾空格后的供应商名称
+ */
+function getItemSupplierName(item: OrderDetailItem): string {
+  return getItemSupplierNameUtil(item, (store.currentOrder as any)?.supplier_name || '')
+}
+
+function isSupplierConsistent(items: OrderDetailItem[]): boolean {
+  return isSupplierConsistentUtil(items, (store.currentOrder as any)?.supplier_name || '')
+}
+
 function openPurchaseDialog(items: OrderDetailItem[]) {
   if (!ensureFormalRecord('采购')) return
   if (!store.currentOrder) return
+  if (!isSupplierConsistent(items)) {
+    ElMessage.warning('供应商不一致无法采购')
+    return
+  }
   // 提取预填的 1688 链接（key=product_id）
   const prefillUrls: Record<number, string[]> = {}
   // 用第一个产品的供应商信息预填弹窗
