@@ -102,6 +102,23 @@ uploads_dir = os.path.join(base_dir, "uploads")
 os.makedirs(uploads_dir, exist_ok=True)
 app.mount("/images", StaticFiles(directory=uploads_dir), name="images")
 
+signatures_dir = os.path.join(base_dir, "data", "signatures")
+os.makedirs(signatures_dir, exist_ok=True)
+app.mount("/data/signatures", StaticFiles(directory=signatures_dir), name="signatures")
+
+@app.get("/api/signatures")
+async def list_signatures():
+    """返回 backend/data/signatures 目录下的所有持久化电子印章/签章文件"""
+    files = []
+    if os.path.exists(signatures_dir):
+        for f in sorted(os.listdir(signatures_dir)):
+            if f.lower().endswith(('.png', '.jpg', '.jpeg', '.svg', '.webp')):
+                files.append({
+                    "filename": f,
+                    "url": f"/data/signatures/{f}"
+                })
+    return {"success": True, "data": files}
+
 @app.get("/")
 async def read_root():
     index_path = os.path.join(static_dir, "index.html")

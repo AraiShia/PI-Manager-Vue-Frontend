@@ -211,6 +211,7 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { purchaseApi, type PurchasePayload, type PurchaseItem, createOnlinePurchase, type PurchaseCreateOnline } from '@/api/purchase'
@@ -232,6 +233,7 @@ const emit = defineEmits<{
   }]
 }>()
 
+const router = useRouter()
 const visible = ref(false)
 const submitting = ref(false)
 const items = ref<OrderDetailItem[]>([])
@@ -680,6 +682,9 @@ async function onSubmit() {
           wechatNickname: platform.value === 'wechat' ? wechatNickname.value : '',
         })
         onClose()
+        if (generateContract.value) {
+          router.push({ path: '/export-preview', query: { type: 'purchase', supplier_id: String(selectedSupplierId.value) } })
+        }
       } else {
         ElMessage.error(res.data.message || '采购失败')
       }

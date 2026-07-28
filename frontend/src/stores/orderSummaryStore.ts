@@ -24,6 +24,38 @@ export const useOrderSummaryStore = defineStore('orderSummary', () => {
   const detailLoading = ref(false)
   const dashboardData = ref<OrderDashboardData | null>(null)
 
+  /** 单据导出与编辑的全局响应式数据状态 */
+  const exportDocData = ref<any | null>(null)
+
+  /** 设置单据导出编辑数据，并同步持久化至 sessionStorage */
+  function setExportDocData(data: any) {
+    exportDocData.value = data
+    try {
+      if (data) {
+        sessionStorage.setItem('export_doc_data', JSON.stringify(data))
+      } else {
+        sessionStorage.removeItem('export_doc_data')
+      }
+    } catch (e) {
+      console.warn('保存单据编辑数据至 sessionStorage 失败:', e)
+    }
+  }
+
+  /** 从 sessionStorage 中恢复单据编辑数据 */
+  function loadExportDocData(): any | null {
+    if (exportDocData.value) return exportDocData.value
+    try {
+      const cached = sessionStorage.getItem('export_doc_data')
+      if (cached) {
+        exportDocData.value = JSON.parse(cached)
+        return exportDocData.value
+      }
+    } catch (e) {
+      console.warn('从 sessionStorage 加载单据编辑数据失败:', e)
+    }
+    return null
+  }
+
   const selectedOrders = computed(() => 
     orders.value.filter(o => selectedOrderIds.value.has(o.id))
   )
@@ -133,6 +165,9 @@ export const useOrderSummaryStore = defineStore('orderSummary', () => {
     loading,
     detailLoading,
     dashboardData,
+    exportDocData,
+    setExportDocData,
+    loadExportDocData,
     selectedOrders,
     hasSelection,
     fetchOrders,

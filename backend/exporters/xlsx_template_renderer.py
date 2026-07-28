@@ -75,11 +75,14 @@ class XlsxTemplateRenderer:
         m = re.match(r"^([A-Z]+)(\d+)$", start_cell)
         if not m:
             raise ValueError(f"invalid start cell: {start_cell}")
-        col_letter, row_num = m.group(1), int(m.group(2))
-        merged_ranges = list(ws.merged_cells.ranges)
+        # 获取模板首行高，若未明确设置则赋予舒适的基础行高 (35.0 pt)
+        template_row_height = ws.row_dimensions[row_num].height or 35.0
 
         for i, item in enumerate(items):
             current_row = row_num + i
+            # 为当前展开的数据行设置显式行高，防止 Excel 导出后文字紧凑挤压
+            ws.row_dimensions[current_row].height = template_row_height
+
             for col, expr in field["template_row"].items():
                 target_cell = f"{col}{current_row}"
                 if self._in_merged_skip_first(merged_ranges, ws, target_cell):

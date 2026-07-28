@@ -58,7 +58,17 @@
             </div>
           </template>
         </el-popover>
-        <el-button :icon="Download" @click="onExportExcel">导出Excel</el-button>
+        <el-tooltip :content="!hasFormalRecord ? '非正式PI不可导出' : '导出正式PI单据'" placement="bottom">
+          <span style="display: inline-block;">
+            <el-button
+              :icon="Download"
+              :disabled="!hasFormalRecord"
+              @click="onExportExcel"
+            >
+              导出正式PI单据
+            </el-button>
+          </span>
+        </el-tooltip>
         <el-tooltip :content="formalRecordTooltip" placement="bottom">
           <el-button
             v-if="!hasFormalRecord"
@@ -382,11 +392,24 @@
     <PurchaseDialog ref="purchaseDialogRef" @success="onDetailSuccess" @purchase-complete="onPurchaseComplete" />
     <InboundDialog ref="inboundDialogRef" @success="onDetailSuccess" />
     <BatchInboundDialog ref="batchInboundDialogRef" @success="onDetailSuccess" />
+
+    <!-- 导出全流程弹窗：选模板 ➔ 编表单 ➔ 预览导出 -->
+    <ExportExampleChoose
+      v-model="exportChooseVisible"
+      doc-type="pi"
+      @confirm="onExportTemplateConfirmed"
+    />
+    <ExportEditModal
+      v-model="exportEditVisible"
+      doc-type="pi"
+      @save="onExportEditSaved"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, reactive, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiUrl } from '@/api/base'
 import { PI_ITEMS } from '@/api/endpoints'
@@ -447,11 +470,14 @@ import ProductEditDialog from '@/components/order/ProductEditDialog.vue'
 import PurchaseDialog from '@/components/order/PurchaseDialog.vue'
 import InboundDialog from '@/components/order/InboundDialog.vue'
 import BatchInboundDialog from '@/components/order/BatchInboundDialog.vue'
+import ExportExampleChoose from '@/components/exports/ExportExampleChoose.vue'
+import ExportEditModal from '@/components/exports/ExportEditModal.vue'
 import { ORDER_STATUS } from '@/constants/orderStatus'
 import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
 
 const store = useOrderSummaryStore()
+const router = useRouter()
 
 interface ContextMenuItem {
   label: string
@@ -958,86 +984,46 @@ function onImportDialogClose() {
   })
 }
 
+const exportChooseVisible = ref(false)
+const exportEditVisible = ref(false)
+const selectedExportTemplateId = ref('pi_standard')
+
 async function onExportExcel() {
+  if (!hasFormalRecord.value) {
+    ElMessage.warning('非正式PI不可导出')
+    return
+  }
+
   if (!store.currentOrder || store.detailItems.length === 0) {
     ElMessage.warning('当前没有可导出的数据')
     return
   }
 
-  try {
-    const exportData = store.detailItems.map((item) => ({
-      订单日期: item.order_date,
-      采购日期: item.purchase_date,
-      客户产品编号: item.product_code,
-      OE号: item.oe_number,
-      客户需求产品备注: item.remark,
-      产品名称: item.product_name,
-      客户型号: item.customer_model,
-      产品特性: item.product_feature,
-      数量: item.quantity,
-      报价: item.unit_price,
-      合计金额: item.total_amount,
-      最新客户回复: item.latest_customer_reply,
-      预估美金报价: item.estimated_usd_price,
-      预估毛利率: item.estimated_margin,
-      采购价格: item.purchase_price,
-      运费: item.shipping_fee,
-      杂费: item.misc_fee,
-      总金额成本: item.total_cost,
-      工厂简称: item.factory_name,
-      店铺链接: item.shop_url,
-      交货日期: item.delivery_date,
-      是否已收货: item.storage_status,
-      工厂订金: item.factory_deposit,
-      工厂尾款: item.factory_balance,
-      入库数量: item.stock_in_quantity,
-      包装方式: item.packaging,
-      采购选项名称: item.purchase_option_name,
-      产品细节: item.product_detail,
-      工厂编号: item.factory_code,
-      纸箱尺寸: item.carton_size,
-      打包规格: item.pack_spec,
-      箱数: item.carton_count,
-      预估体积: item.estimated_volume,
-      整箱毛重: item.carton_gross_weight,
-      总重量: item.total_weight,
-      品牌: item.brand,
-      开票情况: item.invoice_status,
-    }))
+  // 不离开当前订单详情页面，直接在原地弹出 PI 模板选择框！
+  exportChooseVisible.value = true
+}
 
-    if (nativeBridge.isAvailable) {
-      const defaultName = `订单_${store.currentOrder.pi_no}.xlsx`
-      const savePath = await nativeBridge.saveFile(defaultName)
-      if (savePath) {
-        const success = await nativeBridge.writeExcel(savePath, exportData)
-        if (success) {
-          ElMessage.success('导出成功')
-        } else {
-          ElMessage.error('导出失败')
-        }
-      }
-    } else {
-      const worksheet = XLSX.utils.json_to_sheet(exportData)
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, '订单明细')
-      const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })
-      const blob = new Blob([excelBuffer], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `订单_${store.currentOrder.pi_no}.xlsx`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-      ElMessage.success('导出成功')
-    }
-  } catch (e) {
-    console.error('Export failed:', e)
-    ElMessage.error('导出失败：' + (e as Error).message)
+function onExportTemplateConfirmed(templateId: string) {
+  selectedExportTemplateId.value = templateId
+  exportChooseVisible.value = false
+  // 选定模板后，直接在原地接续弹出大表单编辑框！
+  exportEditVisible.value = true
+}
+
+function onExportEditSaved(savedData?: any) {
+  exportEditVisible.value = false
+  if (savedData) {
+    store.setExportDocData(savedData)
   }
+  // 编辑保存后跳转至 ExportPreview 展现 100% 纯净高保真单据并导出
+  router.push({
+    path: '/export-preview',
+    query: {
+      type: 'pi',
+      order_id: String(store.currentOrder?.id),
+      template: selectedExportTemplateId.value,
+    },
+  })
 }
 
 function onAddPayment() {
