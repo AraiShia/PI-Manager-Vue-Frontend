@@ -20,3 +20,6 @@ client/
 build/
 .venv/
 .vscode/
+backend/schemas/__pycache__/purchase.cpython-310.pyc
+backend/schemas/__pycache__/supplier.cpython-310.pyc
+backend/schemas/__pycache__/purchase.cpython-310.pyc
