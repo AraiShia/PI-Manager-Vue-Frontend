@@ -190,13 +190,13 @@
               </td>
             </tr>
 
-            <!-- 附加优惠/加费用 (Additional benefits) 行 -->
+            <!-- 附加优惠/加费用 (Additional benefits) 行：描述列占 8 列，金额列跨 2 列 -->
             <tr v-if="piData.additional_benefits" class="additional-benefits-row">
-              <td colspan="9" class="text-left font-bold">
+              <td colspan="8" class="text-left font-bold">
                 <input v-if="isEditMode" v-model="piData.additional_benefits.label" class="inline-input text-left" />
                 <span v-else>{{ piData.additional_benefits.label }}</span>
               </td>
-              <td class="text-right font-bold text-red yellow-bg">
+              <td colspan="2" class="text-right font-bold text-red yellow-bg">
                 <input v-if="isEditMode" v-model.number="piData.additional_benefits.amount" type="number" class="inline-input text-right text-red" />
                 <span v-else>${{ piData.additional_benefits.amount.toFixed(2) }}</span>
               </td>
