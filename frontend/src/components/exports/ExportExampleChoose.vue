@@ -129,8 +129,11 @@ function onConfirmNext() {
 </script>
 
 <style scoped>
+/* 模板选择弹窗体样式：控制最大高度并启用滚动条 */
 .export-choose-dialog :deep(.el-dialog__body) {
   padding: 16px 24px;
+  max-height: 75vh;
+  overflow-y: auto;
 }
 .choose-subheading {
   font-size: 13px;

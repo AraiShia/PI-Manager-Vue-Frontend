@@ -188,8 +188,11 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* 导出与打印预览大中心根容器：启用 100vh 独立垂直滚动 */
 .export-preview-wrapper {
-  min-height: 100vh;
+  height: 100vh;
+  overflow-y: auto;
+  box-sizing: border-box;
   background-color: #f5f7fa;
   font-family: 'Times New Roman', Times, SimSun, Georgia, serif;
 }
@@ -227,13 +230,15 @@ onMounted(async () => {
   padding-bottom: 40px;
 }
 
-/* 打印专用的 CSS 媒体查询：导出或打印时隐藏按钮及工具栏 */
+/* 打印专用的 CSS 媒体查询：导出或打印时隐藏按钮及工具栏，重置高度与滚动条 */
 @media print {
   .no-print {
     display: none !important;
   }
   .export-preview-wrapper {
     background: none !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 }
 </style>

@@ -259,8 +259,11 @@ function onConfirmSave() {
 </script>
 
 <style scoped>
+/* 单据编辑弹窗体样式：限制最大视口高度并允许内部滚动 */
 .export-edit-modal-wrapper :deep(.el-dialog__body) {
   padding: 12px 20px;
+  max-height: calc(85vh - 110px);
+  overflow-y: auto;
 }
 .export-edit-form-body {
   max-height: 76vh;

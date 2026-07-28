@@ -1069,11 +1069,13 @@ defineExpose({
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }
 
-/* 整个页面容器 */
+/* 整个页面容器：独立 100vh 垂直滚动 */
 .pi-export-container {
   padding: 24px;
   background-color: #f5f7fa;
-  min-height: 100vh;
+  height: 100vh;
+  overflow-y: auto;
+  box-sizing: border-box;
   font-family: 'Times New Roman', Times, SimSun, Georgia, serif;
 }
 
@@ -1422,6 +1424,8 @@ defineExpose({
   .pi-export-container {
     padding: 0;
     background: none;
+    height: auto !important;
+    overflow: visible !important;
   }
   .pi-sheet {
     box-shadow: none;
