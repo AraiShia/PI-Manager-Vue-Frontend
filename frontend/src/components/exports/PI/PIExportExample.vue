@@ -287,43 +287,6 @@
 
               <!-- 右侧 Remark 备注与条款 -->
               <td class="bottom-cell remark-cell">
-                <!-- Remark 操作栏：字号调节与预设选项 (标注 no-print 类，导出/打印时自动隐藏) -->
-                <div class="remark-action-bar no-print">
-                  <span class="action-label">字号设置:</span>
-                  <div class="font-size-controls">
-                    <button
-                      type="button"
-                      class="size-btn"
-                      title="缩小字号"
-                      :disabled="(piData.remark_font_size || 11) <= 9"
-                      @click="adjustRemarkFontSize(-1)"
-                    >
-                      A-
-                    </button>
-                    <span class="current-size">{{ piData.remark_font_size || 11 }}px</span>
-                    <button
-                      type="button"
-                      class="size-btn"
-                      title="放大字号"
-                      :disabled="(piData.remark_font_size || 11) >= 24"
-                      @click="adjustRemarkFontSize(1)"
-                    >
-                      A+
-                    </button>
-                    <div class="size-presets">
-                      <button
-                        v-for="size in [10, 11, 12, 13, 14, 16]"
-                        :key="size"
-                        type="button"
-                        class="preset-btn"
-                        :class="{ active: (piData.remark_font_size || 11) === size }"
-                        @click="setRemarkFontSize(size)"
-                      >
-                        {{ size }}
-                      </button>
-                    </div>
-                  </div>
-                </div>
 
                 <div v-if="isEditMode" class="remark-edit-box">
                   <textarea
@@ -736,17 +699,6 @@ function onRemarkInputBlur() {
   piData.remarks = remarkInputText.value.split(/\n\n+/).filter(Boolean)
 }
 
-/** 调整 Remark 备注字号大小 (单位: px) */
-function adjustRemarkFontSize(delta: number) {
-  const current = piData.remark_font_size || 11
-  const next = Math.min(24, Math.max(9, current + delta))
-  piData.remark_font_size = next
-}
-
-/** 直接设置 Remark 备注目标字号大小 (单位: px) */
-function setRemarkFontSize(size: number) {
-  piData.remark_font_size = Math.min(24, Math.max(9, size))
-}
 
 /** 计算单个产品项小计 */
 function getItemAmount(item: PiItem): number {
@@ -1447,100 +1399,6 @@ defineExpose({
   line-height: 1.5;
 }
 
-/* Remark 操作栏 (字号控制与预设按钮) */
-.remark-action-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 3px 6px;
-  margin-bottom: 6px;
-  background-color: #f8f9fa;
-  border: 1px solid #e4e7ed;
-  border-radius: 4px;
-  font-size: 11px;
-  user-select: none;
-}
-
-.action-label {
-  font-weight: bold;
-  color: #606266;
-  font-size: 11px;
-}
-
-.font-size-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.size-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 20px;
-  padding: 0 4px;
-  background-color: #ffffff;
-  border: 1px solid #dcdfe6;
-  border-radius: 3px;
-  cursor: pointer;
-  font-size: 10px;
-  font-weight: bold;
-  color: #303133;
-  transition: all 0.2s ease;
-}
-
-.size-btn:hover:not(:disabled) {
-  color: #409eff;
-  border-color: #c6e2ff;
-  background-color: #ecf5ff;
-}
-
-.size-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.current-size {
-  font-size: 11px;
-  font-weight: bold;
-  color: #409eff;
-  min-width: 28px;
-  text-align: center;
-}
-
-.size-presets {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 4px;
-  border-left: 1px solid #dcdfe6;
-  padding-left: 4px;
-}
-
-.preset-btn {
-  padding: 0 4px;
-  height: 20px;
-  font-size: 10px;
-  background: #ffffff;
-  border: 1px solid #dcdfe6;
-  border-radius: 3px;
-  cursor: pointer;
-  color: #606266;
-  transition: all 0.2s ease;
-}
-
-.preset-btn:hover {
-  color: #409eff;
-  border-color: #c6e2ff;
-}
-
-.preset-btn.active {
-  background-color: #409eff;
-  color: #ffffff;
-  border-color: #409eff;
-  font-weight: bold;
-}
 
 .remark-line {
   margin-bottom: 6px;

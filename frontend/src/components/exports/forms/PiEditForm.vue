@@ -140,9 +140,54 @@
       <div class="section-body">
         <el-row :gutter="16">
           <el-col :span="12">
-            <el-form-item label="Remark 备注条款 (多行每行一条)">
-              <el-input v-model="remarkText" type="textarea" :rows="8" @blur="onRemarkBlur" />
-            </el-form-item>
+            <div class="sub-card-box">
+              <div class="remark-header-bar">
+                <div class="sub-card-title mb-0">Remark 备注条款 (多行每行一条)</div>
+                <!-- 备注字号调控操作工具栏 -->
+                <div class="remark-font-size-control">
+                  <span class="control-label">字号设置:</span>
+                  <el-button
+                    type="default"
+                    size="small"
+                    title="缩小字号"
+                    :disabled="(formData.remark_font_size || 11) <= 9"
+                    @click="adjustRemarkFontSize(-1)"
+                  >
+                    A-
+                  </el-button>
+                  <span class="current-size-display">{{ formData.remark_font_size || 11 }}px</span>
+                  <el-button
+                    type="default"
+                    size="small"
+                    title="放大字号"
+                    :disabled="(formData.remark_font_size || 11) >= 24"
+                    @click="adjustRemarkFontSize(1)"
+                  >
+                    A+
+                  </el-button>
+                  <el-radio-group
+                    v-model="formData.remark_font_size"
+                    size="small"
+                    class="ms-2"
+                  >
+                    <el-radio-button
+                      v-for="size in [10, 11, 12, 13, 14, 16]"
+                      :key="size"
+                      :value="size"
+                    >
+                      {{ size }}
+                    </el-radio-button>
+                  </el-radio-group>
+                </div>
+              </div>
+              <el-input
+                v-model="remarkText"
+                type="textarea"
+                :rows="8"
+                placeholder="请输入备注条款..."
+                @blur="onRemarkBlur"
+              />
+            </div>
           </el-col>
           <el-col :span="12">
             <div class="sub-card-box">
@@ -233,10 +278,35 @@ const emit = defineEmits<{
 
 const formData = props.modelValue
 
-const remarkText = ref(Array.isArray(formData.remarks) ? formData.remarks.join('\n\n') : '')
+// 初始化确保 remark_font_size 具备默认数值 (默认 11px)
+if (formData && formData.remark_font_size === undefined) {
+  formData.remark_font_size = 11
+}
+
+/**
+ * 调整 Remark 备注字号大小 (单位: px)
+ * @param delta 字号增减步长 (+1 或 -1)
+ */
+function adjustRemarkFontSize(delta: number): void {
+  if (!formData) return
+  const current = formData.remark_font_size || 11
+  const next = Math.min(24, Math.max(9, current + delta))
+  formData.remark_font_size = next
+}
+
+/**
+ * 直接设置 Remark 备注目标字号大小 (单位: px)
+ * @param size 目标字号数值 (9-24)
+ */
+function setRemarkFontSize(size: number): void {
+  if (!formData) return
+  formData.remark_font_size = Math.min(24, Math.max(9, size))
+}
+
+const remarkText = ref(Array.isArray(formData?.remarks) ? formData.remarks.join('\n\n') : '')
 
 watch(
-  () => formData.remarks,
+  () => formData?.remarks,
   (newRemarks) => {
     if (Array.isArray(newRemarks)) {
       remarkText.value = newRemarks.join('\n\n')
@@ -246,7 +316,9 @@ watch(
 )
 
 function onRemarkBlur() {
-  formData.remarks = remarkText.value.split(/\n\n+/).filter(Boolean)
+  if (formData) {
+    formData.remarks = remarkText.value.split(/\n\n+/).filter(Boolean)
+  }
 }
 </script>
 
@@ -280,6 +352,37 @@ function onRemarkBlur() {
   font-weight: 600;
   color: #475569;
   margin-bottom: 8px;
+}
+.remark-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.remark-font-size-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.control-label {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+.current-size-display {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0284c7;
+  min-width: 32px;
+  text-align: center;
+}
+.mb-0 {
+  margin-bottom: 0 !important;
+}
+.ms-2 {
+  margin-left: 8px;
 }
 .mt-2 { margin-top: 8px; }
 .mt-3 { margin-top: 12px; }
