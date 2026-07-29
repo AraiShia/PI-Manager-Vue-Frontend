@@ -187,7 +187,7 @@ const visible = computed({
 })
 
 const dialogTitle = computed(() => {
-  return `细粒度管理：采购链接 - ${props.productName || '产品'}`
+  return `采购链接 - ${props.productName || '产品'}`
 })
 
 const loading = ref(false)
