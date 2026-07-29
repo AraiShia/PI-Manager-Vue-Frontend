@@ -51,6 +51,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import { suppliersApi, type Supplier } from '@/api/suppliers'
 
 interface Props {
@@ -60,6 +61,7 @@ interface Props {
   placeholder?: string
   clearable?: boolean
   disabled?: boolean
+  confirmClear?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -68,6 +70,7 @@ const props = withDefaults(defineProps<Props>(), {
   placeholder: '搜索或选择供应商',
   clearable: true,
   disabled: false,
+  confirmClear: false,
 })
 
 const emit = defineEmits<{
@@ -183,7 +186,23 @@ function onSelect(item: Supplier) {
   emit('select', item)
 }
 
-function onClear() {
+async function onClear() {
+  if (props.confirmClear && (selectedItem.value || props.currentName)) {
+    try {
+      await ElMessageBox.confirm(
+        '清空供应商后，当前供应商链接也会一并清空。是否继续？',
+        '清空供应商确认',
+        {
+          confirmButtonText: '确认清空',
+          cancelButtonText: '取消',
+          type: 'warning',
+        },
+      )
+    } catch {
+      return
+    }
+  }
+
   if (abortController) {
     abortController.abort()
     abortController = null

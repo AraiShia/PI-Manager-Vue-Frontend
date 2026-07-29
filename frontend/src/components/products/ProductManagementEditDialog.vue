@@ -317,6 +317,7 @@
                   v-model="form.supplier"
                   :current-name="form.supplier_name"
                   :disabled="formLocked"
+                  :confirm-clear="true"
                   placeholder="搜索或选择供应商"
                   @select="onSupplierSelect"
                   @clear="onSupplierClear"
@@ -940,33 +941,14 @@ async function onSupplierSelect(s: Supplier): Promise<void> {
   if (sameSupplier) applyShopUrlFromPriority()
 }
 
-async function onSupplierClear(): Promise<void> {
-  const previousSupplier = supplierBeforeClear || form.supplier
-  const previousName = form.supplier_name
-
-  try {
-    await ElMessageBox.confirm(
-      '清空供应商后，当前供应商链接也会一并清空。是否继续？',
-      '清空供应商确认',
-      {
-        confirmButtonText: '确认清空',
-        cancelButtonText: '取消',
-        type: 'warning',
-      },
-    )
-
-    form.supplier_name = ''
-    form.supplier = null
-    supplierUrlOptions.value = []
-    form.shop_url = ''
-    initialShopUrl.value = ''
-    userEditedShopUrl = false
-    supplierBeforeClear = null
-  } catch {
-    // el-select 已先发出 update:modelValue(null)，取消时恢复原供应商。
-    form.supplier = previousSupplier || null
-    form.supplier_name = previousName || previousSupplier?.supplier_name || ''
-  }
+function onSupplierClear(): void {
+  form.supplier_name = ''
+  form.supplier = null
+  supplierUrlOptions.value = []
+  form.shop_url = ''
+  initialShopUrl.value = ''
+  userEditedShopUrl = false
+  supplierBeforeClear = null
 }
 
 function openNewSupplierDialog(): void {
