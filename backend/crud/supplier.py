@@ -274,20 +274,20 @@ def get_suppliers(db: Session, skip: int = 0, limit: int = 100, keyword: Optiona
         province, city = split_region(region_str)
         supplier_dict: dict[str, Any] = {
             "id": s.id,
-            "supplier_code": s.supplier_code,
-            "supplier_name": s.supplier_name,
+            "supplier_code": s.supplier_code or f"SP{s.id:04d}",
+            "supplier_name": s.supplier_name or "",
             "region": s.region,
             "province": province,
             "city": city,
-            "dept_id": s.dept_id,
-            "status": s.status,
+            "dept_id": s.dept_id or "S",
+            "status": s.status if s.status is not None else 1,
             "created_at": s.created_at,
-            "platform": s.platform,
-            "wechat_id": s.wechat_id,
-            "wechat_nickname": s.wechat_nickname,
-            "is_dropship": s.is_dropship,
-            "supply_mode": s.supply_mode,
-            "supplier_wechat": s.supplier_wechat,
+            "platform": getattr(s, "platform", None),
+            "wechat_id": getattr(s, "wechat_id", None),
+            "wechat_nickname": getattr(s, "wechat_nickname", None),
+            "is_dropship": getattr(s, "is_dropship", False),
+            "supply_mode": getattr(s, "supply_mode", None),
+            "supplier_wechat": getattr(s, "supplier_wechat", None),
         }
         primary_contact = next((c for c in s.contacts if c.is_primary == 1), None)
         if primary_contact:

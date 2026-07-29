@@ -3,9 +3,9 @@ from datetime import datetime
 from typing import Optional, Literal
 
 class SupplierBase(BaseModel):
-    dept_id: str
-    supplier_code: str
-    supplier_name: str
+    dept_id: Optional[str] = "S"
+    supplier_code: Optional[str] = None
+    supplier_name: Optional[str] = ""
     region: Optional[str] = None
     province: Optional[str] = None
     city: Optional[str] = None
@@ -52,8 +52,8 @@ class SupplierUpdate(BaseModel):
 
 class SupplierResponse(SupplierBase):
     id: int
-    status: int = 1
-    created_at: datetime
+    status: Optional[int] = 1
+    created_at: Optional[datetime] = None
     contact_person: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
@@ -69,4 +69,5 @@ class SupplierResponse(SupplierBase):
 
     class Config:
         from_attributes = True
+
 
