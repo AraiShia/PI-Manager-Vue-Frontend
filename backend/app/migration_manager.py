@@ -41,10 +41,11 @@ MIGRATIONS = [
     ("1.0.0.12", "add_pi_item_inbound_records"),
     ("1.0.0.13", "add_purchase_snapshot_fields"),
     ("1.0.0.14", "sync_pi_payment_stages_to_receivables"),
+    ("1.0.0.15", "repair_sup_supplier_primary_key"),
 ]
 
 # 最新代码版本对应的数据库版本
-LATEST_VERSION = "1.0.0.14"
+LATEST_VERSION = "1.0.0.15"
 
 
 class FileLock:
