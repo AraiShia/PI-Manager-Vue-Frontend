@@ -149,13 +149,15 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
         supplier_wechat=supplier.supplier_wechat,
     )
 
+    supplier_id: Optional[int] = None
     try:
         db.add(db_supplier)
         db.flush()  # 预分配供应商主键 ID
+        supplier_id = cast(int, db_supplier.id)
 
         if supplier.contact_person or supplier.phone or supplier.email or supplier.address:
             contact = SupSupplierContact(
-                supplier_id=db_supplier.id,
+                supplier_id=supplier_id,
                 name=supplier.contact_person,
                 phone=supplier.phone,
                 email=supplier.email,
@@ -165,10 +167,16 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
             db.add(contact)
 
         db.commit()  # 单原子事务统一提交供应商主表及关联主联系人
-        db.refresh(db_supplier)
     except Exception as e:
         db.rollback()
         raise e
+
+    # 提交完成后，使用 supplier_id 从数据库重新加载包含最新关联联系人的完整实体对象
+    # 避免使用 session.refresh() 在特定 ORM 级联/会话状态下触发 "Could not refresh instance" 异常
+    if supplier_id is not None:
+        reloaded = get_supplier(db, supplier_id)
+        if reloaded is not None:
+            return reloaded
 
     return enrich_supplier(db_supplier)
 
@@ -273,7 +281,10 @@ def find_or_create_supplier_by_name(
         if updated:
             db.add(existing)
             db.commit()
-            db.refresh(existing)
+            existing_id = cast(int, existing.id)
+            reloaded_existing = get_supplier(db, existing_id)
+            if reloaded_existing:
+                existing = reloaded_existing
         return (existing, False)
 
     platform_val: Any = platform if platform else None
@@ -422,10 +433,14 @@ def update_supplier(db: Session, supplier_id: int, supplier_update: SupplierUpda
 
     try:
         db.commit()
-        db.refresh(db_supplier)
     except Exception as e:
         db.rollback()
         raise e
+
+    # 提交修改后通过 get_supplier 重新加载最新数据，防止 session.refresh 异常
+    reloaded_supplier = get_supplier(db, supplier_id)
+    if reloaded_supplier is not None:
+        return reloaded_supplier
 
     return enrich_supplier(db_supplier)
 
