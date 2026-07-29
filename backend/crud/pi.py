@@ -1022,7 +1022,7 @@ def _derive_pack_spec_from_packaging(packaging: str, carton_count, cartons_per_u
     return None
 
 
-def get_pi_invoices_with_customer(db: Session, skip: int = 0, limit: int = 100, status: int = None):
+def get_pi_invoices_with_customer(db: Session, skip: int = 0, limit: int = 100, status: Optional[int] = None):
     """获取PI列表，包含客户信息"""
     query = db.query(
         PiProformaInvoice,

@@ -437,6 +437,7 @@ function openCreateSupplierDialog() {
 
 // SupplierFormDialog 创建成功回调
 function onSupplierCreated(created: Supplier) {
+  if (!created) return
   // 添加到本地缓存
   suppliersCache.value.push(created)
   suppliers.value = [...suppliersCache.value]
@@ -690,7 +691,12 @@ async function onSubmit() {
       }
     }
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.detail || e?.message || '采购失败')
+    const message =
+      e?.response?.data?.detail ||
+      e?.response?.data?.message ||
+      e?.message ||
+      '采购失败'
+    ElMessage.error(message)
   } finally {
     submitting.value = false
   }

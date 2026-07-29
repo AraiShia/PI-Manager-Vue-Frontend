@@ -9,9 +9,12 @@ import type { OrderDetailItem } from '@/types/orderSummary'
  * @return 去除首尾空格后的供应商名称
  */
 export function getItemSupplierName(
-  item: OrderDetailItem | Record<string, unknown>,
+  item?: OrderDetailItem | Record<string, unknown> | null,
   orderSupplierName = ''
 ): string {
+  if (!item) {
+    return orderSupplierName ? String(orderSupplierName).trim() : ''
+  }
   const name =
     (item as any).supplier_name ||
     (item as any).factory_name ||
@@ -29,7 +32,7 @@ export function getItemSupplierName(
  * @return 若供应商完全一致返回 true，否则返回 false
  */
 export function isSupplierConsistent(
-  items: Array<OrderDetailItem | Record<string, unknown>>,
+  items?: Array<OrderDetailItem | Record<string, unknown>> | null,
   orderSupplierName = ''
 ): boolean {
   if (!items || items.length <= 1) {

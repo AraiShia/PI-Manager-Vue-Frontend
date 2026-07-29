@@ -2281,6 +2281,7 @@ function openNewSupplierDialog() {
 }
 
 async function onNewSupplierCreated(created: Supplier) {
+  if (!created) return
   const name = created?.supplier_name ?? form.supplier_name
   if (name) {
     form.supplier_name = name

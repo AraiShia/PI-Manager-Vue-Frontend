@@ -176,11 +176,21 @@ async function save() {
     const res = props.supplier
       ? await suppliersApi.update(props.supplier.id, payload)
       : await suppliersApi.create(payload)
-    ElMessage.success(props.supplier ? '供应商已更新' : '供应商已创建')
-    emit('success', res.data)
-    visible.value = false
+    const supplierData = res?.data || res
+    if (supplierData) {
+      ElMessage.success(props.supplier ? '供应商已更新' : '供应商已创建')
+      emit('success', supplierData)
+      visible.value = false
+    } else {
+      ElMessage.error('创建供应商未返回有效数据')
+    }
   } catch (e: any) {
-    ElMessage.error(e?.message || '保存失败')
+    const message =
+      e?.response?.data?.detail ||
+      e?.response?.data?.message ||
+      e?.message ||
+      '保存失败'
+    ElMessage.error(message)
   } finally {
     saving.value = false
   }

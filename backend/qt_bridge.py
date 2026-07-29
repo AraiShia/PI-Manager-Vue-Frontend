@@ -7,10 +7,32 @@
 
 import json
 import logging
+from typing import Any, Optional, cast
+
 try:
     from PySide6.QtCore import QObject, Slot as pyqtSlot, Signal as pyqtSignal, QUrl
 except ImportError:
-    from PyQt5.QtCore import QObject, pyqtSlot, pyqtSignal, QUrl
+    try:
+        from PyQt5.QtCore import QObject, pyqtSlot, pyqtSignal, QUrl
+    except ImportError:
+        # 为静态类型检查器及无 GUI 依赖的环境提供标准 Stub
+        class QObject:  # type: ignore
+            pass
+
+        def pyqtSlot(*args: Any, **kwargs: Any) -> Any:  # type: ignore
+            return lambda f: f
+
+        class pyqtSignal:  # type: ignore
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                pass
+
+            def emit(self, *args: Any, **kwargs: Any) -> None:
+                pass
+
+        class QUrl:  # type: ignore
+            @staticmethod
+            def fromLocalFile(path: str) -> Any:
+                return path
 
 # 载入 SQLAlchemy 局部会话
 from app.database import SessionLocal
@@ -25,7 +47,7 @@ from crud.supplier import (
 )
 
 # 载入数据验证 Schema
-from schemas.supplier import SupplierCreate, SupplierUpdate
+from schemas.supplier import SupplierCreate, SupplierUpdate, SupplierResponse
 
 # 载入地区数据解析方法
 from region_data import get_all_provinces, get_cities_by_province
@@ -67,7 +89,7 @@ class QtBridge(QObject):
         logger.info(f"[RPC Call] Method={method}, Params={params_json}")
         
         try:
-            params = json.loads(params_json) if params_json else {}
+            params: dict[str, Any] = json.loads(params_json) if params_json else {}
         except Exception as e:
             logger.error(f"解析参数 JSON 失败: {e}")
             return json.dumps({
@@ -80,9 +102,10 @@ class QtBridge(QObject):
         try:
             # 1. 查询供应商列表
             if method == "suppliers.list":
-                skip = params.get("skip", 0)
-                limit = params.get("limit", 20)
-                keyword = params.get("keyword", None)
+                skip = int(params.get("skip", 0))
+                limit = int(params.get("limit", 20))
+                raw_kw = params.get("keyword")
+                keyword: Optional[str] = str(raw_kw) if raw_kw is not None else None
                 
                 suppliers_list = get_suppliers(db, skip=skip, limit=limit, keyword=keyword)
                 return json.dumps({
@@ -93,22 +116,18 @@ class QtBridge(QObject):
 
             # 2. 新增供应商
             elif method == "suppliers.create":
-                payload = SupplierCreate(**params)
-                dept_id = params.get("dept_id", "S")
+                payload = SupplierCreate.model_validate(params)
+                dept_id = str(params.get("dept_id") or "S")
                 db_supplier = create_supplier(db, payload, dept_id=dept_id)
+                if not db_supplier:
+                    return json.dumps({
+                        "success": False,
+                        "data": None,
+                        "error": "创建供应商失败"
+                    }, ensure_ascii=False)
                 
-                # 重新构筑成字典以用于 JSON 序列化
-                data = {
-                    "id": db_supplier.id,
-                    "supplier_code": db_supplier.supplier_code,
-                    "supplier_name": db_supplier.supplier_name,
-                    "platform": db_supplier.platform,
-                    "wechat_id": db_supplier.wechat_id,
-                    "wechat_nickname": db_supplier.wechat_nickname,
-                    "is_dropship": db_supplier.is_dropship,
-                    "status": db_supplier.status,
-                    "created_at": str(db_supplier.created_at)
-                }
+                # 使用 Pydantic SupplierResponse 完整序列化，包含联系人与扩展属性
+                data = SupplierResponse.model_validate(db_supplier).model_dump(mode="json")
                 return json.dumps({
                     "success": True,
                     "data": data,
@@ -117,16 +136,20 @@ class QtBridge(QObject):
 
             # 3. 采购自动创建或关联供应商
             elif method == "suppliers.findOrCreate":
-                supplier_name = params.get("supplier_name")
-                platform = params.get("platform")
-                dept_id = params.get("dept_id", "S")
+                supplier_name_val = params.get("supplier_name")
+                platform_val = params.get("platform")
+                dept_id_val = str(params.get("dept_id") or "S")
                 
-                if not supplier_name or not supplier_name.strip():
+                if not supplier_name_val or not str(supplier_name_val).strip():
                     return json.dumps({
                         "success": False,
                         "data": None,
                         "error": "供应商名称（supplier_name）不能为空"
                     }, ensure_ascii=False)
+                
+                supplier_name = str(supplier_name_val).strip()
+                platform = str(platform_val).strip() if platform_val else ""
+
                 if platform not in ("1688", "wechat", "offline"):
                     return json.dumps({
                         "success": False,
@@ -134,17 +157,24 @@ class QtBridge(QObject):
                         "error": "无效的供应商平台分类（platform）"
                     }, ensure_ascii=False)
 
+                contact_person = str(params.get("contact_person")) if params.get("contact_person") is not None else None
+                phone = str(params.get("phone")) if params.get("phone") is not None else None
+                address = str(params.get("address")) if params.get("address") is not None else None
+                wechat_id = str(params.get("wechat_id")) if params.get("wechat_id") is not None else None
+                wechat_nickname = str(params.get("wechat_nickname")) if params.get("wechat_nickname") is not None else None
+                is_dropship = bool(params.get("is_dropship")) if params.get("is_dropship") is not None else None
+
                 result = find_or_create_supplier_by_name(
                     db,
-                    supplier_name=supplier_name.strip(),
+                    supplier_name=supplier_name,
                     platform=platform,
-                    dept_id=dept_id,
-                    contact_person=params.get("contact_person"),
-                    phone=params.get("phone"),
-                    address=params.get("address"),
-                    wechat_id=params.get("wechat_id"),
-                    wechat_nickname=params.get("wechat_nickname"),
-                    is_dropship=params.get("is_dropship"),
+                    dept_id=dept_id_val,
+                    contact_person=contact_person,
+                    phone=phone,
+                    address=address,
+                    wechat_id=wechat_id,
+                    wechat_nickname=wechat_nickname,
+                    is_dropship=is_dropship,
                 )
                 if not result:
                     return json.dumps({
@@ -154,15 +184,11 @@ class QtBridge(QObject):
                     }, ensure_ascii=False)
 
                 new_supplier, created = result
-                data = {
-                    "id": new_supplier.id,
-                    "supplier_name": new_supplier.supplier_name,
-                    "supplier_code": new_supplier.supplier_code,
-                    "created": created
-                }
+                supplier_dict = SupplierResponse.model_validate(new_supplier).model_dump(mode="json")
+                supplier_dict["created"] = created
                 return json.dumps({
                     "success": True,
-                    "data": data,
+                    "data": supplier_dict,
                     "error": None
                 }, ensure_ascii=False)
 
@@ -177,7 +203,8 @@ class QtBridge(QObject):
 
             # 5. 获取城市清单
             elif method == "suppliers.getCities":
-                province = params.get("province", "")
+                raw_province = params.get("province", "")
+                province = str(raw_province) if raw_province is not None else ""
                 cities = get_cities_by_province(province)
                 return json.dumps({
                     "success": True,
@@ -197,8 +224,8 @@ class QtBridge(QObject):
 
                 # 将 ID 过滤后，其余参数打包成 Schema 校验
                 update_params = {k: v for k, v in params.items() if k != "id"}
-                payload = SupplierUpdate(**update_params)
-                db_supplier = update_supplier(db, id_val, payload)
+                payload = SupplierUpdate.model_validate(update_params)
+                db_supplier = update_supplier(db, int(id_val), payload)
                 
                 if not db_supplier:
                     return json.dumps({
@@ -207,17 +234,8 @@ class QtBridge(QObject):
                         "error": f"未找到 ID 为 {id_val} 的供应商"
                     }, ensure_ascii=False)
                 
-                data = {
-                    "id": db_supplier.id,
-                    "supplier_code": db_supplier.supplier_code,
-                    "supplier_name": db_supplier.supplier_name,
-                    "platform": db_supplier.platform,
-                    "wechat_id": db_supplier.wechat_id,
-                    "wechat_nickname": db_supplier.wechat_nickname,
-                    "is_dropship": db_supplier.is_dropship,
-                    "status": db_supplier.status,
-                    "created_at": str(db_supplier.created_at)
-                }
+                # 使用 Pydantic SupplierResponse 完整序列化，包含联系人与扩展属性
+                data = SupplierResponse.model_validate(db_supplier).model_dump(mode="json")
                 return json.dumps({
                     "success": True,
                     "data": data,
@@ -234,7 +252,7 @@ class QtBridge(QObject):
                         "error": "缺失要删除的供应商 ID"
                     }, ensure_ascii=False)
 
-                success = delete_supplier(db, id_val)
+                success = delete_supplier(db, int(id_val))
                 return json.dumps({
                     "success": True,
                     "data": success,
@@ -246,7 +264,9 @@ class QtBridge(QObject):
                 from crud.product_supplier_url import list_urls
                 product_id = params.get("product_id")
                 supplier_id = params.get("supplier_id")
-                supplier_name = params.get("supplier_name")
+                raw_supplier_name = params.get("supplier_name")
+                supplier_name = str(raw_supplier_name) if raw_supplier_name is not None else None
+
                 if not product_id:
                     return json.dumps({
                         "success": False,
@@ -278,7 +298,7 @@ class QtBridge(QObject):
             elif method == "productSupplierUrls.create":
                 from schemas.product_supplier_url import ProductSupplierUrlCreate
                 from crud.product_supplier_url import create_url
-                payload = ProductSupplierUrlCreate(**params)
+                payload = ProductSupplierUrlCreate.model_validate(params)
                 url_obj, created = create_url(db, payload)
                 db.commit()
                 data = {
@@ -303,12 +323,13 @@ class QtBridge(QObject):
                 from crud.pi import get_pi_invoices_with_customer
                 skip = params.get("skip", 0)
                 limit = params.get("limit", 20)
-                status = params.get("status")
+                raw_status = params.get("status")
+                status = int(raw_status) if raw_status is not None else None
                 records = get_pi_invoices_with_customer(
                     db,
                     skip=int(skip),
                     limit=int(limit),
-                    status=int(status) if status is not None else None
+                    status=status
                 )
                 return json.dumps({
                     "success": True,
@@ -373,7 +394,8 @@ class QtBridge(QObject):
             version: 可用的前端新版本号
         """
         logger.info(f"[QtBridge] 发现前端新版本: {version}，准备发射信号给 JS")
-        self.version_available.emit(version)
+        if hasattr(self.version_available, "emit"):
+            self.version_available.emit(version)
 
     @pyqtSlot(result=str)
     def trigger_refresh(self) -> str:

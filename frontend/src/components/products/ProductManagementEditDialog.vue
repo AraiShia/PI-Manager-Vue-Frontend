@@ -930,6 +930,7 @@ function openNewSupplierDialog(): void {
 }
 
 async function onNewSupplierCreated(created: Supplier): Promise<void> {
+  if (!created) return
   const name = created?.supplier_name ?? form.supplier_name
   if (name) form.supplier_name = name
   if (created) {

@@ -4,11 +4,15 @@
 符合 Google Python 编程规范并提供详细的中文注释。
 """
 
+import logging
 from typing import Optional, Any, Literal, cast
+from sqlalchemy import text
 from sqlalchemy.orm import Session, joinedload
 from models import SupSupplier, SupSupplierContact
 from schemas import SupplierCreate, SupplierUpdate
 from region_data import get_city_code
+
+logger = logging.getLogger(__name__)
 
 
 def split_region(region: Optional[str]) -> tuple[Optional[str], Optional[str]]:
@@ -173,12 +177,29 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
 
     # 提交完成后，使用 supplier_id 从数据库重新加载包含最新关联联系人的完整实体对象
     # 避免使用 session.refresh() 在特定 ORM 级联/会话状态下触发 "Could not refresh instance" 异常
-    if supplier_id is not None:
-        reloaded = get_supplier(db, supplier_id)
-        if reloaded is not None:
-            return reloaded
+    db_path = getattr(getattr(db.bind, "url", None), "database", "unknown")
+    logger.info(
+        f"[Supplier CRUD] db.commit() 完成, supplier_id={supplier_id}, db_path={db_path}"
+    )
 
-    return enrich_supplier(db_supplier)
+    if supplier_id is not None:
+        try:
+            row = db.execute(
+                text("SELECT id, supplier_name FROM sup_supplier WHERE id = :id"),
+                {"id": supplier_id},
+            ).fetchone()
+            logger.info(f"[Supplier CRUD] 提交后 SQL 校验结果: row={row}")
+        except Exception as query_err:
+            logger.warning(f"[Supplier CRUD] 提交后 SQL 校验查询失败: {query_err}")
+
+        reloaded = get_supplier(db, supplier_id)
+        if reloaded is None:
+            raise RuntimeError(
+                f"供应商已提交但重新查询失败，supplier_id={supplier_id}"
+            )
+        return reloaded
+
+    raise RuntimeError("供应商创建失败，未分配有效的 supplier_id")
 
 
 def get_supplier(db: Session, supplier_id: int) -> Optional[SupSupplier]:
@@ -288,8 +309,11 @@ def find_or_create_supplier_by_name(
             db.commit()
             existing_id = cast(int, existing.id)
             reloaded_existing = get_supplier(db, existing_id)
-            if reloaded_existing:
-                existing = reloaded_existing
+            if reloaded_existing is None:
+                raise RuntimeError(
+                    f"供应商已更新提交但重新查询失败，supplier_id={existing_id}"
+                )
+            existing = reloaded_existing
         return (existing, False)
 
     platform_val: Any = platform if platform else None
@@ -444,10 +468,11 @@ def update_supplier(db: Session, supplier_id: int, supplier_update: SupplierUpda
 
     # 提交修改后通过 get_supplier 重新加载最新数据，防止 session.refresh 异常
     reloaded_supplier = get_supplier(db, supplier_id)
-    if reloaded_supplier is not None:
-        return reloaded_supplier
-
-    return enrich_supplier(db_supplier)
+    if reloaded_supplier is None:
+        raise RuntimeError(
+            f"供应商已更新提交但重新查询失败，supplier_id={supplier_id}"
+        )
+    return reloaded_supplier
 
 
 def delete_supplier(db: Session, supplier_id: int) -> bool:
