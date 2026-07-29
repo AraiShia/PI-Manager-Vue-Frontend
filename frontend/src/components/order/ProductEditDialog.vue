@@ -394,7 +394,7 @@
                     <el-icon :size="16"><TopRight /></el-icon>
                   </el-button>
                 </el-tooltip>
-                <el-tooltip content="细粒度管理产品-供应商-采购链接" placement="top">
+                <el-tooltip content="供应商链接管理" placement="top">
                   <el-button
                     type="warning"
                     link
@@ -1798,30 +1798,76 @@ async function onShopUrlClear() {
   }
 }
 
-// 1688 链接变更处理
+// 1688 链接变更与粘贴新建处理
 async function onShopUrlChange(url: string) {
   if (isConfirmingUrlClear) return
-  userEditedShopUrl = true
-  if (!url) {
+  if (!url || !url.trim()) {
     onShopUrlClear()
     return
   }
-  initialShopUrl.value = url
-  const pid = (item.value as any)?.product_id
-  const supplierId = (form.supplier as any)?.id
-  if (pid && supplierId && form.supplier_name) {
-    try {
-      await productSupplierUrlsApi.create({
-        product_id: pid,
-        supplier_id: supplierId,
-        supplier_name: form.supplier_name,
-        url,
-        display_name: form.product_name || null,
-      })
-      await loadSupplierUrls()
-    } catch (e) { console.warn('[ProductEditDialog] 保存采购链接失败', e) }
+
+  const cleanInput = url.trim()
+  const info = parseShopUrl(cleanInput)
+  const targetUrl = info.cleanUrl
+  const existing = supplierUrlOptions.value.find((u) => u.url === targetUrl || u.url === cleanInput)
+
+  // 情况 1：从下拉选项中选中了已有链接
+  if (existing) {
+    userEditedShopUrl = true
+    initialShopUrl.value = existing.url
+    form.shop_url = existing.url
+    saveField('shop_url', existing.url)
+    return
   }
-  saveField('shop_url', url)
+
+  // 情况 2：意外/故意粘贴或手工输入了全新 URL 链接 ➔ 触发确认二次二次保存防误触弹窗
+  try {
+    await ElMessageBox.confirm(
+      `检测到新输入的采购链接：\n\n` +
+      `🔗 网址: ${targetUrl}\n` +
+      `🏷️ 自动识别平台: ${info.platformName}\n` +
+      `🏷️ 智能生成别名: ${info.suggestedDisplayName}\n\n` +
+      `是否将其自动新建并绑定为此产品的采购链接？`,
+      '确认添加新采购链接',
+      {
+        confirmButtonText: '确定添加并保存',
+        cancelButtonText: '取消',
+        type: 'info',
+        confirmButtonClass: 'el-button--primary',
+        closeOnClickModal: false,
+      }
+    )
+
+    const pid = (item.value as any)?.product_id || (item.value as any)?.id
+    const supplierId = (form.supplier as any)?.id || null
+    const supplierName = form.supplier_name || '默认供应商'
+
+    if (pid) {
+      try {
+        await productSupplierUrlsApi.create({
+          product_id: pid,
+          supplier_id: supplierId,
+          supplier_name: supplierName,
+          url: targetUrl,
+          display_name: info.suggestedDisplayName,
+          is_default: supplierUrlOptions.value.length === 0,
+        })
+        ElMessage.success(`已自动创建并保存 ${info.platformName} 采购链接！`)
+      } catch (e) {
+        console.warn('[ProductEditDialog] 保存采购链接失败', e)
+      }
+    }
+
+    userEditedShopUrl = true
+    initialShopUrl.value = targetUrl
+    form.shop_url = targetUrl
+    saveField('shop_url', targetUrl)
+    await loadSupplierUrls()
+  } catch {
+    // 点击取消时还原为上次的链接
+    form.shop_url = initialShopUrl.value || ''
+    ElMessage.info('已取消关联新采购链接')
+  }
 }
 
 // 根据优先级应用供应商链接
