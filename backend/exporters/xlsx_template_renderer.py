@@ -131,7 +131,19 @@ class XlsxTemplateRenderer:
         elif ftype == "sum":
             items = self._resolve_path(data, field["data_path"]) or []
             field_name = field["field"]
-            total = sum((it.get(field_name) or 0) for it in items)
+            total = 0.0
+            if isinstance(items, list):
+                for it in items:
+                    if isinstance(it, dict):
+                        val = it.get(field_name, 0)
+                    elif hasattr(it, field_name):
+                        val = getattr(it, field_name, 0)
+                    else:
+                        val = 0
+                    try:
+                        total += float(val) if val is not None else 0.0
+                    except (ValueError, TypeError):
+                        pass
             ws[field["cell"]] = total
         else:
             raise ValueError(f"unsupported field type: {ftype}")
@@ -141,9 +153,12 @@ class XlsxTemplateRenderer:
     def _apply_loop(self, ws, field: Dict[str, Any], data: Dict[str, Any]) -> None:
         """按起始 cell 向下逐行展开 items。遇 merged 区域时跳过。"""
         items = self._resolve_path(data, field["data_path"]) or []
-        # 支持最大行数限制
+        if not isinstance(items, list):
+            items = []
+
+        # 支持最大行数限制，防止切片类型报错
         max_rows = field.get("max_rows", len(items))
-        if max_rows > 0:
+        if isinstance(max_rows, int) and max_rows > 0:
             items = items[:max_rows]
 
         start_cell = field["cell"]
@@ -169,9 +184,15 @@ class XlsxTemplateRenderer:
                         ws[target_cell] = str(expr)
                 else:
                     # expr 形如 "item.product_name" / "item.quantity"
-                    if expr.startswith("item."):
+                    if isinstance(expr, str) and expr.startswith("item."):
                         key = expr[len("item."):]
-                        value = item.get(key)
+                        if isinstance(item, dict):
+                            value = item.get(key)
+                        elif hasattr(item, key):
+                            value = getattr(item, key, None)
+                        else:
+                            value = None
+
                         # 处理图片字段（支持 photo / image / image_url / product_image）
                         if key in ("photo", "image", "image_url", "product_image") and value:
                             inserted = _insert_image_to_cell(ws, target_cell, value)
@@ -211,7 +232,7 @@ class XlsxTemplateRenderer:
         return cur
 
     @staticmethod
-    def _eval_formula(formula: str, item: Dict[str, Any]):
+    def _eval_formula(formula: str, item: Any):
         """极简公式求值：'item.X * item.Y' / 'item.X + item.Y' / '10 * 5'。"""
         ops = {
             "*": operator.mul,
@@ -228,10 +249,20 @@ class XlsxTemplateRenderer:
         raise ValueError(f"unsupported formula: {formula}")
 
     @staticmethod
-    def _eval_term(term: str, item: Dict[str, Any]):
+    def _eval_term(term: str, item: Any):
         """解析单个项：'item.X' / '10'。"""
         if term.startswith("item."):
-            return item.get(term[len("item."):], 0)
+            key = term[len("item."):]
+            if isinstance(item, dict):
+                val = item.get(key, 0)
+            elif hasattr(item, key):
+                val = getattr(item, key, 0)
+            else:
+                val = 0
+            try:
+                return float(val) if val is not None else 0
+            except (ValueError, TypeError):
+                return 0
         try:
             return float(term) if "." in term else int(term)
         except (ValueError, TypeError):
