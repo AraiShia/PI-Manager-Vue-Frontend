@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional, Literal
 from app.database import get_db
@@ -20,7 +21,7 @@ class FindOrCreateSupplierRequest(BaseModel):
     contact_person: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
-    platform: Literal['online', 'offline']   # 必填，缺失返回 422
+    platform: Literal['online', 'offline', '1688', 'wechat']   # 必填，缺失返回 422
     wechat_id: Optional[str] = None
     wechat_nickname: Optional[str] = None
     is_dropship: Optional[bool] = None
@@ -63,6 +64,9 @@ def find_or_create_supplier_api(
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
 
     if result is None:
         raise HTTPException(status_code=500, detail="创建供应商失败")
@@ -78,10 +82,21 @@ def find_or_create_supplier_api(
 @router.post("/", response_model=SupplierResponse)
 def create_supplier_api(supplier: SupplierCreate, dept_id: str = "S", db: Session = Depends(get_db)):
     try:
-        return create_supplier(db, supplier, dept_id)
+        res = create_supplier(db, supplier, dept_id)
+        if res is None:
+            raise HTTPException(status_code=500, detail="创建供应商失败")
+        return res
     except ValueError as e:
         # 平台必填字段校验失败 → 422
         raise HTTPException(status_code=422, detail=str(e))
+    except IntegrityError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"供应商唯一性校验失败或数据冲突: {str(e.orig or e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"创建供应商服务异常: {str(e)}")
 
 @router.get("/", response_model=list[SupplierResponse])
 def read_suppliers(skip: int = 0, limit: int = 100, keyword: Optional[str] = None, db: Session = Depends(get_db)):
@@ -112,6 +127,15 @@ def update_supplier_api(supplier_id: int, supplier: SupplierUpdate, db: Session 
         db_supplier = update_supplier(db, supplier_id, supplier)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    except IntegrityError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"数据冲突: {str(e.orig or e)}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"更新供应商异常: {str(e)}")
+
     if db_supplier is None:
         raise HTTPException(status_code=404, detail="供应商不存在")
     return db_supplier

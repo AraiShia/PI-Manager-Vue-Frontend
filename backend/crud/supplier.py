@@ -31,7 +31,7 @@ def split_region(region: Optional[str]) -> tuple[Optional[str], Optional[str]]:
 
 
 def enrich_supplier(supplier: Optional[SupSupplier]) -> Optional[SupSupplier]:
-    """为供应商实体注入省份、城市和城市代码扩展属性。
+    """为供应商实体注入省份、城市、城市代码及主要联系人扩展属性。
 
     Args:
         supplier: 供应商 SQLAlchemy 数据库实体。
@@ -46,39 +46,62 @@ def enrich_supplier(supplier: Optional[SupSupplier]) -> Optional[SupSupplier]:
     setattr(supplier, "province", province)
     setattr(supplier, "city", city)
     setattr(supplier, "city_code", get_city_code(province, city) if province and city else None)
+
+    # 提取主联系人 (is_primary == 1) 的信息并注入扩展属性
+    contacts = getattr(supplier, "contacts", []) or []
+    primary_contact = next((c for c in contacts if getattr(c, "is_primary", 0) == 1), None)
+    if primary_contact:
+        setattr(supplier, "contact_person", getattr(primary_contact, "name", None))
+        setattr(supplier, "phone", getattr(primary_contact, "phone", None))
+        setattr(supplier, "email", getattr(primary_contact, "email", None))
+        setattr(supplier, "address", getattr(primary_contact, "address", None))
+    else:
+        setattr(supplier, "contact_person", None)
+        setattr(supplier, "phone", None)
+        setattr(supplier, "email", None)
+        setattr(supplier, "address", None)
+
     return supplier
 
 
 def generate_supplier_code(db: Session, city_code: str) -> str:
     """生成唯一供应商编号（例如: SP000001）。
 
+    遍历所有相同前缀的供应商编号，精准解析数字后缀的最大值，
+    并进行存在性二次校验，防范主键/唯一索引冲突。
+
     Args:
         db: 数据库 Session。
         city_code: 城市行政代码。
 
     Returns:
-        str: 自动递增的供应商编号。
+        str: 自动递增的唯一供应商编号。
     """
     prefix = f"SP{city_code}" if city_code else "SP000"
-    base_query = (
+    all_codes = (
         db.query(SupSupplier.supplier_code)
         .filter(SupSupplier.supplier_code.like(f"{prefix}%"))
-        .order_by(SupSupplier.supplier_code.desc())
+        .all()
     )
 
-    max_code = base_query.first()
+    max_num = 0
+    for (code,) in all_codes:
+        if code and code.startswith(prefix):
+            suffix = code[len(prefix):]
+            if suffix.isdigit():
+                num = int(suffix)
+                if num > max_num:
+                    max_num = num
 
-    if max_code:
-        suffix = max_code[0][len(prefix) :]
-        if len(suffix) == 3:
-            try:
-                last_num = int(suffix)
-                next_num = last_num + 1
-                return f"{prefix}{str(next_num).zfill(3)}"
-            except ValueError:
-                pass
+    next_num = max_num + 1
+    candidate_code = f"{prefix}{str(next_num).zfill(3)}"
 
-    return f"{prefix}001"
+    # 循环检查，确保生成的 candidate_code 绝对未被占用
+    while db.query(SupSupplier).filter(SupSupplier.supplier_code == candidate_code).first() is not None:
+        next_num += 1
+        candidate_code = f"{prefix}{str(next_num).zfill(3)}"
+
+    return candidate_code
 
 
 def _validate_platform_fields(supplier: SupplierCreate) -> None:
@@ -98,12 +121,13 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
         Optional[SupSupplier]: 创建并补全扩展字段后的供应商实体。
     """
     _validate_platform_fields(supplier)
-    city_code = supplier.city_code or "000"
+    # 自动依据省市推算 city_code
+    city_code = supplier.city_code or (get_city_code(supplier.province, supplier.city) if supplier.province and supplier.city else None) or "000"
     supplier_code = generate_supplier_code(db, city_code)
 
-    region = f"{supplier.province} {supplier.city}" if supplier.province and supplier.city else ""
+    region = f"{supplier.province or ''} {supplier.city or ''}".strip() if (supplier.province or supplier.city) else ""
 
-    platform_val: Any = supplier.platform if supplier.platform in ("online", "offline") else None
+    platform_val: Any = supplier.platform if supplier.platform else None
 
     db_supplier = SupSupplier(
         supplier_code=supplier_code,
@@ -118,9 +142,13 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
         supplier_wechat=supplier.supplier_wechat,
     )
 
-    db.add(db_supplier)
-    db.commit()
-    db.refresh(db_supplier)
+    try:
+        db.add(db_supplier)
+        db.commit()
+        db.refresh(db_supplier)
+    except Exception as e:
+        db.rollback()
+        raise e
 
     if supplier.contact_person or supplier.phone or supplier.email or supplier.address:
         contact = SupSupplierContact(
@@ -131,8 +159,12 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
             address=supplier.address,
             is_primary=1,
         )
-        db.add(contact)
-        db.commit()
+        try:
+            db.add(contact)
+            db.commit()
+            db.refresh(db_supplier)
+        except Exception:
+            db.rollback()
 
     return enrich_supplier(db_supplier)
 
@@ -240,7 +272,7 @@ def find_or_create_supplier_by_name(
             db.refresh(existing)
         return (existing, False)
 
-    platform_val: Any = platform if platform in ("online", "offline") else None
+    platform_val: Any = platform if platform else None
 
     create_payload = SupplierCreate(
         supplier_name=clean_name,
@@ -332,7 +364,7 @@ def _validate_platform_fields_update(db_supplier: SupSupplier, supplier_update: 
 
 
 def update_supplier(db: Session, supplier_id: int, supplier_update: SupplierUpdate) -> Optional[SupSupplier]:
-    """更新已有的供应商信息。
+    """更新已有的供应商信息及关联的主联系人。
 
     Args:
         db: 数据库 Session。
@@ -352,15 +384,45 @@ def update_supplier(db: Session, supplier_id: int, supplier_update: SupplierUpda
     province = update_data.pop("province", None)
     city = update_data.pop("city", None)
     update_data.pop("city_code", None)
+    contact_person = update_data.pop("contact_person", None)
+    phone = update_data.pop("phone", None)
+    email = update_data.pop("email", None)
+    address = update_data.pop("address", None)
 
     if province is not None or city is not None:
         setattr(db_supplier, "region", f"{province or ''} {city or ''}".strip())
 
     for key, value in update_data.items():
-        setattr(db_supplier, key, value)
+        if hasattr(db_supplier, key):
+            setattr(db_supplier, key, value)
 
-    db.commit()
-    db.refresh(db_supplier)
+    # 同步更新或新增主联系人 (is_primary == 1)
+    if any(x is not None for x in [contact_person, phone, email, address]):
+        contacts = getattr(db_supplier, "contacts", []) or []
+        primary_contact = next((c for c in contacts if getattr(c, "is_primary", 0) == 1), None)
+        if primary_contact:
+            if contact_person is not None: primary_contact.name = contact_person
+            if phone is not None: primary_contact.phone = phone
+            if email is not None: primary_contact.email = email
+            if address is not None: primary_contact.address = address
+        else:
+            new_contact = SupSupplierContact(
+                supplier_id=db_supplier.id,
+                name=contact_person,
+                phone=phone,
+                email=email,
+                address=address,
+                is_primary=1,
+            )
+            db.add(new_contact)
+
+    try:
+        db.commit()
+        db.refresh(db_supplier)
+    except Exception as e:
+        db.rollback()
+        raise e
+
     return enrich_supplier(db_supplier)
 
 

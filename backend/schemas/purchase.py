@@ -40,7 +40,7 @@ class PurchaseCreateOnline(BaseModel):
     pi_id: int
     supplier_id: Optional[int] = None
     supplier_name: Optional[str] = None
-    platform: Literal['1688', 'wechat', 'offline']   # 必填
+    platform: Literal['1688', 'wechat', 'offline', 'online']   # 必填
     items: List[PurchaseOrderItemCreate]
     link: Optional[str] = None
     contact_wechat: Optional[str] = None

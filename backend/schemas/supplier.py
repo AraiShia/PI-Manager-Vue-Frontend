@@ -20,8 +20,8 @@ class SupplierCreate(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     address: Optional[str] = None
-    # 平台分类字段（2026-07-17 新增）
-    platform: Optional[Literal['online', 'offline']] = None
+    # 平台分类字段（包含 online, offline, 1688, wechat）
+    platform: Optional[Literal['online', 'offline', '1688', 'wechat']] = None
     wechat_id: Optional[str] = None
     wechat_nickname: Optional[str] = None
     is_dropship: Optional[bool] = False
@@ -41,8 +41,8 @@ class SupplierUpdate(BaseModel):
     return_policy: Optional[str] = None
     payment_terms: Optional[str] = None
     status: Optional[int] = None
-    # 平台分类字段（2026-07-17 新增）
-    platform: Optional[Literal['online', 'offline']] = None
+    # 平台分类字段（包含 online, offline, 1688, wechat）
+    platform: Optional[Literal['online', 'offline', '1688', 'wechat']] = None
     wechat_id: Optional[str] = None
     wechat_nickname: Optional[str] = None
     is_dropship: Optional[bool] = None

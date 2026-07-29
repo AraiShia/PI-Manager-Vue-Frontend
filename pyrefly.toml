@@ -1,4 +1,4 @@
-# Pyrefly 静态类型检查器配置
-# 注意：独立 pyrefly.toml 文件中，键值直接写在顶层，不需要 [tool.pyrefly] 段头
 python-interpreter-path = "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python310\\python.exe"
 search-path = ["backend"]
+ignore = ["**/__pyrefly_virtual__/**", "D:/__pyrefly_virtual__/**", "D:\\__pyrefly_virtual__\\**"]
+
