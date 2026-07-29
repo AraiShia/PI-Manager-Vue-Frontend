@@ -182,8 +182,13 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
 
 
 def get_supplier(db: Session, supplier_id: int) -> Optional[SupSupplier]:
-    """通过主键 ID 查询供应商。"""
-    return enrich_supplier(db.query(SupSupplier).filter(SupSupplier.id == supplier_id).first())
+    """通过主键 ID 查询供应商（包含预加载关联主联系人）。"""
+    return enrich_supplier(
+        db.query(SupSupplier)
+        .options(joinedload(SupSupplier.contacts))
+        .filter(SupSupplier.id == supplier_id)
+        .first()
+    )
 
 
 def get_supplier_by_code(db: Session, supplier_code: str) -> Optional[SupSupplier]:

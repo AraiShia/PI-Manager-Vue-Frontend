@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
-from typing import Optional, Literal
+from typing import Optional, Literal, cast
 from app.database import get_db
 from crud.supplier import (
     create_supplier, get_supplier, get_suppliers, update_supplier, delete_supplier, batch_create_suppliers,
@@ -73,9 +73,9 @@ def find_or_create_supplier_api(
 
     new_supplier, created = result
     return FindOrCreateSupplierResponse(
-        id=new_supplier.id,
-        supplier_name=new_supplier.supplier_name,
-        supplier_code=new_supplier.supplier_code,
+        id=cast(int, new_supplier.id),
+        supplier_name=cast(str, new_supplier.supplier_name),
+        supplier_code=cast(Optional[str], new_supplier.supplier_code),
         created=created,
     )
 
@@ -85,7 +85,7 @@ def create_supplier_api(supplier: SupplierCreate, dept_id: str = "S", db: Sessio
         res = create_supplier(db, supplier, dept_id)
         if res is None:
             raise HTTPException(status_code=500, detail="创建供应商失败")
-        return res
+        return SupplierResponse.model_validate(res)
     except ValueError as e:
         # 平台必填字段校验失败 → 422
         raise HTTPException(status_code=422, detail=str(e))
@@ -119,7 +119,7 @@ def read_supplier(supplier_id: int, db: Session = Depends(get_db)):
     db_supplier = get_supplier(db, supplier_id)
     if db_supplier is None:
         raise HTTPException(status_code=404, detail="供应商不存在")
-    return db_supplier
+    return SupplierResponse.model_validate(db_supplier)
 
 @router.put("/{supplier_id}", response_model=SupplierResponse)
 def update_supplier_api(supplier_id: int, supplier: SupplierUpdate, db: Session = Depends(get_db)):
@@ -138,7 +138,7 @@ def update_supplier_api(supplier_id: int, supplier: SupplierUpdate, db: Session 
 
     if db_supplier is None:
         raise HTTPException(status_code=404, detail="供应商不存在")
-    return db_supplier
+    return SupplierResponse.model_validate(db_supplier)
 
 @router.delete("/{supplier_id}")
 def delete_supplier_api(supplier_id: int, db: Session = Depends(get_db)):
