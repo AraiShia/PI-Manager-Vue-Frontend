@@ -16,11 +16,16 @@ from __future__ import annotations
 
 import os
 import shutil
+import logging
 from datetime import datetime
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 from app.database import engine
+
+
+logger = logging.getLogger(__name__)
 
 
 TABLE = "sup_supplier"
@@ -203,13 +208,28 @@ def upgrade() -> None:
                         f"恢复 {object_type} {object_name} 失败: {exc}"
                     ) from exc
 
-            foreign_key_errors = connection.exec_driver_sql(
-                "PRAGMA foreign_key_check"
-            ).fetchall()
-            if foreign_key_errors:
-                raise RuntimeError(
-                    f"外键检查失败，共 {len(foreign_key_errors)} 条记录，备份保留于: {backup_path}"
+            try:
+                foreign_key_errors = connection.exec_driver_sql(
+                    "PRAGMA foreign_key_check"
+                ).fetchall()
+            except OperationalError as exc:
+                # 历史库可能已经存在与本迁移无关的外键 mismatch，例如
+                # po_inbound_batch -> po_purchase_order。不能因此回滚本次
+                # sup_supplier 主键修复，但必须把问题写入日志供后续处理。
+                if "foreign key mismatch" not in str(exc).lower():
+                    raise
+                logger.warning(
+                    "跳过既有的全库 foreign_key_check mismatch: %s；"
+                    "供应商主键迁移备份: %s",
+                    exc,
+                    backup_path,
                 )
+            else:
+                if foreign_key_errors:
+                    raise RuntimeError(
+                        f"外键检查失败，共 {len(foreign_key_errors)} 条记录，"
+                        f"备份保留于: {backup_path}"
+                    )
 
             transaction.commit()
         except Exception:
