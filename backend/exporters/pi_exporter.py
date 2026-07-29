@@ -123,7 +123,7 @@ class PIExporter:
                     **item,
                     # 确保必要字段存在（PI模板10列：NAME/CODE/PHOTO/Description/Specification/pcs/ctn/Color/QTY/PRICE/Amount）
                     "product_name": item.get("product_name") or item.get("detail_desc") or "",
-                    "photo": item.get("photo") or item.get("image_url") or item.get("product_image") or "",
+                    "photo": item.get("photo") or item.get("image_url") or item.get("product_image") or item.get("main_image") or item.get("image") or "",
                     "product_code": item.get("product_code") or item.get("model") or item.get("oe_number") or "",
                     "detail_desc": item.get("detail_desc") or item.get("description") or "",
                     "specification": item.get("specification") or "",

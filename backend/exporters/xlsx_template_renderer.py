@@ -1,14 +1,89 @@
-"""通用 xlsx 模板渲染器。
-
-加载 xlsx 副本（保留原样式） + 解析 mapping YAML → 根据 data 填充单元格。
-"""
+import base64
+import os
 import operator
 import re
+import requests
 from io import BytesIO
 from typing import Any, Dict, List, Optional
-
 import openpyxl
 import yaml
+from openpyxl.drawing.image import Image as OpenPyXLImage
+from PIL import Image as PILImage
+
+# 根与存储路径
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_UPLOADS_DIR = os.path.join(_BASE_DIR, "uploads")
+_STATIC_DIR = os.path.join(_BASE_DIR, "static")
+
+
+def _insert_image_to_cell(ws, target_cell: str, image_source: Any, max_width: int = 75, max_height: int = 65) -> bool:
+    """将图片（支持 HTTP/HTTPS URL、Data-URI Base64、/images/相对路径、本地绝对路径）绘制并插在 Excel 单元格中"""
+    if not image_source or not isinstance(image_source, str):
+        return False
+
+    image_source = image_source.strip()
+    if not image_source:
+        return False
+
+    img_bytes = None
+    try:
+        # 1. HTTP / HTTPS 绝对网络图片
+        if image_source.startswith("http://") or image_source.startswith("https://"):
+            resp = requests.get(image_source, timeout=6)
+            if resp.status_code == 200:
+                img_bytes = resp.content
+        # 2. Data-URI Base64 (data:image/png;base64,...) 或纯 Base64 文本
+        elif "base64," in image_source:
+            b64_data = image_source.split("base64,")[1]
+            img_bytes = base64.b64decode(b64_data)
+        elif len(image_source) > 300 and not os.path.exists(image_source):
+            try:
+                img_bytes = base64.b64decode(image_source)
+            except Exception:
+                img_bytes = None
+        # 3. 本地相对路径与完整路径匹配 (/images/xxx.jpg -> backend/uploads/xxx.jpg)
+        else:
+            clean_path = image_source.lstrip("/")
+            possible_paths = [
+                image_source,
+                os.path.join(_BASE_DIR, clean_path),
+                os.path.join(_UPLOADS_DIR, os.path.basename(clean_path)),
+                os.path.join(_STATIC_DIR, os.path.basename(clean_path)),
+            ]
+            for p in possible_paths:
+                if os.path.exists(p) and os.path.isfile(p):
+                    with open(p, "rb") as f:
+                        img_bytes = f.read()
+                    break
+
+        if not img_bytes:
+            return False
+
+        # 4. 使用 PIL 打开并转码、等比缩放
+        img_stream = BytesIO(img_bytes)
+        pil_img = PILImage.open(img_stream)
+
+        # RGBA / Palette 模式统一转换为 RGB 模式，避免 openpyxl 插入 PNG 报错
+        if pil_img.mode in ("RGBA", "P"):
+            pil_img = pil_img.convert("RGB")
+
+        # 保持长宽比例进行缩放
+        pil_img.thumbnail((max_width, max_height), PILImage.Resampling.LANCZOS)
+
+        out_stream = BytesIO()
+        pil_img.save(out_stream, format="JPEG", quality=85)
+        out_stream.seek(0)
+
+        # 5. 构建 openpyxl Image 对象插入到单元格
+        xl_img = OpenPyXLImage(out_stream)
+        xl_img.width = pil_img.width
+        xl_img.height = pil_img.height
+
+        ws.add_image(xl_img, target_cell)
+        return True
+    except Exception as err:
+        print(f"[Xlsx Export Image Error] 单元格 {target_cell} 图片绘制失败: {err}")
+        return False
 
 
 class XlsxTemplateRenderer:
@@ -75,13 +150,13 @@ class XlsxTemplateRenderer:
         m = re.match(r"^([A-Z]+)(\d+)$", start_cell)
         if not m:
             raise ValueError(f"invalid start cell: {start_cell}")
-        # 获取模板首行高，若未明确设置则赋予舒适的基础行高 (35.0 pt)
-        template_row_height = ws.row_dimensions[row_num].height or 35.0
+        row_num = int(m.group(2))
+        merged_ranges = list(ws.merged_cells.ranges)
 
         for i, item in enumerate(items):
             current_row = row_num + i
-            # 为当前展开的数据行设置显式行高，防止 Excel 导出后文字紧凑挤压
-            ws.row_dimensions[current_row].height = template_row_height
+            # 适度增加行高以容纳商品图片 (60pt)
+            ws.row_dimensions[current_row].height = 60.0
 
             for col, expr in field["template_row"].items():
                 target_cell = f"{col}{current_row}"
@@ -97,12 +172,13 @@ class XlsxTemplateRenderer:
                     if expr.startswith("item."):
                         key = expr[len("item."):]
                         value = item.get(key)
-                        # 处理图片字段（base64 或路径）
-                        if key == "photo" and value:
-                            # 如果是 base64 图片，尝试写入（openpyxl 不直接支持，留空或写路径）
-                            if isinstance(value, str) and len(value) > 1000:
-                                value = "[IMAGE]"  # 标记有图片
-                        ws[target_cell] = value
+                        # 处理图片字段（支持 photo / image / image_url / product_image）
+                        if key in ("photo", "image", "image_url", "product_image") and value:
+                            inserted = _insert_image_to_cell(ws, target_cell, value)
+                            if inserted:
+                                ws[target_cell] = ""  # 单元格置空，优雅留给绑定的图片
+                                continue
+                        ws[target_cell] = value if value is not None else ""
                     else:
                         ws[target_cell] = expr
 
