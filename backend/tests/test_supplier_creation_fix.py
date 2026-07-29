@@ -76,3 +76,34 @@ def test_create_supplier_consecutive_increments_code():
 
     assert code1 != code2
     assert int(code2.replace("SP111", "")) == int(code1.replace("SP111", "")) + 1
+
+
+def test_create_supplier_tianjin_form_exact_match():
+    """测试完全匹配用户前端截图提交表单场景（天津省市、线下合同、微信号、联系人及电话）
+
+    验证单原子事务提交成功，无 'Could not refresh instance' 500 异常，
+    且回传 HTTP 200 与注入扩展属性。
+    """
+    payload = {
+        "supplier_name": "洛克希德·马丁",
+        "supply_mode": "线下合同",
+        "supplier_wechat": "114514",
+        "contact_person": "114514",
+        "phone": "114514",
+        "province": "天津",
+        "city": "天津",
+        "platform": "offline",
+    }
+    response = client.post("/api/suppliers/", json=payload)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["supplier_name"] == "洛克希德·马丁"
+    assert data["supply_mode"] == "线下合同"
+    assert data["supplier_wechat"] == "114514"
+    assert data["contact_person"] == "114514"
+    assert data["phone"] == "114514"
+    assert data["province"] == "天津"
+    assert data["city"] == "天津"
+    assert "id" in data and data["id"] > 0
+    assert data["supplier_code"].startswith("SP")
+

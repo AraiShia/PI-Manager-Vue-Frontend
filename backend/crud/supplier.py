@@ -47,15 +47,22 @@ def enrich_supplier(supplier: Optional[SupSupplier]) -> Optional[SupSupplier]:
     setattr(supplier, "city", city)
     setattr(supplier, "city_code", get_city_code(province, city) if province and city else None)
 
-    # 提取主联系人 (is_primary == 1) 的信息并注入扩展属性
-    contacts = getattr(supplier, "contacts", []) or []
-    primary_contact = next((c for c in contacts if getattr(c, "is_primary", 0) == 1), None)
-    if primary_contact:
-        setattr(supplier, "contact_person", getattr(primary_contact, "name", None))
-        setattr(supplier, "phone", getattr(primary_contact, "phone", None))
-        setattr(supplier, "email", getattr(primary_contact, "email", None))
-        setattr(supplier, "address", getattr(primary_contact, "address", None))
-    else:
+    # 提取主联系人 (is_primary == 1) 的信息并注入扩展属性，增加异常防御保护
+    try:
+        contacts = getattr(supplier, "contacts", []) or []
+        primary_contact = next((c for c in contacts if getattr(c, "is_primary", 0) == 1), None)
+        if primary_contact:
+            setattr(supplier, "contact_person", getattr(primary_contact, "name", None))
+            setattr(supplier, "phone", getattr(primary_contact, "phone", None))
+            setattr(supplier, "email", getattr(primary_contact, "email", None))
+            setattr(supplier, "address", getattr(primary_contact, "address", None))
+        else:
+            setattr(supplier, "contact_person", None)
+            setattr(supplier, "phone", None)
+            setattr(supplier, "email", None)
+            setattr(supplier, "address", None)
+    except Exception:
+        # 当数据库缺失联系人表或懒加载刷新异常时，退化赋值默认 None
         setattr(supplier, "contact_person", None)
         setattr(supplier, "phone", None)
         setattr(supplier, "email", None)
@@ -144,27 +151,24 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
 
     try:
         db.add(db_supplier)
-        db.commit()
+        db.flush()  # 预分配供应商主键 ID
+
+        if supplier.contact_person or supplier.phone or supplier.email or supplier.address:
+            contact = SupSupplierContact(
+                supplier_id=db_supplier.id,
+                name=supplier.contact_person,
+                phone=supplier.phone,
+                email=supplier.email,
+                address=supplier.address,
+                is_primary=1,
+            )
+            db.add(contact)
+
+        db.commit()  # 单原子事务统一提交供应商主表及关联主联系人
         db.refresh(db_supplier)
     except Exception as e:
         db.rollback()
         raise e
-
-    if supplier.contact_person or supplier.phone or supplier.email or supplier.address:
-        contact = SupSupplierContact(
-            supplier_id=db_supplier.id,
-            name=supplier.contact_person,
-            phone=supplier.phone,
-            email=supplier.email,
-            address=supplier.address,
-            is_primary=1,
-        )
-        try:
-            db.add(contact)
-            db.commit()
-            db.refresh(db_supplier)
-        except Exception:
-            db.rollback()
 
     return enrich_supplier(db_supplier)
 
