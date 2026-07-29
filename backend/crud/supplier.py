@@ -193,23 +193,46 @@ def create_supplier(db: Session, supplier: SupplierCreate, dept_id: str = "S") -
             logger.warning(f"[Supplier CRUD] 提交后 SQL 校验查询失败: {query_err}")
 
         reloaded = get_supplier(db, supplier_id)
-        if reloaded is None:
-            raise RuntimeError(
-                f"供应商已提交但重新查询失败，supplier_id={supplier_id}"
-            )
-        return reloaded
+        if reloaded is not None:
+            return reloaded
+
+        # 降级防御：若 get_supplier 重新查询未命中，通过 db.refresh 恢复实体
+        try:
+            db.refresh(db_supplier)
+            refreshed = enrich_supplier(db_supplier)
+            if refreshed is not None:
+                logger.info(f"[Supplier CRUD] 通过 db.refresh 成功恢复供应商实体: supplier_id={supplier_id}")
+                return refreshed
+        except Exception as refresh_err:
+            logger.warning(f"[Supplier CRUD] db.refresh 恢复实体失败: {refresh_err}")
+
+        raise RuntimeError(
+            f"供应商已提交但重新查询失败，supplier_id={supplier_id}"
+        )
 
     raise RuntimeError("供应商创建失败，未分配有效的 supplier_id")
 
 
 def get_supplier(db: Session, supplier_id: int) -> Optional[SupSupplier]:
     """通过主键 ID 查询供应商（包含预加载关联主联系人）。"""
-    return enrich_supplier(
+    if not supplier_id:
+        return None
+
+    supplier = (
         db.query(SupSupplier)
         .options(joinedload(SupSupplier.contacts))
+        .populate_existing()
         .filter(SupSupplier.id == supplier_id)
         .first()
     )
+
+    if supplier is None:
+        try:
+            supplier = db.get(SupSupplier, supplier_id)
+        except Exception:
+            supplier = None
+
+    return enrich_supplier(supplier)
 
 
 def get_supplier_by_code(db: Session, supplier_code: str) -> Optional[SupSupplier]:
@@ -309,6 +332,13 @@ def find_or_create_supplier_by_name(
             db.commit()
             existing_id = cast(int, existing.id)
             reloaded_existing = get_supplier(db, existing_id)
+            if reloaded_existing is None:
+                try:
+                    db.refresh(existing)
+                    reloaded_existing = enrich_supplier(existing)
+                except Exception:
+                    reloaded_existing = None
+
             if reloaded_existing is None:
                 raise RuntimeError(
                     f"供应商已更新提交但重新查询失败，supplier_id={existing_id}"
@@ -468,6 +498,13 @@ def update_supplier(db: Session, supplier_id: int, supplier_update: SupplierUpda
 
     # 提交修改后通过 get_supplier 重新加载最新数据，防止 session.refresh 异常
     reloaded_supplier = get_supplier(db, supplier_id)
+    if reloaded_supplier is None:
+        try:
+            db.refresh(db_supplier)
+            reloaded_supplier = enrich_supplier(db_supplier)
+        except Exception:
+            reloaded_supplier = None
+
     if reloaded_supplier is None:
         raise RuntimeError(
             f"供应商已更新提交但重新查询失败，supplier_id={supplier_id}"
