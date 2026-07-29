@@ -394,6 +394,16 @@
                     <el-icon :size="16"><TopRight /></el-icon>
                   </el-button>
                 </el-tooltip>
+                <el-tooltip content="细粒度管理产品-供应商-采购链接" placement="top">
+                  <el-button
+                    type="warning"
+                    link
+                    style="padding: 0 4px;"
+                    @click="supplierUrlDialogVisible = true"
+                  >
+                    <el-icon :size="16"><Link /></el-icon>
+                  </el-button>
+                </el-tooltip>
               </div>
               <div class="purchase-cost-cell invoice-type-cell">
                 <el-select
@@ -694,6 +704,16 @@
     :supplier="null"
     @success="onNewSupplierCreated"
   />
+
+  <!-- 细粒度产品-供应商-采购链接管理弹窗 -->
+  <ProductSupplierUrlDialog
+    v-model="supplierUrlDialogVisible"
+    :product-id="item?.product_id || item?.id || 0"
+    :product-name="form.product_name || form.customer_model || '当前产品'"
+    :supplier-id="form.supplier?.id || null"
+    :supplier-name="form.supplier_name || ''"
+    @updated="loadSupplierUrls"
+  />
   </div>
 </template>
 
@@ -701,20 +721,24 @@
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, toRaw } from 'vue'
 import { FALLBACK_PARENT_CATEGORIES, FALLBACK_CHILD_CATEGORIES } from '@/constants/productCategories'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Close, TopRight } from '@element-plus/icons-vue'
+import { Plus, Close, TopRight, Link } from '@element-plus/icons-vue'
 import { useProductEdit, type FieldStatus } from '@/composables/useProductEdit'
 import { orderSummaryApi } from '@/api/orderSummary'
 import { suppliersApi, type Supplier, pendingSupplierState } from '@/api/suppliers'
 import { productsApi } from '@/api/products'
 import { splitOeInput } from '@/api/customerProduct'
 import { productSupplierUrlsApi, type ProductSupplierUrl } from '@/api/productSupplierUrls'
+import { parseShopUrl } from '@/utils/urlParser'
 import SupplierFormDialog from '@/components/supplier/SupplierFormDialog.vue'
 import SupplierSearchSelect from '@/components/common/SupplierSearchSelect.vue'
+import ProductSupplierUrlDialog from '@/components/products/ProductSupplierUrlDialog.vue'
 import { apiUrl, assetUrl } from '@/api/base'
 import { CUSTOMER_PRODUCTS, PRODUCT_CATEGORIES } from '@/api/endpoints'
 import type { OrderDetailItem } from '@/types/orderSummary'
 import FieldInput from './FieldInput.vue'
 import ImagePreviewDialog from './ImagePreviewDialog.vue'
+
+const supplierUrlDialogVisible = ref(false)
 
 
 interface ProductEditItem extends OrderDetailItem {

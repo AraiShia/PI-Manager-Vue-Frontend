@@ -40,6 +40,10 @@ def create_url(data: ProductSupplierUrlCreate, db: Session = Depends(get_db)):
     except HTTPException:
         # CRUD 层 4xx 直接透传
         raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"保存采购链接失败: {str(e)}")
+
     try:
         db.commit()
     except IntegrityError:
@@ -53,9 +57,16 @@ def create_url(data: ProductSupplierUrlCreate, db: Session = Depends(get_db)):
             content=jsonable_encoder(ProductSupplierUrlResponse.model_validate(url)),
             status_code=200,
         )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"提交数据库失败: {str(e)}")
 
     # 刷新以填充 server_default（created_at）字段，避免序列化时 datetime=None
-    db.refresh(url)
+    try:
+        db.refresh(url)
+    except Exception:
+        pass
+
     status_code = 201 if created else 200
     return JSONResponse(
         content=jsonable_encoder(ProductSupplierUrlResponse.model_validate(url)),

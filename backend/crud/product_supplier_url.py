@@ -51,21 +51,30 @@ def list_urls(
 
 
 def create_url(db: Session, data: ProductSupplierUrlCreate) -> tuple[PrdProductSupplierUrl, bool]:
-    """创建 URL：supplier_id 已改为必需；处理重复 + is_default 升级 + 并发 IntegrityError
+    """创建 URL：若 supplier_id 未传，自动通过 supplier_name 匹配或绑定；处理重复 + is_default 升级。
 
     事务边界：本函数仅 flush，不 commit；由路由层统一提交。
     返回值：(url, created)。重复 POST 时返回 (existing, False) 以便路由返回 200。
     """
-    if data.supplier_id is None:
-        raise HTTPException(status_code=422, detail="supplier_id 不能为空")
-
-    # 校验 product 与 supplier 存在性
+    # 校验 product 存在性
     product = db.query(PrdCustomerProduct).filter(PrdCustomerProduct.id == data.product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    supplier = db.query(SupSupplier).filter(SupSupplier.id == data.supplier_id).first()
-    if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+
+    supplier_id = data.supplier_id
+    if supplier_id is None and data.supplier_name:
+        # 尝试通过 supplier_name 检索关联供应商
+        supp = db.query(SupSupplier).filter(SupSupplier.supplier_name == data.supplier_name.strip()).first()
+        if supp:
+            supplier_id = supp.id
+            data.supplier_id = supp.id
+
+    if supplier_id is not None:
+        supplier = db.query(SupSupplier).filter(SupSupplier.id == supplier_id).first()
+        if not supplier:
+            # 兼容供应商 ID 不存在时自动置空，改为通过名称存储
+            supplier_id = None
+            data.supplier_id = None
     # TODO: add dept ownership check
 
     existing = db.query(PrdProductSupplierUrl).filter(

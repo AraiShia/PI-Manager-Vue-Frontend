@@ -485,6 +485,7 @@ import {
   getItemSupplierName as getItemSupplierNameUtil,
   isSupplierConsistent as isSupplierConsistentUtil,
 } from '@/utils/supplierConsistency'
+import { parseShopUrl } from '@/utils/urlParser'
 import PaymentDialog from '@/components/order/PaymentDialog.vue'
 import SupplementDialog from '@/components/order/SupplementDialog.vue'
 import ProductEditDialog from '@/components/order/ProductEditDialog.vue'
@@ -1301,9 +1302,10 @@ async function handleContextMenuAction(action: string) {
       break
     case 'openShop':
       if (item.shop_url) {
-        window.open(item.shop_url, '_blank')
+        const info = parseShopUrl(item.shop_url)
+        window.open(info.cleanUrl, '_blank', 'noopener,noreferrer')
       } else {
-        ElMessage.warning('无店铺链接')
+        ElMessage.warning('当前产品暂未绑定店铺/采购链接')
       }
       break
   }

@@ -9,7 +9,7 @@ from datetime import datetime
 
 class ProductSupplierUrlCreate(BaseModel):
     product_id: int
-    supplier_id: int
+    supplier_id: Optional[int] = None
     supplier_name: str
     url: str = Field(..., max_length=500)
     display_name: Optional[str] = None
@@ -22,7 +22,7 @@ class ProductSupplierUrlCreate(BaseModel):
             return v
         v_stripped = v.strip()
         if not (v_stripped.startswith('http://') or v_stripped.startswith('https://')):
-            raise ValueError('URL must start with http:// or https://')
+            return f"https://{v_stripped}"
         return v_stripped
 
 
@@ -38,7 +38,7 @@ class ProductSupplierUrlUpdate(BaseModel):
             return v
         v_stripped = v.strip()
         if not (v_stripped.startswith('http://') or v_stripped.startswith('https://')):
-            raise ValueError('URL must start with http:// or https://')
+            return f"https://{v_stripped}"
         return v_stripped
 
 
