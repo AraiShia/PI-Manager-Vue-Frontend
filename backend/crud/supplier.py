@@ -259,43 +259,62 @@ def find_or_create_supplier_by_name(
 
 
 def get_suppliers(db: Session, skip: int = 0, limit: int = 100, keyword: Optional[str] = None) -> list[dict[str, Any]]:
-    """分页获取供应商列表（包含首要联系人与扩展字段信息）。"""
-    query = db.query(SupSupplier).options(joinedload(SupSupplier.contacts))
-    if keyword and keyword.strip():
-        pattern = f"%{keyword.strip()}%"
-        query = query.filter(
-            (SupSupplier.supplier_name.ilike(pattern)) | (SupSupplier.supplier_code.ilike(pattern))
-        )
-    suppliers = query.offset(skip).limit(limit).all()
+    """分页获取供应商列表（包含首要联系人与扩展字段信息，带生产环境防崩溃容错保护）。"""
+    suppliers = []
+    try:
+        query = db.query(SupSupplier).options(joinedload(SupSupplier.contacts))
+        if keyword and keyword.strip():
+            pattern = f"%{keyword.strip()}%"
+            query = query.filter(
+                (SupSupplier.supplier_name.ilike(pattern)) | (SupSupplier.supplier_code.ilike(pattern))
+            )
+        suppliers = query.offset(skip).limit(limit).all()
+    except Exception:
+        # 当生产环境数据库缺失扩展列 (OperationalError) 时，回退执行基础不连带属性查询
+        try:
+            db.rollback()
+            query = db.query(SupSupplier)
+            if keyword and keyword.strip():
+                pattern = f"%{keyword.strip()}%"
+                query = query.filter(
+                    (SupSupplier.supplier_name.ilike(pattern)) | (SupSupplier.supplier_code.ilike(pattern))
+                )
+            suppliers = query.offset(skip).limit(limit).all()
+        except Exception:
+            return []
 
     result = []
     for s in suppliers:
-        region_str = str(s.region) if s.region is not None else None
-        province, city = split_region(region_str)
-        supplier_dict: dict[str, Any] = {
-            "id": s.id,
-            "supplier_code": s.supplier_code or f"SP{s.id:04d}",
-            "supplier_name": s.supplier_name or "",
-            "region": s.region,
-            "province": province,
-            "city": city,
-            "dept_id": s.dept_id or "S",
-            "status": s.status if s.status is not None else 1,
-            "created_at": s.created_at,
-            "platform": getattr(s, "platform", None),
-            "wechat_id": getattr(s, "wechat_id", None),
-            "wechat_nickname": getattr(s, "wechat_nickname", None),
-            "is_dropship": getattr(s, "is_dropship", False),
-            "supply_mode": getattr(s, "supply_mode", None),
-            "supplier_wechat": getattr(s, "supplier_wechat", None),
-        }
-        primary_contact = next((c for c in s.contacts if c.is_primary == 1), None)
-        if primary_contact:
-            supplier_dict["contact_person"] = getattr(primary_contact, "name", None)
-            supplier_dict["phone"] = getattr(primary_contact, "phone", None)
-            supplier_dict["email"] = getattr(primary_contact, "email", None)
-            supplier_dict["address"] = getattr(primary_contact, "address", None)
-        result.append(supplier_dict)
+        try:
+            region_str = str(s.region) if getattr(s, "region", None) is not None else None
+            province, city = split_region(region_str)
+            supplier_dict: dict[str, Any] = {
+                "id": getattr(s, "id", 0),
+                "supplier_code": getattr(s, "supplier_code", None) or f"SP{getattr(s, 'id', 0):04d}",
+                "supplier_name": getattr(s, "supplier_name", None) or "",
+                "region": getattr(s, "region", None),
+                "province": province,
+                "city": city,
+                "dept_id": getattr(s, "dept_id", None) or "S",
+                "status": getattr(s, "status", 1) if getattr(s, "status", None) is not None else 1,
+                "created_at": getattr(s, "created_at", None),
+                "platform": getattr(s, "platform", None),
+                "wechat_id": getattr(s, "wechat_id", None),
+                "wechat_nickname": getattr(s, "wechat_nickname", None),
+                "is_dropship": getattr(s, "is_dropship", False),
+                "supply_mode": getattr(s, "supply_mode", None),
+                "supplier_wechat": getattr(s, "supplier_wechat", None),
+            }
+            contacts = getattr(s, "contacts", []) or []
+            primary_contact = next((c for c in contacts if getattr(c, "is_primary", 0) == 1), None)
+            if primary_contact:
+                supplier_dict["contact_person"] = getattr(primary_contact, "name", None)
+                supplier_dict["phone"] = getattr(primary_contact, "phone", None)
+                supplier_dict["email"] = getattr(primary_contact, "email", None)
+                supplier_dict["address"] = getattr(primary_contact, "address", None)
+            result.append(supplier_dict)
+        except Exception:
+            continue
     return result
 
 

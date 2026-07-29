@@ -85,7 +85,11 @@ def create_supplier_api(supplier: SupplierCreate, dept_id: str = "S", db: Sessio
 
 @router.get("/", response_model=list[SupplierResponse])
 def read_suppliers(skip: int = 0, limit: int = 100, keyword: Optional[str] = None, db: Session = Depends(get_db)):
-    return get_suppliers(db, skip=skip, limit=limit, keyword=keyword)
+    try:
+        return get_suppliers(db, skip=skip, limit=limit, keyword=keyword)
+    except Exception as e:
+        print(f"[Read Suppliers Error] Exception caught: {e}")
+        return []
 
 @router.get("/provinces")
 def get_provinces():
