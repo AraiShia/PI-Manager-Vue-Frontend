@@ -20,25 +20,45 @@ export function isBridgeAvailable(): boolean {
   return bridge !== null
 }
 
+async function loadQWebChannelScript(): Promise<void> {
+  if (typeof window === 'undefined' || window.QWebChannel) return
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = '/qwebchannel.js'
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('Failed to load qwebchannel.js'))
+    document.head.appendChild(script)
+  })
+}
+
 async function initQWebChannel(): Promise<void> {
   if (initPromise) {
     return initPromise
   }
 
-  initPromise = new Promise((resolve, reject) => {
+  initPromise = new Promise(async (resolve, reject) => {
     if (typeof window === 'undefined') {
       reject(new Error('Window not available'))
       return
     }
 
-    if (window.QWebChannel && window.qtWebChannelTransport) {
-      new window.QWebChannel(window.qtWebChannelTransport, (channel: any) => {
-        initNativeBridge(channel)
-        resolve()
-      })
-    } else {
-      reject(new Error('QWebChannel not available'))
+    const isQtEnvironment = !!((window as any).qtWebChannelTransport || (window as any).qt)
+    if (isQtEnvironment) {
+      try {
+        await loadQWebChannelScript()
+      } catch {
+        // 动态加载异常时静默降级
+      }
+      if (window.QWebChannel && (window as any).qtWebChannelTransport) {
+        new window.QWebChannel((window as any).qtWebChannelTransport, (channel: any) => {
+          initNativeBridge(channel)
+          resolve()
+        })
+        return
+      }
     }
+
+    reject(new Error('Running in pure browser mode'))
   })
 
   return initPromise
