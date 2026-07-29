@@ -513,6 +513,22 @@ function getTimelineType(type?: string) {
       return 'success'
   }
 }
+
+/** 打开对话框公开方法 */
+function open() {
+  dialogVisible.value = true
+}
+
+/** 关闭对话框公开方法 */
+function close() {
+  dialogVisible.value = false
+}
+
+defineExpose({
+  open,
+  close,
+  fetchReplies,
+})
 </script>
 
 <style scoped>

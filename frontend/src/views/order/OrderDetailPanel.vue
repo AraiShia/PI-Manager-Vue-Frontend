@@ -82,6 +82,7 @@
           <el-tag v-else type="success" effect="light">已保存正式PI</el-tag>
         </el-tooltip>
         <el-button type="primary" :icon="Wallet" @click="onAddPayment">添加付款</el-button>
+        <el-button type="primary" plain :icon="ChatDotRound" @click="onOpenCustomerReply">客户往来</el-button>
         <el-button
           type="success"
           :icon="ShoppingCart"
@@ -164,7 +165,18 @@
             {{ formatAmount(row.total_amount) }}
           </template>
         </el-table-column>
-        <el-table-column prop="latest_customer_reply" label="最新客户回复" width="140" show-overflow-tooltip v-if="colVisible['latest_customer_reply']" />
+        <el-table-column prop="latest_customer_reply" label="最新客户回复" width="160" show-overflow-tooltip v-if="colVisible['latest_customer_reply']">
+          <template #default="{ row }">
+            <el-link
+              type="primary"
+              :underline="false"
+              style="font-size: 12px"
+              @click.stop="onOpenCustomerReply"
+            >
+              {{ row.latest_customer_reply || '点击记录/查看往来' }}
+            </el-link>
+          </template>
+        </el-table-column>
         <el-table-column prop="estimated_usd_price" label="预估美金报价" width="120" align="right" v-if="colVisible['estimated_usd_price']">
           <template #default="{ row }">
             {{ formatAmount(row.estimated_usd_price) }}
@@ -392,6 +404,14 @@
     <PurchaseDialog ref="purchaseDialogRef" @success="onDetailSuccess" @purchase-complete="onPurchaseComplete" />
     <InboundDialog ref="inboundDialogRef" @success="onDetailSuccess" />
     <BatchInboundDialog ref="batchInboundDialogRef" @success="onDetailSuccess" />
+    <CustomerReplyDialog
+      ref="customerReplyDialogRef"
+      :pi-id="store.currentOrder?.id"
+      :pi-no="store.currentOrder?.pi_no"
+      :customer-id="store.currentOrder?.customer_id"
+      :customer-name="store.currentOrder?.customer_name"
+      @refresh="onDetailSuccess"
+    />
 
     <!-- 导出全流程弹窗：选模板 ➔ 编表单 ➔ 预览导出 -->
     <ExportExampleChoose
@@ -428,6 +448,7 @@ import {
   Switch,
   Link,
   Setting,
+  ChatDotRound,
 } from '@element-plus/icons-vue'
 import { useOrderSummaryStore } from '@/stores/orderSummaryStore'
 import { orderSummaryApi } from '@/api/orderSummary'
@@ -470,6 +491,7 @@ import ProductEditDialog from '@/components/order/ProductEditDialog.vue'
 import PurchaseDialog from '@/components/order/PurchaseDialog.vue'
 import InboundDialog from '@/components/order/InboundDialog.vue'
 import BatchInboundDialog from '@/components/order/BatchInboundDialog.vue'
+import CustomerReplyDialog from '@/components/customer_reply/customer_reply_dialog.vue'
 import ExportExampleChoose from '@/components/exports/ExportExampleChoose.vue'
 import ExportEditModal from '@/components/exports/ExportEditModal.vue'
 import { ORDER_STATUS } from '@/constants/orderStatus'
@@ -488,6 +510,7 @@ interface ContextMenuItem {
 }
 
 const contextMenuItems: ContextMenuItem[] = [
+  { label: '客户往来记录', action: 'customerReply', icon: ChatDotRound },
   { label: '采购该产品', action: 'purchase', icon: ShoppingCart },
   { label: '重新采购', action: 'repurchase', icon: Refresh },
   { label: '入库该产品', action: 'stockIn', icon: Box },
@@ -519,6 +542,7 @@ const productEditDialogRef = ref<InstanceType<typeof ProductEditDialog>>()
 const purchaseDialogRef = ref<InstanceType<typeof PurchaseDialog>>()
 const inboundDialogRef = ref<InstanceType<typeof InboundDialog>>()
 const batchInboundDialogRef = ref<InstanceType<typeof BatchInboundDialog>>()
+const customerReplyDialogRef = ref<InstanceType<typeof CustomerReplyDialog>>()
 
 // 多选 + 重复检测状态
 const selectedRows = ref<OrderDetailItem[]>([])
@@ -1263,6 +1287,9 @@ async function handleContextMenuAction(action: string) {
       // 单品入库
       inboundDialogRef.value?.open(item)
       break
+    case 'customerReply':
+      onOpenCustomerReply()
+      break
     case 'delete':
       await deleteItem(item)
       break
@@ -1283,22 +1310,48 @@ async function handleContextMenuAction(action: string) {
 }
 
 /**
- * 删除订单项/产品逻辑 (带明细产品信息的二次确认)
- * @param item 要删除的订单产品项
+ * 删除订单项/产品逻辑 (双重高危二次确认防误触机制)
+ * 
+ * 流程规范：
+ * 1. 提取产品名称，如无名称则依次降级使用中文名/英文名/工厂编号。
+ * 2. 弹出第一层提示弹窗 (Warning)，告知用户即将移除商品。
+ * 3. 若第一层确认，弹出第二层高危弹窗 (Danger)，再次强提醒不可撤销风险。
+ * 4. 两层确认均通过后，向后端发起 DELETE 异步删除请求。
+ * 5. 捕获取消异常 (cancel/close) 并优雅处理。
+ * 
+ * @param item 要删除的订单产品项数据对象
  */
 async function deleteItem(item: OrderDetailItem) {
   try {
     // 提取产品名称标识，兜底使用工厂编号或通用名称
-    const productName = (item as any).product_name || (item as any).name_cn || (item as any).name_en || (item as any).factory_code || '此产品'
+    const productName =
+      (item as any).product_name ||
+      (item as any).name_cn ||
+      (item as any).name_en ||
+      (item as any).factory_code ||
+      '此产品'
 
-    // 执行高危删除二次确认提示
+    // 【第一层确认】：初步询问用户是否从当前订单中移除产品
     await ElMessageBox.confirm(
-      `确定要从当前订单中删除产品 "${productName}" 吗？此操作无法撤销。`,
-      '确认删除产品',
+      `确定要从当前订单中移除产品 "${productName}" 吗？`,
+      '确认删除产品 (1/2)',
       {
-        confirmButtonText: '确定删除',
+        confirmButtonText: '下一步',
         cancelButtonText: '取消',
         type: 'warning',
+        confirmButtonClass: 'el-button--warning',
+        closeOnClickModal: false,
+      }
+    )
+
+    // 【第二层高危确认】：红色防误触终极告警，避免习惯性连续误点击
+    await ElMessageBox.confirm(
+      `【高危操作警告】您即将永久删除产品 "${productName}"，此操作将从数据库中移除且无法恢复！是否确定继续？`,
+      '最终确认 - 危险操作 (2/2)',
+      {
+        confirmButtonText: '确定永久删除',
+        cancelButtonText: '取消删除',
+        type: 'error',
         confirmButtonClass: 'el-button--danger',
         closeOnClickModal: false,
       }
@@ -1312,10 +1365,16 @@ async function deleteItem(item: OrderDetailItem) {
       ElMessage.error('删除失败')
     }
   } catch (e: any) {
+    // 捕获用户在任一阶段点击“取消”或关闭弹窗的静默取消动作
     if (e !== 'cancel' && e !== 'close') {
       ElMessage.error('删除失败')
     }
   }
+}
+
+/** 打开客户往来需求与回复记录弹窗 */
+function onOpenCustomerReply() {
+  customerReplyDialogRef.value?.open()
 }
 
 function onCellDblClick(row: OrderDetailItem) {
