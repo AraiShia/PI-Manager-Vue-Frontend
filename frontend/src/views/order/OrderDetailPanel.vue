@@ -1144,7 +1144,7 @@ function openPurchaseDialog(items: OrderDetailItem[]) {
   }
   // fallback 到 PI 级别的供应商名称
   if (!prefillShopName) {
-    prefillShopName = (store.currentOrder as any).supplier_name || ''
+    prefillShopName = (store.currentOrder as any)?.supplier_name || ''
   }
   purchaseDialogRef.value?.open(items, store.currentOrder.id, prefillUrls, prefillShopName, prefillLinkUrl)
 }
@@ -1280,7 +1280,7 @@ async function handleContextMenuAction(action: string) {
         item.product_id && (item as any).shop_url
           ? { [item.product_id]: [(item as any).shop_url] }
           : {},
-        (item as any).supplier_name || (store.currentOrder as any).supplier_name || '',
+        (item as any).supplier_name || (store.currentOrder as any)?.supplier_name || '',
         (item as any).shop_url || ''
       )
       break
@@ -1670,4 +1670,3 @@ function onCellDblClick(row: OrderDetailItem) {
   overflow: hidden;
 }
 </style>
-

@@ -845,6 +845,7 @@ const inboundRecords = ref<InboundRecord[]>([])
 const supplierUrlOptions = ref<ProductSupplierUrl[]>([])
 const initialShopUrl = ref('')
 let userEditedShopUrl = false
+let supplierBeforeClear: Supplier | null = null
 
 function openShopUrl() {
   if (!form.shop_url) return
@@ -1683,6 +1684,7 @@ function createFormSnapshot() {
 
 async function open(source: OrderDetailItem, customerName?: string, customerCountry?: string, isLocked = false) {
   formLocked.value = isLocked
+  supplierBeforeClear = null
   supplierUrlOptions.value = []
   userEditedShopUrl = false
   initialShopUrl.value = (source as any).shop_url || ''
@@ -1723,6 +1725,7 @@ async function open(source: OrderDetailItem, customerName?: string, customerCoun
     }
     form.purchase_option_name = form.supplier.supply_mode || platformMap[(form.supplier as any).platform] || '1688平台采购'
   }
+  supplierBeforeClear = form.supplier || null
   await loadSupplierUrls()
   // 在供应商恢复完毕后再创建快照，避免异步回填造成假的"未保存"脏状态
   initialFormSnapshot.value = createFormSnapshot()
@@ -1801,10 +1804,9 @@ async function onShopUrlClear() {
 // 1688 链接变更与粘贴新建处理
 async function onShopUrlChange(url: string) {
   if (isConfirmingUrlClear) return
-  if (!url || !url.trim()) {
-    onShopUrlClear()
-    return
-  }
+  // 清空由 @clear 唯一处理；Element Plus 清空时也会触发 change，
+  // 这里不能再次弹出确认。
+  if (!url || !url.trim()) return
 
   const cleanInput = url.trim()
   const info = parseShopUrl(cleanInput)
@@ -2245,8 +2247,28 @@ async function handleArchiveChange(key: string, file: any) {
 
 // 供应商选择回调（由 SupplierSearchSelect 触发）
 async function onSupplierSelect(s: Supplier) {
+  // SupplierSearchSelect 会先更新 v-model，再触发 @select，使用缓存获取旧供应商。
+  const previousSupplier = supplierBeforeClear || form.supplier
+  const previousName = (form.supplier_name || '').trim()
+  const nextName = (s.supplier_name || '').trim()
+  const sameSupplier = previousSupplier
+    ? (previousSupplier.id > 0 && s.id > 0
+        ? previousSupplier.id === s.id
+        : previousName === nextName)
+    : previousName === nextName
+
+  if (!sameSupplier) {
+    // 切换供应商后不能继续沿用旧供应商链接，要求用户重新选择。
+    form.shop_url = ''
+    initialShopUrl.value = ''
+    supplierUrlOptions.value = []
+    userEditedShopUrl = false
+    saveField('shop_url', '')
+  }
+
   form.supplier_name = s.supplier_name
   form.supplier = s
+  supplierBeforeClear = s
   saveField('supplier_name', s.supplier_name)
   // 优先使用供应商绑定的采购方式 (supply_mode)，不存在时根据供应商平台自动填入采购方式
   const platformMap: Record<string, string> = {
@@ -2265,15 +2287,38 @@ async function onSupplierSelect(s: Supplier) {
 
   // 加载并应用该供应商的历史 URL
   await loadSupplierUrls()
-  applyShopUrlFromPriority()
+  if (sameSupplier) applyShopUrlFromPriority()
 }
 
-function onSupplierClear() {
-  form.supplier_name = ''
-  form.supplier = null
-  saveField('supplier_name', '')
-  supplierUrlOptions.value = []
-  userEditedShopUrl = false
+async function onSupplierClear() {
+  const previousSupplier = supplierBeforeClear || form.supplier
+  const previousName = form.supplier_name
+
+  try {
+    await ElMessageBox.confirm(
+      '清空供应商后，当前供应商链接也会一并清空。是否继续？',
+      '清空供应商确认',
+      {
+        confirmButtonText: '确认清空',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+
+    form.supplier_name = ''
+    form.supplier = null
+    saveField('supplier_name', '')
+    form.shop_url = ''
+    initialShopUrl.value = ''
+    saveField('shop_url', '')
+    supplierUrlOptions.value = []
+    userEditedShopUrl = false
+    supplierBeforeClear = null
+  } catch {
+    // el-select 已先把 v-model 设为 null，取消时恢复原供应商。
+    form.supplier = previousSupplier || null
+    form.supplier_name = previousName || previousSupplier?.supplier_name || ''
+  }
 }
 
 function openNewSupplierDialog() {
@@ -2282,12 +2327,30 @@ function openNewSupplierDialog() {
 
 async function onNewSupplierCreated(created: Supplier) {
   if (!created) return
+  const previousSupplier = supplierBeforeClear || form.supplier
+  const previousName = (form.supplier_name || '').trim()
+  const nextName = (created.supplier_name || '').trim()
+  const sameSupplier = previousSupplier
+    ? (previousSupplier.id > 0 && created.id > 0
+        ? previousSupplier.id === created.id
+        : previousName === nextName)
+    : previousName === nextName
+
+  if (!sameSupplier) {
+    form.shop_url = ''
+    initialShopUrl.value = ''
+    supplierUrlOptions.value = []
+    userEditedShopUrl = false
+    saveField('shop_url', '')
+  }
+
   const name = created?.supplier_name ?? form.supplier_name
   if (name) {
     form.supplier_name = name
   }
   if (created) {
     form.supplier = created
+    supplierBeforeClear = created
     // 新建供应商后，优先选用新建供应商的 supply_mode 数据
     const platformMap: Record<string, string> = {
       '1688': '1688平台采购',
@@ -2309,7 +2372,7 @@ async function onNewSupplierCreated(created: Supplier) {
 
   // 加载并应用该供应商的历史 URL
   await loadSupplierUrls()
-  applyShopUrlFromPriority()
+  if (sameSupplier) applyShopUrlFromPriority()
 }
 
 defineExpose({ open, close })

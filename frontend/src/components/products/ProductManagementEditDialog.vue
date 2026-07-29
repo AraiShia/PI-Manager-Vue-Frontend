@@ -628,6 +628,7 @@ const supplierUrlOptions = ref<ProductSupplierUrl[]>([])
 const initialShopUrl = ref<string>('')
 let userEditedShopUrl = false
 let isConfirmingUrlClear = false
+let supplierBeforeClear: Supplier | null = null
 
 /** 新建供应商弹窗显隐 */
 const newSupplierDialogVisible = ref<boolean>(false)
@@ -899,8 +900,28 @@ function removeExtraImage(index: number): void {
 // ================= 供应商与 1688 链接逻辑 =================
 
 async function onSupplierSelect(s: Supplier): Promise<void> {
+  // el-select 会先更新 v-model 再触发 @select，因此不能直接读取 form.supplier
+  // 判断旧值，必须使用上一次已确认的供应商缓存。
+  const previousSupplier = supplierBeforeClear || form.supplier
+  const previousName = (form.supplier_name || '').trim()
+  const nextName = (s.supplier_name || '').trim()
+  const sameSupplier = previousSupplier
+    ? (previousSupplier.id > 0 && s.id > 0
+        ? previousSupplier.id === s.id
+        : previousName === nextName)
+    : previousName === nextName
+
+  // 供应商发生变化时，旧供应商链接不能带到新供应商，必须由用户重新选择。
+  if (!sameSupplier) {
+    form.shop_url = ''
+    initialShopUrl.value = ''
+    supplierUrlOptions.value = []
+    userEditedShopUrl = false
+  }
+
   form.supplier_name = s.supplier_name
   form.supplier = s
+  supplierBeforeClear = s
   const platformMap: Record<string, string> = {
     '1688': '1688平台采购',
     'wechat': '微信采购',
@@ -915,14 +936,37 @@ async function onSupplierSelect(s: Supplier): Promise<void> {
   pendingSupplierState.wechat_nickname = s.wechat_nickname || null
 
   await loadSupplierUrls()
-  applyShopUrlFromPriority()
+  // 切换供应商后只加载可选链接，不自动回填，避免误用旧链接或默认链接。
+  if (sameSupplier) applyShopUrlFromPriority()
 }
 
-function onSupplierClear(): void {
-  form.supplier_name = ''
-  form.supplier = null
-  supplierUrlOptions.value = []
-  userEditedShopUrl = false
+async function onSupplierClear(): Promise<void> {
+  const previousSupplier = supplierBeforeClear || form.supplier
+  const previousName = form.supplier_name
+
+  try {
+    await ElMessageBox.confirm(
+      '清空供应商后，当前供应商链接也会一并清空。是否继续？',
+      '清空供应商确认',
+      {
+        confirmButtonText: '确认清空',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+
+    form.supplier_name = ''
+    form.supplier = null
+    supplierUrlOptions.value = []
+    form.shop_url = ''
+    initialShopUrl.value = ''
+    userEditedShopUrl = false
+    supplierBeforeClear = null
+  } catch {
+    // el-select 已先发出 update:modelValue(null)，取消时恢复原供应商。
+    form.supplier = previousSupplier || null
+    form.supplier_name = previousName || previousSupplier?.supplier_name || ''
+  }
 }
 
 function openNewSupplierDialog(): void {
@@ -931,10 +975,27 @@ function openNewSupplierDialog(): void {
 
 async function onNewSupplierCreated(created: Supplier): Promise<void> {
   if (!created) return
+  const previousSupplier = supplierBeforeClear || form.supplier
+  const previousName = (form.supplier_name || '').trim()
+  const nextName = (created.supplier_name || '').trim()
+  const sameSupplier = previousSupplier
+    ? (previousSupplier.id > 0 && created.id > 0
+        ? previousSupplier.id === created.id
+        : previousName === nextName)
+    : previousName === nextName
+
+  if (!sameSupplier) {
+    form.shop_url = ''
+    initialShopUrl.value = ''
+    supplierUrlOptions.value = []
+    userEditedShopUrl = false
+  }
+
   const name = created?.supplier_name ?? form.supplier_name
   if (name) form.supplier_name = name
   if (created) {
     form.supplier = created
+    supplierBeforeClear = created
     const platformMap: Record<string, string> = {
       '1688': '1688平台采购',
       'wechat': '微信采购',
@@ -944,8 +1005,8 @@ async function onNewSupplierCreated(created: Supplier): Promise<void> {
     // 新建供应商后，优先选用新建供应商的 supply_mode 数据
     form.purchase_option_name = created.supply_mode || platformMap[(created as any).platform] || '1688平台采购'
   }
+  // 新建并切换到供应商时不自动回填链接，要求用户明确选择。
   await loadSupplierUrls()
-  applyShopUrlFromPriority()
 }
 
 async function loadSupplierUrls(): Promise<void> {
@@ -1006,11 +1067,10 @@ async function onShopUrlClear(): Promise<void> {
 
 function onShopUrlChange(url: string): void {
   if (isConfirmingUrlClear) return
+  // 清空操作由 @clear 唯一处理；Element Plus 清空时也会触发一次 change，
+  // 这里不能再次调用确认，否则会出现两次弹窗且第一次已改变状态。
+  if (!url) return
   userEditedShopUrl = true
-  if (!url) {
-    onShopUrlClear()
-    return
-  }
   initialShopUrl.value = url
 }
 
@@ -1304,6 +1364,8 @@ async function open(product: CustomerProduct | null = null, customerId?: number)
       }
     }
 
+    supplierBeforeClear = form.supplier || null
+
     await loadSupplierUrls()
   } else {
     // 新增模式：清空表单，并尝试使用传入的 customerId 或第一个客户
@@ -1316,6 +1378,7 @@ async function open(product: CustomerProduct | null = null, customerId?: number)
     categoryLevel1.value = ''
     categoryLevel2.value = ''
     supplierUrlOptions.value = []
+    supplierBeforeClear = null
   }
 
   // 初始化初始数据快照，建立脏数据对比标准
