@@ -8,7 +8,8 @@ from typing import Optional
 
 class CustomerReplyBase(BaseModel):
     pi_id: int
-    customer_id: int
+    customer_id: Optional[int] = None
+    pi_item_id: Optional[int] = None
     reply_date: date
     reply_content: str
     reply_type: Optional[str] = "reply"

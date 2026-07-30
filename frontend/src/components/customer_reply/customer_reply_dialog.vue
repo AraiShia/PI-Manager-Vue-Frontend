@@ -447,9 +447,14 @@ async function submitForm() {
         // 新增记录
         const currentPiId = activePiId.value ?? props.piId
         const currentCustomerId = activeCustomerId.value ?? props.customerId
+        if (!currentPiId && !currentCustomerId) {
+          ElMessage.warning('未能识别关联的 PI 单号或客户信息，无法保存沟通记录')
+          submitting.value = false
+          return
+        }
         const payload: CustomerReplyFormPayload = {
-          pi_id: currentPiId || 0,
-          customer_id: currentCustomerId || 0,
+          pi_id: Number(currentPiId) || 0,
+          customer_id: (currentCustomerId && Number(currentCustomerId) > 0) ? Number(currentCustomerId) : undefined,
           reply_type: formData.value.reply_type,
           submitter_name: formData.value.submitter_name,
           reply_date: formData.value.reply_date,

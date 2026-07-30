@@ -12,37 +12,21 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from tests._helpers import (
+    create_test_db, drop_test_db, install_test_db_dependency, TestingSessionLocal
+)
 from main import app
-from app.database import Base, get_db
+import models
 from models import PiProformaInvoice
 from crud.pi import resolve_pi
 
-# 使用内存 SQLite 数据库进行测试
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-def override_get_db():
-    try:
-        db = TestingSessionLocal()
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
 def setup_db():
-    Base.metadata.create_all(bind=engine)
+    install_test_db_dependency()
+    create_test_db()
     db = TestingSessionLocal()
     # 插入测试数据
     test_pi = PiProformaInvoice(
@@ -54,8 +38,9 @@ def setup_db():
     )
     db.add(test_pi)
     db.commit()
+    db.close()
     yield
-    Base.metadata.drop_all(bind=engine)
+    drop_test_db()
 
 
 def test_resolve_pi_by_id():

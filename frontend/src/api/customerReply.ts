@@ -20,7 +20,8 @@ export interface CustomerReplyItem {
 
 export interface CustomerReplyFormPayload {
   pi_id: number
-  customer_id: number
+  customer_id?: number
+  pi_item_id?: number
   reply_date: string
   reply_content: string
   reply_type?: string
