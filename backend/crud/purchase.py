@@ -318,6 +318,64 @@ def create_purchase_order_legacy(db: Session, purchase: PurchaseOrderCreate) -> 
 def get_purchase_order(db: Session, po_id: int) -> PoPurchaseOrder:
     return db.query(PoPurchaseOrder).filter(PoPurchaseOrder.id == po_id).first()
 
+
+def get_purchase_order_detail(db: Session, po_id: int):
+    """获取采购单详情（dict 格式，供导出采购合同使用）
+
+    将 PoPurchaseOrder ORM 对象序列化为包含 items 的 dict，
+    供 routers/export.py 中的 ContractExporter 消费。
+
+    Args:
+        db: 数据库会话
+        po_id: 采购单主键 ID
+
+    Returns:
+        dict: 采购单详情，未找到返回 None
+    """
+    po = get_purchase_order(db, po_id)
+    if not po:
+        return None
+
+    # 供应商信息
+    from models import SupSupplier
+    supplier = db.query(SupSupplier).filter(SupSupplier.id == po.supplier_id).first() if po.supplier_id else None
+
+    # 序列化 items
+    items = []
+    for item in (getattr(po, 'items', None) or []):
+        items.append({
+            "id": item.id,
+            "pi_item_id": getattr(item, 'pi_item_id', None),
+            "product_id": getattr(item, 'product_id', None),
+            "quantity": float(item.quantity) if getattr(item, 'quantity', None) else 0,
+            "unit_price": float(item.unit_price) if getattr(item, 'unit_price', None) else 0,
+            "total_price": float(item.total_price) if getattr(item, 'total_price', None) else 0,
+            "link": getattr(item, 'link', None),
+            "factory_code": getattr(item, 'factory_code', None),
+            "remark": getattr(item, 'remark', None),
+        })
+
+    return {
+        "id": po.id,
+        "po_no": getattr(po, 'po_no', str(po_id)),
+        "dept_id": getattr(po, 'dept_id', None),
+        "pi_id": getattr(po, 'pi_id', None),
+        "supplier_id": getattr(po, 'supplier_id', None),
+        "supplier_name": supplier.supplier_name if supplier else None,
+        "currency": getattr(po, 'currency', 'USD') or 'USD',
+        "status": getattr(po, 'status', 1) or 1,
+        "contract_date": (
+            po.contract_date.isoformat()[:10]
+            if getattr(po, 'contract_date', None) else None
+        ),
+        "total_amount": float(po.total_amount) if getattr(po, 'total_amount', None) else 0,
+        "created_at": (
+            po.created_at.isoformat()
+            if getattr(po, 'created_at', None) else None
+        ),
+        "items": items,
+    }
+
 def get_purchase_order_by_no(db: Session, po_no: str) -> PoPurchaseOrder:
     return db.query(PoPurchaseOrder).filter(PoPurchaseOrder.po_no == po_no).first()
 

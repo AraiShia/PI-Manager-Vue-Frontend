@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union, List, Any, cast
 import json
 from models import (
     PiProformaInvoice,
@@ -23,12 +23,30 @@ from services.product_lookup import unified_product_lookup
 from crud.pi_sync import _sync_pi_item_from_inbound
 import os
 
+def _to_float(val: Any, default: Optional[float] = None) -> Optional[float]:
+    """类型安全辅助转换：将 Decimal / Column / Any 转换为 float"""
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+def _to_int(val: Any, default: Optional[int] = None) -> Optional[int]:
+    """类型安全辅助转换：将 Decimal / Column / Any 转换为 int"""
+    if val is None:
+        return default
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
+
 def create_pi_invoice(db: Session, pi: PIInvoiceCreate) -> PiProformaInvoice:
     customer = db.query(CrmCustomer).filter(CrmCustomer.id == pi.customer_id).first()
     if not customer:
         raise ValueError("客户不存在")
     
-    pi_no = NumberGenerator.generate_pi_no(db, pi.dept_id, customer.customer_code)
+    pi_no = NumberGenerator.generate_pi_no(db, pi.dept_id, cast(str, customer.customer_code))
     
     total_amount = sum(item.quantity * item.unit_price for item in pi.items)
     
@@ -88,11 +106,37 @@ def create_pi_invoice(db: Session, pi: PIInvoiceCreate) -> PiProformaInvoice:
     
     return db_pi
 
-def get_pi_invoice(db: Session, pi_id: int) -> PiProformaInvoice:
+def get_pi_invoice(db: Session, pi_id: int) -> Optional[PiProformaInvoice]:
+    """按主键 ID 查询 PI，未找到返回 None"""
     return db.query(PiProformaInvoice).filter(PiProformaInvoice.id == pi_id).first()
 
-def get_pi_invoice_by_no(db: Session, pi_no: str) -> PiProformaInvoice:
+def get_pi_invoice_by_no(db: Session, pi_no: str) -> Optional[PiProformaInvoice]:
+    """按 PI 编号查询 PI，未找到返回 None"""
     return db.query(PiProformaInvoice).filter(PiProformaInvoice.pi_no == pi_no).first()
+
+def resolve_pi(db: Session, pi_identifier: Union[int, str]) -> Optional[PiProformaInvoice]:
+    """
+    根据 PI 标识符（数据库数字 ID 或 PI 编号字符串）解析并获取对应的 PI 实体对象。
+
+    :param db: 数据库 Session 实例
+    :param pi_identifier: PI 数据库主键 ID（整数或数字字符串）或 PI 编号（字符串如 'PISO9J02607280'）
+    :return: 对应的 PiProformaInvoice 实体，未找到则返回 None
+    """
+    if pi_identifier is None:
+        return None
+
+    str_identifier = str(pi_identifier).strip()
+    if not str_identifier:
+        return None
+
+    # 1. 若输入为纯数字，优先尝试根据主键 ID 查询
+    if str_identifier.isdigit():
+        pi_obj = get_pi_invoice(db, int(str_identifier))
+        if pi_obj:
+            return pi_obj
+
+    # 2. 若主键未命中或输入非纯数字字符串，按 pi_no 匹配查询
+    return get_pi_invoice_by_no(db, str_identifier)
 
 def get_pi_invoices(db: Session, skip: int = 0, limit: int = 100):
     return db.query(PiProformaInvoice).offset(skip).limit(limit).all()
@@ -129,7 +173,7 @@ def get_price_history(db: Session, customer_id: int, product_id: int):
         PiPriceHistory.product_id == product_id
     ).order_by(PiPriceHistory.created_at.desc()).first()
 
-def update_pi_invoice(db: Session, pi_id: int, pi_update: PIInvoiceUpdate) -> PiProformaInvoice:
+def update_pi_invoice(db: Session, pi_id: int, pi_update: PIInvoiceUpdate) -> Optional[PiProformaInvoice]:
     db_pi = get_pi_invoice(db, pi_id)
     if not db_pi:
         return None
@@ -189,7 +233,7 @@ def update_pi_invoice(db: Session, pi_id: int, pi_update: PIInvoiceUpdate) -> Pi
     
     # 2026-06-23: PI 正式保存后，为每个 item 创建采购在途库存记录（黄）
     if pi_update.items and len(pi_update.items) > 0:
-        _sync_inventory_for_pi(db, pi_id, db_pi.customer_id)
+        _sync_inventory_for_pi(db, pi_id, cast(int, db_pi.customer_id))
     
     return db_pi
 
@@ -209,10 +253,10 @@ def _sync_inventory_for_pi(db: Session, pi_id: int, customer_id: int):
         try:
             create_inventory_for_pi_item(
                 db=db,
-                product_id=item.product_id,
+                product_id=cast(int, item.product_id),
                 customer_id=customer_id,
                 pi_id=pi_id,
-                quantity=float(item.quantity or 0),
+                quantity=_to_float(item.quantity, 0.0) or 0.0,
             )
         except Exception as e:
             import logging
@@ -319,8 +363,8 @@ def _build_item_detail_v11(db: Session, item: PiProformaInvoiceItem, customer: C
     # Phase 4: 使用统一产品访问，优先 prd_customer_product，兼容 prd_product
     product = unified_product_lookup(
         db,
-        item.product_id,
-        customer_id=customer.id if customer else None,
+        cast(Optional[int], item.product_id),
+        customer_id=cast(Optional[int], customer.id) if customer else None,
     )
 
     # Phase 5: customer_model 优先取 item 自身字段（导入时直接写入），
@@ -371,15 +415,15 @@ def _build_item_detail_v11(db: Session, item: PiProformaInvoiceItem, customer: C
     package_obj = None
     if po_item_id:
         from crud.purchase_package import get_package_by_po_item
-        package = get_package_by_po_item(db, po_item_id)
+        package = get_package_by_po_item(db, cast(int, po_item_id))
         if package:
             package_data = {
                 "purchase_channel": package.purchase_channel,
-                "carton_length_cm": float(package.carton_length_cm) if package.carton_length_cm else None,
-                "carton_width_cm": float(package.carton_width_cm) if package.carton_width_cm else None,
-                "carton_height_cm": float(package.carton_height_cm) if package.carton_height_cm else None,
+                "carton_length_cm": _to_float(package.carton_length_cm),
+                "carton_width_cm": _to_float(package.carton_width_cm),
+                "carton_height_cm": _to_float(package.carton_height_cm),
                 "units_per_carton": package.units_per_carton,
-                "gross_weight_kg": float(package.gross_weight_kg) if package.gross_weight_kg else None,
+                "gross_weight_kg": _to_float(package.gross_weight_kg),
                 "boxes_count": package.boxes_count,
                 "packing_type": package.packing_type,
             }
@@ -411,8 +455,8 @@ def _build_item_detail_v11(db: Session, item: PiProformaInvoiceItem, customer: C
 
     # 2026-06-26: 统一采购价（快照优先），供 col 15/16/20 计算使用
     _purchase_price = _snapshot_or_fallback(
-        getattr(item, 'purchase_price', None) and float(getattr(item, 'purchase_price', None)),
-        float(package_obj.purchase_price) if package_obj and getattr(package_obj, 'purchase_price', None) else None
+        _to_float(getattr(item, 'purchase_price', None)),
+        _to_float(getattr(package_obj, 'purchase_price', None)) if package_obj else None
     )
 
     detail = {
@@ -428,15 +472,15 @@ def _build_item_detail_v11(db: Session, item: PiProformaInvoiceItem, customer: C
             package_data.get("purchase_channel")
         ),
         "carton_length_cm": _snapshot_or_fallback(
-            getattr(item, 'carton_length_cm', None) and float(getattr(item, 'carton_length_cm', None)),
+            _to_float(getattr(item, 'carton_length_cm', None)),
             package_data.get("carton_length_cm")
         ),
         "carton_width_cm": _snapshot_or_fallback(
-            getattr(item, 'carton_width_cm', None) and float(getattr(item, 'carton_width_cm', None)),
+            _to_float(getattr(item, 'carton_width_cm', None)),
             package_data.get("carton_width_cm")
         ),
         "carton_height_cm": _snapshot_or_fallback(
-            getattr(item, 'carton_height_cm', None) and float(getattr(item, 'carton_height_cm', None)),
+            _to_float(getattr(item, 'carton_height_cm', None)),
             package_data.get("carton_height_cm")
         ),
         "units_per_carton": _snapshot_or_fallback(
@@ -448,16 +492,12 @@ def _build_item_detail_v11(db: Session, item: PiProformaInvoiceItem, customer: C
             package_data.get("cartons_per_unit")
         ),
         "gross_weight_kg": _snapshot_or_fallback(
-            getattr(item, 'gross_weight_kg', None) and float(getattr(item, 'gross_weight_kg', None)),
+            _to_float(getattr(item, 'gross_weight_kg', None)),
             package_data.get("gross_weight_kg")
         ),
         "boxes_count": _snapshot_or_fallback(
             getattr(item, 'boxes_count', None),
             package_data.get("boxes_count")
-        ),
-        "cartons_per_unit": _snapshot_or_fallback(
-            getattr(item, 'cartons_per_unit', None),
-            package_data.get("cartons_per_unit")
         ),
         "packing_type": _snapshot_or_fallback(
             getattr(item, 'packing_type', None) or getattr(item, 'packaging', None),
@@ -492,17 +532,17 @@ def _build_item_detail_v11(db: Session, item: PiProformaInvoiceItem, customer: C
         "product_feature": getattr(item, 'product_feature', None),
 
         # === B组: 价格与财务 (列9-20) ===
-        "quantity": float(item.quantity),
-        "unit_price": float(item.unit_price),
-        "total_price": float(item.total_price),
+        "quantity": _to_float(item.quantity, 0.0) or 0.0,
+        "unit_price": _to_float(item.unit_price, 0.0) or 0.0,
+        "total_price": _to_float(item.total_price, 0.0) or 0.0,
         "customer_reply": None,
         # FixPlan Task 4: prepayment/remaining_payment 优先快照字段
         "prepayment": _snapshot_or_fallback(
-            getattr(item, 'customer_prepayment', None) and float(getattr(item, 'customer_prepayment', None)),
+            _to_float(getattr(item, 'customer_prepayment', None)),
             None
         ),
         "remaining_payment": _snapshot_or_fallback(
-            getattr(item, 'remaining_payment', None) and float(getattr(item, 'remaining_payment', None)),
+            _to_float(getattr(item, 'remaining_payment', None)),
             None
         ),
         # Fix 2026-06-23: col 15/16 用真实数据计算
@@ -510,15 +550,15 @@ def _build_item_detail_v11(db: Session, item: PiProformaInvoiceItem, customer: C
         # Excel列16: 预估毛利率 = 客户美金报价 × 汇率 / 采购总金额 × 100%
         # FixPlan Task 4: 采购价/运费/杂费 优先快照字段
         "purchase_price": _snapshot_or_fallback(
-            getattr(item, 'purchase_price', None) and float(getattr(item, 'purchase_price', None)),
-            float(package_obj.purchase_price) if package_obj and getattr(package_obj, 'purchase_price', None) else None
+            _to_float(getattr(item, 'purchase_price', None)),
+            _to_float(getattr(package_obj, 'purchase_price', None)) if package_obj else None
         ),
         "shipping_fee": _snapshot_or_fallback(
-            getattr(item, 'shipping_fee', None) and float(getattr(item, 'shipping_fee', None)),
+            _to_float(getattr(item, 'shipping_fee', None)),
             None
         ),
         "misc_fee": _snapshot_or_fallback(
-            getattr(item, 'misc_fee', None) and float(getattr(item, 'misc_fee', None)),
+            _to_float(getattr(item, 'misc_fee', None)),
             None
         ),
         # Fix 2026-06-23: col 15/16 用真实数据计算
@@ -531,36 +571,36 @@ def _build_item_detail_v11(db: Session, item: PiProformaInvoiceItem, customer: C
         ),
         # Excel列16: 预估毛利率 = (客户总收入 - 采购总成本) / 客户总收入 × 100%
         "profit_margin": _calculate_profit_margin(
-            float(item.unit_price) if item.unit_price else None,
+            _to_float(item.unit_price),
             6.8,  # 默认汇率
             _calculate_total_order_amount(
                 _purchase_price,
-                float(item.quantity) if item.quantity else None,
+                _to_float(item.quantity),
                 _snapshot_or_fallback(
-                    getattr(item, 'shipping_fee', None) and float(getattr(item, 'shipping_fee', None)),
+                    _to_float(getattr(item, 'shipping_fee', None)),
                     None
                 ),
                 _snapshot_or_fallback(
-                    getattr(item, 'misc_fee', None) and float(getattr(item, 'misc_fee', None)),
+                    _to_float(getattr(item, 'misc_fee', None)),
                     None
                 )
             ),
             po_currency or 'RMB',
-            float(item.quantity) if item.quantity else 0
+            _to_float(item.quantity, 0.0) or 0.0
         ),
         # FixPlan Task 4: 新增总订单金额字段（采购总金额）
         # Excel列20: 总金额 = 采购价 × 采购数 + 运费 + 杂费
         "total_order_amount": _snapshot_or_fallback(
-            getattr(item, 'total_order_amount', None) and float(getattr(item, 'total_order_amount', None)),
+            _to_float(getattr(item, 'total_order_amount', None)),
             # 动态计算: 优先 item 自身快照字段，fallback 采购单包装规格
             _calculate_total_order_amount(
-                getattr(item, 'purchase_price', None) and float(getattr(item, 'purchase_price', None)) or (float(package_obj.purchase_price) if package_obj and getattr(package_obj, 'purchase_price', None) else None),
-                item.quantity,
-                getattr(item, 'shipping_fee', None) and float(getattr(item, 'shipping_fee', None)) or (float(package_obj.shipping_fee) if package_obj and getattr(package_obj, 'shipping_fee', None) else None),
-                getattr(item, 'misc_fee', None) and float(getattr(item, 'misc_fee', None)) or (float(package_obj.misc_fee) if package_obj and getattr(package_obj, 'misc_fee', None) else None)
+                _to_float(getattr(item, 'purchase_price', None)) or (_to_float(getattr(package_obj, 'purchase_price', None)) if package_obj else None),
+                _to_float(item.quantity),
+                _to_float(getattr(item, 'shipping_fee', None)) or (_to_float(getattr(package_obj, 'shipping_fee', None)) if package_obj else None),
+                _to_float(getattr(item, 'misc_fee', None)) or (_to_float(getattr(package_obj, 'misc_fee', None)) if package_obj else None)
             )
         ),
-        "total_amount": float(item.total_price),
+        "total_amount": _to_float(item.total_price, 0.0) or 0.0,
 
         # === C组: 供应商与采购 (列21-26) — 优先快照字段，fallback 关联查询 ===
         "supplier_name": _snapshot_or_fallback(
@@ -729,7 +769,7 @@ def _parse_carton_size_to_m3(carton_size: Optional[str]) -> Optional[float]:
     return None
 
 
-def _format_carton_size(product_obj) -> str:
+def _format_carton_size(product_obj) -> Optional[str]:
     """格式化纸箱尺寸"""
     if not product_obj:
         return None
@@ -742,7 +782,7 @@ def _format_carton_size(product_obj) -> str:
         return f"{float(length):.0f}x{float(width):.0f}x{float(height):.0f}cm"
     return None
 
-def _calculate_carton_count(quantity: float, product_obj) -> int:
+def _calculate_carton_count(quantity: float, product_obj) -> Optional[int]:
     """计算箱数"""
     if not quantity or not product_obj:
         return None
@@ -753,7 +793,7 @@ def _calculate_carton_count(quantity: float, product_obj) -> int:
         return math.ceil(float(quantity) / units_per_carton)
     return None
 
-def _calculate_estimated_volume(quantity: float, product_obj) -> float:
+def _calculate_estimated_volume(quantity: float, product_obj) -> Optional[float]:
     """计算预估体积"""
     if not quantity or not product_obj:
         return None
@@ -765,7 +805,7 @@ def _calculate_estimated_volume(quantity: float, product_obj) -> float:
             return round(float(carton_volume) * carton_count, 4)
     return None
 
-def _calculate_total_weight(quantity: float, product_obj) -> float:
+def _calculate_total_weight(quantity: float, product_obj) -> Optional[float]:
     """计算总重量"""
     if not quantity or not product_obj:
         return None
@@ -781,11 +821,11 @@ def _calculate_total_weight(quantity: float, product_obj) -> float:
 # ============== 动态计算函数 (基于Excel订单管理总表规则) ==============
 
 def _calculate_total_order_amount(
-    purchase_price: float,
-    quantity: float,
-    shipping_fee: float = 0,
-    misc_fee: float = 0
-) -> float:
+    purchase_price: Optional[float],
+    quantity: Optional[float],
+    shipping_fee: Optional[float] = 0,
+    misc_fee: Optional[float] = 0
+) -> Optional[float]:
     """
     计算采购总金额 (Excel列20)
 
@@ -817,11 +857,11 @@ def _calculate_total_order_amount(
 
 
 def _calculate_estimated_usd(
-    factory_price: float,
-    profit_margin: float,
+    factory_price: Optional[float],
+    profit_margin: Optional[float],
     exchange_rate: float = 6.8,
     purchase_currency: str = 'RMB'
-) -> float:
+) -> Optional[float]:
     """
     计算预估美金报价 (Excel列15)
 
@@ -853,12 +893,12 @@ def _calculate_estimated_usd(
 
 
 def _calculate_profit_margin(
-    unit_price_usd: float,
+    unit_price_usd: Optional[float],
     exchange_rate: float,
-    total_order_amount: float,
+    total_order_amount: Optional[float],
     purchase_currency: str = 'RMB',
-    quantity: float = 0
-) -> float:
+    quantity: Optional[float] = 0
+) -> Optional[float]:
     """
     计算预估毛利率 (Excel列16)
 

@@ -946,3 +946,82 @@ def create_shipment_from_orders(db: Session, dept_id: str, pi_ids: list, items: 
     db.refresh(db_shipment)
     
     return db_shipment
+
+
+def get_shipment_detail(db: Session, shipment_id: int):
+    """获取出货单详情（dict 格式，供导出 CI/PL 使用）
+
+    将 ShShipment ORM 对象序列化为包含 stages / items 的 dict，
+    供 routers/export.py 中的 CIExporter / PLExporter 消费。
+
+    Args:
+        db: 数据库会话
+        shipment_id: 出货单主键 ID
+
+    Returns:
+        dict: 出货单详情，未找到返回 None
+    """
+    from typing import Optional as _Opt
+    shipment = get_shipment(db, shipment_id)
+    if not shipment:
+        return None
+
+    # 序列化 stages
+    stages = []
+    for stage in (getattr(shipment, 'stages', None) or []):
+        stages.append({
+            "id": stage.id,
+            "shipment_id": stage.shipment_id,
+            "stage_name": getattr(stage, 'stage_name', None),
+            "stage_no": getattr(stage, 'stage_no', None),
+            "shipment_date": (
+                stage.shipment_date.isoformat()[:10]
+                if getattr(stage, 'shipment_date', None) else None
+            ),
+            "container_no": getattr(stage, 'container_no', None),
+            "bl_no": getattr(stage, 'bl_no', None),
+            "quantity": float(stage.quantity) if getattr(stage, 'quantity', None) else 0,
+            "payment_status": getattr(stage, 'payment_status', 1) or 1,
+            "remark": getattr(stage, 'remark', None),
+        })
+
+    # 序列化 items
+    items = []
+    for item in (getattr(shipment, 'items', None) or []):
+        items.append({
+            "id": item.id,
+            "pi_item_id": getattr(item, 'pi_item_id', None),
+            "customer_code": getattr(item, 'customer_code', '') or '',
+            "oe_number": getattr(item, 'oe_number', '') or '',
+            "product_image": getattr(item, 'product_image', '') or '',
+            "order_quantity": float(item.order_quantity) if getattr(item, 'order_quantity', None) else 0,
+            "shipment_quantity": float(item.shipment_quantity) if getattr(item, 'shipment_quantity', None) else 0,
+            "order_unit_price": float(item.order_unit_price) if getattr(item, 'order_unit_price', None) else 0,
+            "order_total_amount": float(item.order_total_amount) if getattr(item, 'order_total_amount', None) else 0,
+            "cartons_estimated": getattr(item, 'cartons_estimated', 0) or 0,
+            "volume_estimated": float(item.volume_estimated) if getattr(item, 'volume_estimated', None) else 0,
+            "gross_weight_kg": float(item.gross_weight_kg) if getattr(item, 'gross_weight_kg', None) else 0,
+            "detail_desc": getattr(item, 'detail_desc', None),
+        })
+
+    # 客户名称
+    customer = getattr(shipment, 'customer', None)
+    customer_name = customer.customer_name if customer else None
+
+    return {
+        "id": shipment.id,
+        "shipment_no": getattr(shipment, 'shipment_no', str(shipment_id)),
+        "dept_id": getattr(shipment, 'dept_id', None),
+        "customer_id": getattr(shipment, 'customer_id', None),
+        "customer_name": customer_name,
+        "pi_id": getattr(shipment, 'pi_id', None),
+        "status": getattr(shipment, 'status', 1) or 1,
+        "total_amount": float(shipment.total_amount) if getattr(shipment, 'total_amount', None) else 0,
+        "currency": getattr(shipment, 'currency', 'USD') or 'USD',
+        "created_at": (
+            shipment.created_at.isoformat()
+            if getattr(shipment, 'created_at', None) else None
+        ),
+        "stages": stages,
+        "items": items,
+    }

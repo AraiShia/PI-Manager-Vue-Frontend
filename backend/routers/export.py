@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
-from typing import List
+from typing import List, cast
 
 from schemas.export import PreviewResponse
 from exporters import PIExporter, CIExporter, PLExporter, PurchaseExporter, ContractExporter
@@ -24,14 +24,17 @@ def get_db_session():
 # ========== PI导出 ==========
 
 @router.get("/pi/{pi_id}/preview")
-def preview_pi(pi_id: int, db=None):
-    """获取PI预览数据"""
+def preview_pi(pi_id: str, db=None):
+    """获取PI预览数据（支持PI数字ID或PI编号）"""
     try:
         if db is None:
             db = get_db_session()
 
-        from crud.pi import get_pi_invoice_detail
-        pi_data = get_pi_invoice_detail(db, pi_id)
+        from crud.pi import get_pi_invoice_detail, resolve_pi
+        pi_obj = resolve_pi(db, pi_id)
+        target_id = cast(int, pi_obj.id) if pi_obj else (int(pi_id) if pi_id.isdigit() else -1)
+
+        pi_data = get_pi_invoice_detail(db, target_id)
         if not pi_data:
             raise HTTPException(status_code=404, detail="PI单不存在")
 
@@ -57,13 +60,16 @@ def preview_pi(pi_id: int, db=None):
 
 
 @router.get("/pi/{pi_id}")
-def export_pi(pi_id: int, format: str = "template"):
-    """导出PI模板"""
+def export_pi(pi_id: str, format: str = "template"):
+    """导出PI模板（支持PI数字ID或PI编号）"""
     try:
         db = get_db_session()
 
-        from crud.pi import get_pi_invoice_detail
-        pi_data = get_pi_invoice_detail(db, pi_id)
+        from crud.pi import get_pi_invoice_detail, resolve_pi
+        pi_obj = resolve_pi(db, pi_id)
+        target_id = cast(int, pi_obj.id) if pi_obj else (int(pi_id) if pi_id.isdigit() else -1)
+
+        pi_data = get_pi_invoice_detail(db, target_id)
         if not pi_data:
             raise HTTPException(status_code=404, detail="PI单不存在")
 

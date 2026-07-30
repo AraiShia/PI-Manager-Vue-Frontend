@@ -1,8 +1,10 @@
+from typing import cast, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from crud.payment import (
     create_customer_payment, get_customer_payments, get_customer_payment, update_customer_payment,
+    delete_customer_payment,
     create_supplier_payment, get_supplier_payments, get_supplier_payment, update_supplier_payment,
     get_supplier_payment_stages, update_supplier_payment_stage,
     get_unmatched_payments
@@ -81,18 +83,23 @@ def read_customer_payments(
         for r in rcpts:
             receipts_by_pi.setdefault(r.pi_id, []).append(r)
 
-    total_paid_sum = dict(
-        db.query(ArCustomerPayment.pi_id, func.coalesce(func.sum(ArCustomerPayment.actual_amount), 0))
-        .filter(ArCustomerPayment.pi_id.in_(pi_ids))
+    # 用字典推导式替代 dict(list[Row])，消除 dict.__init__ overload 匹配失败的类型告警
+    total_paid_sum = {
+        row[0]: row[1]
+        for row in db.query(
+            ArCustomerPayment.pi_id,
+            func.coalesce(func.sum(ArCustomerPayment.actual_amount), 0)
+        ).filter(ArCustomerPayment.pi_id.in_(pi_ids))
         .group_by(ArCustomerPayment.pi_id)
         .all()
-    ) if pi_ids else {}
+    } if pi_ids else {}
 
     items = []
     for pi in pis:
         rcpts = receipts_by_pi.get(pi.id, [])
         paid_total = float(total_paid_sum.get(pi.id, 0) or 0)
-        total_amt = float(pi.total_amount or 0)
+        # 显式 None 判断，避免将 Column[Decimal] 直接传入 float() 触发类型告警
+        total_amt = float(pi.total_amount) if pi.total_amount is not None else 0.0
         unpaid_amt = round(max(total_amt - paid_total, 0.0), 2)
 
         if only_unpaid and unpaid_amt <= 0:
@@ -140,9 +147,12 @@ def read_customer_payments(
     }
 
 @router.get("/receivables/by-pi/{pi_id}", response_model=list[CustomerPaymentResponse])
-def read_customer_payments_by_pi(pi_id: int, db: Session = Depends(get_db)):
-    """按 PI 获取客户付款记录"""
-    return get_customer_payments(db, pi_id=pi_id)
+def read_customer_payments_by_pi(pi_id: str, db: Session = Depends(get_db)):
+    """按 PI 获取客户付款记录（支持 PI 数字 ID 或 PI 编号）"""
+    from crud.pi import resolve_pi
+    pi_obj = resolve_pi(db, pi_id)
+    target_id = cast(int, pi_obj.id) if pi_obj else (int(pi_id) if pi_id.isdigit() else -1)
+    return get_customer_payments(db, pi_id=target_id)
 
 @router.get("/receivables/{payment_id}", response_model=CustomerPaymentResponse)
 def read_customer_payment(payment_id: int, db: Session = Depends(get_db)):
@@ -174,15 +184,18 @@ def create_supplier_payment_api(payment: SupplierPaymentCreate, db: Session = De
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/payables", response_model=list[SupplierPaymentResponse])
-def read_supplier_payments(skip: int = 0, limit: int = 100, po_id: int = None, supplier_id: int = None, db: Session = Depends(get_db)):
+def read_supplier_payments(skip: int = 0, limit: int = 100, po_id: Optional[int] = None, supplier_id: Optional[int] = None, db: Session = Depends(get_db)):
     payments = get_supplier_payments(db, skip=skip, limit=limit, po_id=po_id, supplier_id=supplier_id)
     return [_serialize_supplier_payment(p) for p in payments]
 
 @router.get("/payables/by-pi/{pi_id}", response_model=list[dict])
-def read_supplier_payments_by_pi(pi_id: int, db: Session = Depends(get_db)):
-    """按 PI 获取供应商付款记录"""
+def read_supplier_payments_by_pi(pi_id: str, db: Session = Depends(get_db)):
+    """按 PI 获取供应商付款记录（支持 PI 数字 ID 或 PI 编号）"""
+    from crud.pi import resolve_pi
     from crud.payment import get_supplier_payments_by_pi
-    payments = get_supplier_payments_by_pi(db, pi_id)
+    pi_obj = resolve_pi(db, pi_id)
+    target_id = cast(int, pi_obj.id) if pi_obj else (int(pi_id) if pi_id.isdigit() else -1)
+    payments = get_supplier_payments_by_pi(db, target_id)
     return [_serialize_supplier_payment(p) for p in payments]
 
 @router.get("/payables/{payment_id}", response_model=SupplierPaymentResponse)
@@ -222,7 +235,7 @@ def read_supplier_payment_stages(payment_id: int, db: Session = Depends(get_db))
     return get_supplier_payment_stages(db, payment_id)
 
 @router.post("/payables/stages/{stage_id}")
-def update_supplier_payment_stage_api(stage_id: int, stage_type: str = None, paid_amount: float = None, db: Session = Depends(get_db)):
+def update_supplier_payment_stage_api(stage_id: int, stage_type: Optional[str] = None, paid_amount: Optional[float] = None, db: Session = Depends(get_db)):
     stage = update_supplier_payment_stage(db, stage_id, stage_type, paid_amount)
     if not stage:
         raise HTTPException(status_code=404, detail="付款阶段不存在")
