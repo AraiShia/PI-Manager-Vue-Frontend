@@ -274,10 +274,18 @@ const emit = defineEmits<{
   'refresh': []
 }>()
 
-// 对话框显隐状态联动
+// 内部显隐控制状态（当父组件未通过 v-model / v-model:visible 绑定时作为兜底状态）
+const internalVisible = ref(false)
+
+// 对话框显隐状态双向联动
 const dialogVisible = computed({
-  get: () => props.modelValue ?? props.visible ?? false,
+  get: () => {
+    if (props.modelValue !== undefined) return props.modelValue
+    if (props.visible !== undefined) return props.visible
+    return internalVisible.value
+  },
   set: (val: boolean) => {
+    internalVisible.value = val
     emit('update:modelValue', val)
     emit('update:visible', val)
   },

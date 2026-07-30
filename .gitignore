@@ -20,3 +20,6 @@ client/
 build/
 .venv/
 .vscode/
+
+# VSCode Counter 插件统计产物
+.VSCodeCounter/
