@@ -16,6 +16,11 @@ class CustomerReply(Base):
     customer_id = Column(Integer, ForeignKey("crm_customer.id", ondelete="CASCADE"), nullable=False, index=True)
     reply_date = Column(Date, nullable=False)
     reply_content = Column(Text, nullable=False)
+    # 沟通记录的类型、提交人和同类记录序号由客户往来功能使用。
+    # 这些字段必须声明在 ORM 模型中，否则查询/创建时会触发 AttributeError。
+    reply_type = Column(String(50), nullable=False, default="reply", server_default="reply")
+    submitter_name = Column(String(100), nullable=True)
+    sequence_num = Column(Integer, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     
