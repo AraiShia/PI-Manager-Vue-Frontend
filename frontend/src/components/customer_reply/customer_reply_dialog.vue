@@ -12,10 +12,10 @@
     <div class="dialog-header-info mb-4">
       <div class="header-info-left">
         <el-tag type="primary" effect="light" class="info-tag me-2">
-          PI 单号: {{ piNo || piId || '未绑定' }}
+          PI 单号: {{ activePiNo || activePiId || props.piNo || props.piId || '未绑定' }}
         </el-tag>
         <el-tag type="success" effect="light" class="info-tag">
-          客户名称: {{ customerName || '通用客户' }}
+          客户名称: {{ activeCustomerName || props.customerName || '通用客户' }}
         </el-tag>
       </div>
       <div class="header-info-right">
@@ -274,16 +274,44 @@ const emit = defineEmits<{
   'refresh': []
 }>()
 
-// 内部显隐控制状态（当父组件未通过 v-model / v-model:visible 绑定时作为兜底状态）
+// 动态交互参数状态，优先使用 open(options) 传入的重写参数
+const activePiId = ref<number | undefined>(props.piId)
+const activeCustomerId = ref<number | undefined>(props.customerId)
+const activePiNo = ref<string | undefined>(props.piNo)
+const activeCustomerName = ref<string | undefined>(props.customerName)
+
+watch(() => props.piId, (val) => { activePiId.value = val })
+watch(() => props.customerId, (val) => { activeCustomerId.value = val })
+watch(() => props.piNo, (val) => { activePiNo.value = val })
+watch(() => props.customerName, (val) => { activeCustomerName.value = val })
+
+// 内部显隐控制状态（作为弹窗显隐的底层 Source of Truth）
 const internalVisible = ref(false)
+
+// 监听外部显式传入的 props 变更 (处理父组件 v-model 或 v-model:visible 模式)
+watch(
+  () => props.modelValue,
+  (val) => {
+    if (typeof val === 'boolean') {
+      internalVisible.value = val
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.visible,
+  (val) => {
+    if (typeof val === 'boolean') {
+      internalVisible.value = val
+    }
+  },
+  { immediate: true }
+)
 
 // 对话框显隐状态双向联动
 const dialogVisible = computed({
-  get: () => {
-    if (props.modelValue !== undefined) return props.modelValue
-    if (props.visible !== undefined) return props.visible
-    return internalVisible.value
-  },
+  get: () => internalVisible.value,
   set: (val: boolean) => {
     internalVisible.value = val
     emit('update:modelValue', val)
@@ -346,12 +374,14 @@ function handleOpen() {
 /** 拉取客户往来回复列表 */
 async function fetchReplies() {
   loading.value = true
+  const currentPiId = activePiId.value ?? props.piId
+  const currentCustomerId = activeCustomerId.value ?? props.customerId
   try {
-    if (props.piId) {
-      const res = await customerReplyApi.getByPi(props.piId)
+    if (currentPiId) {
+      const res = await customerReplyApi.getByPi(currentPiId)
       replies.value = res.data || []
-    } else if (props.customerId) {
-      const res = await customerReplyApi.getByCustomer(props.customerId)
+    } else if (currentCustomerId) {
+      const res = await customerReplyApi.getByCustomer(currentCustomerId)
       replies.value = res.data || []
     } else {
       const res = await customerReplyApi.list({ limit: 100 })
@@ -415,9 +445,11 @@ async function submitForm() {
         ElMessage.success('更新沟通需求记录成功')
       } else {
         // 新增记录
+        const currentPiId = activePiId.value ?? props.piId
+        const currentCustomerId = activeCustomerId.value ?? props.customerId
         const payload: CustomerReplyFormPayload = {
-          pi_id: props.piId || 0,
-          customer_id: props.customerId || 0,
+          pi_id: currentPiId || 0,
+          customer_id: currentCustomerId || 0,
           reply_type: formData.value.reply_type,
           submitter_name: formData.value.submitter_name,
           reply_date: formData.value.reply_date,
@@ -451,14 +483,17 @@ async function handleDelete(id: number) {
 
 /** 导出 Excel 文件 */
 async function handleExport() {
-  if (!props.piId) {
+  const currentPiId = activePiId.value ?? props.piId
+  const currentPiNo = activePiNo.value ?? props.piNo
+  const currentCustomerName = activeCustomerName.value ?? props.customerName
+  if (!currentPiId) {
     ElMessage.warning('当前未关联指定 PI 单号，无法导出')
     return
   }
   exporting.value = true
   try {
-    const res = await customerReplyApi.exportExcel(props.piId, {
-      customer_name: props.customerName || '',
+    const res = await customerReplyApi.exportExcel(currentPiId, {
+      customer_name: currentCustomerName || '',
     })
     const blob = new Blob([res.data], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -466,7 +501,7 @@ async function handleExport() {
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `客户往来需求记录_${props.piNo || props.piId}.xlsx`
+    link.download = `客户往来需求记录_${currentPiNo || currentPiId}.xlsx`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -522,8 +557,26 @@ function getTimelineType(type?: string) {
   }
 }
 
+export interface OpenCustomerReplyOptions {
+  piId?: number
+  customerId?: number
+  piNo?: string
+  customerName?: string
+}
+
 /** 打开对话框公开方法 */
-function open() {
+function open(options?: OpenCustomerReplyOptions) {
+  if (options) {
+    if (options.piId !== undefined) activePiId.value = options.piId
+    if (options.customerId !== undefined) activeCustomerId.value = options.customerId
+    if (options.piNo !== undefined) activePiNo.value = options.piNo
+    if (options.customerName !== undefined) activeCustomerName.value = options.customerName
+  } else {
+    activePiId.value = props.piId
+    activeCustomerId.value = props.customerId
+    activePiNo.value = props.piNo
+    activeCustomerName.value = props.customerName
+  }
   dialogVisible.value = true
 }
 
