@@ -32,7 +32,10 @@ from routers.order_import import router as order_import_router, product_router a
 from routers.export import router as export_router
 from routers.bff import router as bff_router
 from migrations.sync_pi_item_images_to_customer_products import router as migration_router
+from app.migration_manager import migrate
 
+# 自动执行增量迁移升级 schema
+migrate()
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(

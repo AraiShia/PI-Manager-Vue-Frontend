@@ -24,6 +24,7 @@ def upgrade():
     # 旧版本已创建 customer_replies 表，但模型后来增加了这些字段。
     # SQLite 不支持 IF NOT EXISTS，因此按列逐个执行并兼容重复执行。
     statements = [
+        "ALTER TABLE customer_replies ADD COLUMN pi_item_id INTEGER",
         "ALTER TABLE customer_replies ADD COLUMN reply_type VARCHAR(50) NOT NULL DEFAULT 'reply'",
         "ALTER TABLE customer_replies ADD COLUMN submitter_name VARCHAR(100)",
         "ALTER TABLE customer_replies ADD COLUMN sequence_num INTEGER",

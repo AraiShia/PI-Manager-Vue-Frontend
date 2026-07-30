@@ -94,6 +94,14 @@ class FileLock:
             self.handle = None
 
 
+def parse_version(v_str: str) -> tuple[int, ...]:
+    """将版本号字符串 (如 '1.0.0.16') 解析为整数元组 (如 (1, 0, 0, 16)) 用于精确比较"""
+    try:
+        return tuple(int(x) for x in v_str.split("."))
+    except ValueError:
+        return (0, 0, 0, 0)
+
+
 class MigrationManager:
     """管理 SQLite 数据库迁移的核心类"""
 
@@ -205,14 +213,17 @@ class MigrationManager:
                 return
 
             # 3. 增量迁移升级逻辑
-            if current_ver == LATEST_VERSION:
+            current_tuple = parse_version(current_ver)
+            latest_tuple = parse_version(LATEST_VERSION)
+
+            if current_tuple == latest_tuple:
                 logger.info("数据库已是最新版本，无需升级。")
                 return
 
             # 按照版本顺序寻找需执行的迁移
             for version, script in MIGRATIONS:
-                # 依靠版本字符串进行字典序对比
-                if version > current_ver:
+                version_tuple = parse_version(version)
+                if version_tuple > current_tuple:
                     logger.info(f"开始升级至版本 {version} ({script})")
                     # 每个升级文件有其自身的 engine.begin() 事务保障
                     success = self.run_migration_script(script)
