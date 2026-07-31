@@ -11,8 +11,8 @@ class ProductSupplierUrlCreate(BaseModel):
     product_id: int
     supplier_id: Optional[int] = None
     supplier_name: str
-    url: str = Field(..., max_length=500)
-    display_name: Optional[str] = None
+    url: str = Field(..., max_length=2000)
+    display_name: Optional[str] = Field(None, max_length=500)
     is_default: bool = False
 
     @field_validator('url')
@@ -27,8 +27,8 @@ class ProductSupplierUrlCreate(BaseModel):
 
 
 class ProductSupplierUrlUpdate(BaseModel):
-    url: Optional[str] = Field(None, max_length=500)
-    display_name: Optional[str] = None
+    url: Optional[str] = Field(None, max_length=2000)
+    display_name: Optional[str] = Field(None, max_length=500)
     is_default: Optional[bool] = None
 
     @field_validator('url')

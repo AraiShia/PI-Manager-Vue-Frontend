@@ -25,10 +25,13 @@
       <div class="add-url-section">
         <div class="section-title">
           <span>新增采购链接 / 1688链接</span>
-          <span v-if="parsedInfo.platformName" class="parsed-badge-wrap">
+          <span v-if="parsedInfo.platformName" class="parsed-badge-wrap" style="display: inline-flex; align-items: center; gap: 8px;">
             <el-tag :type="parsedInfo.tagType" size="small" effect="dark">
               {{ parsedInfo.platformName }}
             </el-tag>
+            <span v-if="fetchingTitle" style="font-size: 12px; color: #409eff; display: inline-flex; align-items: center; gap: 4px;">
+              <el-icon class="is-loading"><Loading /></el-icon> 正在抓取网页标题...
+            </span>
           </span>
         </div>
         <div class="add-url-form">
@@ -220,7 +223,12 @@ watch(
   { immediate: true }
 )
 
+const fetchingTitle = ref(false)
+let titleFetchTimer: any = null
+
 function resetForm() {
+  if (titleFetchTimer) clearTimeout(titleFetchTimer)
+  fetchingTitle.value = false
   newUrlForm.url = ''
   newUrlForm.display_name = ''
   newUrlForm.is_default = urlList.value.length === 0
@@ -255,17 +263,41 @@ async function loadUrls() {
 }
 
 function onUrlInput(val: string) {
+  if (titleFetchTimer) clearTimeout(titleFetchTimer)
   if (!val) {
     parsedInfo.value.platformName = ''
+    fetchingTitle.value = false
     return
   }
   const info = parseShopUrl(val)
+  const prevSuggested = parsedInfo.value.suggestedDisplayName
   parsedInfo.value = info
 
-  // 若用户未手动输入 display_name，自动充填解析出的名称
-  if (!newUrlForm.display_name || newUrlForm.display_name === info.suggestedDisplayName) {
+  // 1. 零延迟按 URL Slug / 参数充填初始品名
+  if (!newUrlForm.display_name || newUrlForm.display_name === prevSuggested) {
     newUrlForm.display_name = info.suggestedDisplayName
   }
+
+  // 2. 防抖发起后端 /parse-title 请求抓取目标网页真实 Product Title
+  titleFetchTimer = setTimeout(async () => {
+    if (!info.cleanUrl || !/^https?:\/\//i.test(info.cleanUrl)) return
+    const targetUrl = info.cleanUrl
+    fetchingTitle.value = true
+    try {
+      const res = await productSupplierUrlsApi.parseTitle(targetUrl)
+      if (res && res.title && newUrlForm.url && parseShopUrl(newUrlForm.url).cleanUrl === targetUrl) {
+        const fullTitle = `${info.platformName ? info.platformName + ' - ' : ''}${res.title}`
+        // 若当前展示名称依然为预推算值或前缀，自动提升更新为精细网页 Title
+        if (!newUrlForm.display_name || newUrlForm.display_name === info.suggestedDisplayName || newUrlForm.display_name.startsWith(info.platformName)) {
+          newUrlForm.display_name = fullTitle
+        }
+      }
+    } catch {
+      /* 静默失败，保留 URL Slug 初步解析结果 */
+    } finally {
+      fetchingTitle.value = false
+    }
+  }, 350)
 }
 
 async function handleAddUrl() {

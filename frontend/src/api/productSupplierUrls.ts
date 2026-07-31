@@ -51,4 +51,9 @@ export const productSupplierUrlsApi = {
   remove(id: number): Promise<void> {
     return client.delete(`${BASE}/${id}`).then(r => r.data)
   },
+
+  parseTitle(url: string): Promise<{ url: string; title: string | null }> {
+    const params = new URLSearchParams({ url })
+    return client.get(`${BASE}/parse-title?${params.toString()}`).then(r => r.data)
+  },
 }

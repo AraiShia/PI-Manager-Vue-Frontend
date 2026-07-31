@@ -1366,6 +1366,16 @@ function updateInboundPackSpec(record: InboundRecord) {
   } else {
     record.pack_spec = '1pcs/1ctn'
   }
+  // 若当前行箱数非空且尚未手动输入入库数量，按打包规格智能自动推荐入库数量
+  if (record.carton_count && record.carton_count > 0 && !record.stock_in_quantity) {
+    if (record.packaging === '多件/箱' && record.units_per_carton) {
+      record.stock_in_quantity = record.carton_count * record.units_per_carton
+    } else if (record.packaging === '1件/箱') {
+      record.stock_in_quantity = record.carton_count
+    } else if (record.packaging === '1件多箱' && record.cartons_per_unit) {
+      record.stock_in_quantity = Math.floor(record.carton_count / record.cartons_per_unit)
+    }
+  }
 }
 
 function onInboundPackagingChange(record: InboundRecord) {
@@ -1823,13 +1833,21 @@ async function onShopUrlChange(url: string) {
     return
   }
 
-  // 情况 2：意外/故意粘贴或手工输入了全新 URL 链接 ➔ 触发确认二次二次保存防误触弹窗
+  // 情况 2：意外/故意粘贴或手工输入了全新 URL 链接 ➔ 触发确认二次保存防误触弹窗
   try {
+    let displayName = info.suggestedDisplayName
+    try {
+      const titleRes = await productSupplierUrlsApi.parseTitle(targetUrl)
+      if (titleRes && titleRes.title) {
+        displayName = `${info.platformName ? info.platformName + ' - ' : ''}${titleRes.title}`
+      }
+    } catch { /* 静默降级使用 URL Slug 解析结果 */ }
+
     await ElMessageBox.confirm(
       `检测到新输入的采购链接：\n\n` +
       `🔗 网址: ${targetUrl}\n` +
       `🏷️ 自动识别平台: ${info.platformName}\n` +
-      `🏷️ 智能生成别名: ${info.suggestedDisplayName}\n\n` +
+      `🏷️ 解析商品名称: ${displayName}\n\n` +
       `是否将其自动新建并绑定为此产品的采购链接？`,
       '确认添加新采购链接',
       {
@@ -1852,7 +1870,7 @@ async function onShopUrlChange(url: string) {
           supplier_id: supplierId,
           supplier_name: supplierName,
           url: targetUrl,
-          display_name: info.suggestedDisplayName,
+          display_name: displayName,
           is_default: supplierUrlOptions.value.length === 0,
         })
         ElMessage.success(`已自动创建并保存 ${info.platformName} 采购链接！`)

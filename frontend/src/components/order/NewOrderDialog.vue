@@ -161,13 +161,21 @@
             </el-row>
           </el-form>
 
-          <!--预设内容 -->
-          <div class="preset-content">
-            <span>毛利率：</span>
-            <el-input-number v-model="presetProfitMargin" :min="0" :max="100" :controls="false" style="width: 100px;" />
-            <span style="margin-left: 16px;">汇率：</span>
-            <el-input-number v-model="presetExchangeRate" :min="0" :precision="2" :controls="false" style="width: 100px;" />
-          </div>
+          <!-- 预设内容 -->
+          <el-form label-width="120px">
+            <el-row :gutter="16">
+              <el-col :span="12">
+                <el-form-item label="毛利率 (%)">
+                  <el-input-number v-model="presetProfitMargin" :min="0" :max="100" :controls="false" style="width: 100%" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="汇率">
+                  <el-input-number v-model="presetExchangeRate" :min="0" :precision="2" :controls="false" style="width: 100%" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </el-form>
 
           <el-divider content-position="left">
             数据预览（共 {{ excelData.length }} 行）
@@ -239,12 +247,18 @@
           </template>
 
           <el-divider content-position="left">产品信息</el-divider>
-          <div class="preset-content">
-            <span>毛利率：</span>
-            <el-input-number v-model="presetProfitMargin" :min="0" :max="100" :controls="false" style="width: 100px;" />
-            <span style="margin-left: 16px;">汇率：</span>
-            <el-input-number v-model="presetExchangeRate" :min="0" :precision="2" :controls="false" style="width: 100px;" />
-          </div>
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <el-form-item label="毛利率 (%)">
+                <el-input-number v-model="presetProfitMargin" :min="0" :max="100" :controls="false" style="width: 100%" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="汇率">
+                <el-input-number v-model="presetExchangeRate" :min="0" :precision="2" :controls="false" style="width: 100%" />
+              </el-form-item>
+            </el-col>
+          </el-row>
           <el-row :gutter="16">
             <el-col :span="12">
               <el-form-item label="客户型号" prop="customer_code">

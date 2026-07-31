@@ -16,9 +16,21 @@ from schemas.product_supplier_url import (
     ProductSupplierUrlResponse,
 )
 from crud import product_supplier_url as crud
+from app.url_parser import fetch_url_title, is_safe_url
 
 
 router = APIRouter(prefix="/product-supplier-urls", tags=["product-supplier-urls"])
+
+
+@router.get("/parse-title")
+def parse_title(url: str = Query(...)):
+    """抓取并解析目标网页的 Product Title (带 SSRF 安全检查)"""
+    is_safe, msg = is_safe_url(url)
+    if not is_safe:
+        raise HTTPException(status_code=400, detail=msg)
+
+    title = fetch_url_title(url)
+    return {"url": url, "title": title}
 
 
 @router.get("", response_model=list[ProductSupplierUrlResponse])
