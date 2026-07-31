@@ -489,12 +489,13 @@ async function fetchReplies() {
 /** 显示新增表单 */
 function showAddForm() {
   editingId.value = null
+  const validItemId = typeof activePiItemId.value === 'number' && activePiItemId.value > 0 ? activePiItemId.value : null
   formData.value = {
     reply_type: 'customer',
     submitter_name: '客户代表',
     reply_date: new Date().toISOString().split('T')[0],
     reply_content: '',
-    pi_item_id: activePiItemId.value || null,
+    pi_item_id: validItemId,
   }
   isFormVisible.value = true
 }
@@ -675,9 +676,9 @@ function open(options?: OpenCustomerReplyOptions) {
     if (options.piNo !== undefined) activePiNo.value = options.piNo
     if (options.customerName !== undefined) activeCustomerName.value = options.customerName
     if (options.piItems !== undefined) activePiItems.value = options.piItems || []
-    if (options.piItemId !== undefined) {
+    if (typeof options.piItemId === 'number' && options.piItemId > 0) {
       activePiItemId.value = options.piItemId
-      filterItemId.value = options.piItemId !== null ? options.piItemId : 'all'
+      filterItemId.value = options.piItemId
     } else {
       activePiItemId.value = null
       filterItemId.value = 'all'
@@ -687,9 +688,10 @@ function open(options?: OpenCustomerReplyOptions) {
     activeCustomerId.value = props.customerId
     activePiNo.value = props.piNo
     activeCustomerName.value = props.customerName
-    activePiItemId.value = props.piItemId || null
+    const validPropsItemId = typeof props.piItemId === 'number' && props.piItemId > 0 ? props.piItemId : null
+    activePiItemId.value = validPropsItemId
     activePiItems.value = props.piItems || []
-    filterItemId.value = props.piItemId !== undefined && props.piItemId !== null ? props.piItemId : 'all'
+    filterItemId.value = validPropsItemId !== null ? validPropsItemId : 'all'
   }
   dialogVisible.value = true
 }

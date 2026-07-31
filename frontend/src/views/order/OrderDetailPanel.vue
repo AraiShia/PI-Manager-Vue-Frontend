@@ -82,7 +82,7 @@
           <el-tag v-else type="success" effect="light">已保存正式PI</el-tag>
         </el-tooltip>
         <el-button type="primary" :icon="Wallet" @click="onAddPayment">添加付款</el-button>
-        <el-button type="primary" plain :icon="ChatDotRound" @click="onOpenCustomerReply">客户往来</el-button>
+        <el-button type="primary" plain :icon="ChatDotRound" @click="onOpenCustomerReply()">客户往来</el-button>
         <el-button
           type="success"
           :icon="ShoppingCart"
@@ -171,7 +171,7 @@
               type="primary"
               :underline="false"
               style="font-size: 12px"
-              @click.stop="onOpenCustomerReply"
+              @click.stop="onOpenCustomerReply(row.id)"
             >
               {{ row.latest_customer_reply || '点击记录/查看往来' }}
             </el-link>
@@ -1376,13 +1376,14 @@ async function deleteItem(item: OrderDetailItem) {
 }
 
 /** 打开客户往来需求与回复记录弹窗 (支持整单或指定单品维度) */
-function onOpenCustomerReply(piItemId?: number | null) {
+function onOpenCustomerReply(piItemId?: number | null | unknown) {
+  const targetItemId = typeof piItemId === 'number' && piItemId > 0 ? piItemId : null
   customerReplyDialogRef.value?.open({
     piId: store.currentOrder?.id,
     piNo: store.currentOrder?.pi_no,
     customerId: store.currentOrder?.customer_id,
     customerName: store.currentOrder?.customer_name,
-    piItemId: piItemId !== undefined ? piItemId : null,
+    piItemId: targetItemId,
     piItems: store.detailItems || [],
   })
 }
