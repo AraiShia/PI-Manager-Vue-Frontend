@@ -53,7 +53,7 @@
     <!-- 筛选与搜索工具栏 -->
     <div class="filter-toolbar mb-3">
       <el-row :gutter="12" align="middle">
-        <el-col :span="8">
+        <el-col :span="7">
           <el-input
             v-model="searchQuery"
             placeholder="搜索回复内容或提交人..."
@@ -62,7 +62,7 @@
             :prefix-icon="Search"
           />
         </el-col>
-        <el-col :span="6">
+        <el-col :span="5">
           <el-select
             v-model="filterType"
             placeholder="回复类型"
@@ -77,7 +77,25 @@
             <el-option label="需求变更 (demand)" value="demand" />
           </el-select>
         </el-col>
-        <el-col :span="10" class="text-right">
+        <el-col :span="7">
+          <el-select
+            v-model="filterItemId"
+            placeholder="关联产品维度"
+            clearable
+            size="small"
+            style="width: 100%"
+          >
+            <el-option label="全部维度 (全单及单品)" value="all" />
+            <el-option label="仅全单通用 (整单沟通)" :value="0" />
+            <el-option
+              v-for="item in activePiItems"
+              :key="item.id"
+              :label="getProductLabel(item)"
+              :value="item.id"
+            />
+          </el-select>
+        </el-col>
+        <el-col :span="5" class="text-right">
           <span class="total-count-badge">共 {{ filteredReplies.length }} 条记录</span>
         </el-col>
       </el-row>
@@ -105,7 +123,7 @@
           class="mt-2"
         >
           <el-row :gutter="16">
-            <el-col :span="8">
+            <el-col :span="6">
               <el-form-item label="沟通类型" prop="reply_type">
                 <el-select v-model="formData.reply_type" style="width: 100%">
                   <el-option label="客户回复" value="customer" />
@@ -115,7 +133,25 @@
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col :span="8">
+            <el-col :span="6">
+              <el-form-item label="关联产品" prop="pi_item_id">
+                <el-select
+                  v-model="formData.pi_item_id"
+                  placeholder="整单通用"
+                  clearable
+                  style="width: 100%"
+                >
+                  <el-option label="全单通用 (整单沟通)" :value="null" />
+                  <el-option
+                    v-for="item in activePiItems"
+                    :key="item.id"
+                    :label="getProductLabel(item)"
+                    :value="item.id"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="6">
               <el-form-item label="提交人" prop="submitter_name">
                 <el-input
                   v-model="formData.submitter_name"
@@ -123,7 +159,7 @@
                 />
               </el-form-item>
             </el-col>
-            <el-col :span="8">
+            <el-col :span="6">
               <el-form-item label="沟通日期" prop="reply_date">
                 <el-date-picker
                   v-model="formData.reply_date"
@@ -184,6 +220,15 @@
                   class="type-badge me-2"
                 >
                   {{ getTypeLabel(item.reply_type) }}
+                </el-tag>
+                <el-tag
+                  size="small"
+                  :type="item.pi_item_id ? 'primary' : 'info'"
+                  :effect="item.pi_item_id ? 'light' : 'plain'"
+                  class="product-badge me-2"
+                >
+                  <el-icon class="me-1"><Box /></el-icon>
+                  {{ getProductNameByItemId(item.pi_item_id) }}
                 </el-tag>
                 <span class="submitter-name">
                   <el-icon class="me-1"><User /></el-icon>
@@ -251,12 +296,22 @@ import {
   User,
   Edit,
   Delete,
+  Box,
 } from '@element-plus/icons-vue'
 import {
   customerReplyApi,
   CustomerReplyItem,
   CustomerReplyFormPayload,
 } from '../../api/customerReply'
+
+export interface PiProductItemOption {
+  id: number
+  product_name?: string | null
+  product_code?: string | null
+  oe_number?: string | null
+  customer_model?: string | null
+  name_cn?: string | null
+}
 
 // Component Props & Emits
 const props = defineProps<{
@@ -266,6 +321,8 @@ const props = defineProps<{
   customerId?: number
   piNo?: string
   customerName?: string
+  piItemId?: number | null
+  piItems?: PiProductItemOption[]
 }>()
 
 const emit = defineEmits<{
@@ -279,11 +336,15 @@ const activePiId = ref<number | undefined>(props.piId)
 const activeCustomerId = ref<number | undefined>(props.customerId)
 const activePiNo = ref<string | undefined>(props.piNo)
 const activeCustomerName = ref<string | undefined>(props.customerName)
+const activePiItemId = ref<number | null | undefined>(props.piItemId)
+const activePiItems = ref<PiProductItemOption[]>(props.piItems || [])
 
 watch(() => props.piId, (val) => { activePiId.value = val })
 watch(() => props.customerId, (val) => { activeCustomerId.value = val })
 watch(() => props.piNo, (val) => { activePiNo.value = val })
 watch(() => props.customerName, (val) => { activeCustomerName.value = val })
+watch(() => props.piItemId, (val) => { activePiItemId.value = val })
+watch(() => props.piItems, (val) => { activePiItems.value = val || [] })
 
 // 内部显隐控制状态（作为弹窗显隐的底层 Source of Truth）
 const internalVisible = ref(false)
@@ -326,6 +387,8 @@ const exporting = ref(false)
 const replies = ref<CustomerReplyItem[]>([])
 const searchQuery = ref('')
 const filterType = ref('')
+// 关联产品维度筛选：'all' - 全部维度; 0 - 仅整单通用; >0 - 指定 pi_item_id
+const filterItemId = ref<string | number>('all')
 
 // 表单控制
 const isFormVisible = ref(false)
@@ -337,11 +400,13 @@ const formData = ref<{
   submitter_name: string
   reply_date: string
   reply_content: string
+  pi_item_id: number | null
 }>({
   reply_type: 'customer',
   submitter_name: '客户代表',
   reply_date: new Date().toISOString().split('T')[0],
   reply_content: '',
+  pi_item_id: null,
 })
 
 const formRules = {
@@ -350,18 +415,45 @@ const formRules = {
   reply_date: [{ required: true, message: '请选择沟通日期', trigger: 'change' }],
 }
 
+/** 获取单品在下拉选择框中的格式化名称 */
+function getProductLabel(item: PiProductItemOption): string {
+  const code = item.product_code || item.oe_number || '单品'
+  const name = item.product_name || item.name_cn || item.customer_model || `ID:${item.id}`
+  return `[${code}] ${name}`
+}
+
+/** 根据 pi_item_id 获取单品名称用于列表 Tag 展示 */
+function getProductNameByItemId(piItemId?: number | null): string {
+  if (!piItemId) return '整单通用'
+  const found = activePiItems.value.find((it) => it.id === piItemId)
+  if (found) {
+    return getProductLabel(found)
+  }
+  return `单品明细 #${piItemId}`
+}
+
 // 过滤后的回复列表
 const filteredReplies = computed(() => {
   return replies.value.filter((item) => {
     // 基础类型匹配
     const matchType = !filterType.value || item.reply_type === filterType.value
+
+    // 单品/全单维度匹配
+    let matchItem = true
+    if (filterItemId.value === 0) {
+      matchItem = !item.pi_item_id
+    } else if (typeof filterItemId.value === 'number' && filterItemId.value > 0) {
+      matchItem = item.pi_item_id === filterItemId.value
+    }
+
     // 文本与提交人匹配
     const query = searchQuery.value.trim().toLowerCase()
     const matchQuery =
       !query ||
       item.reply_content.toLowerCase().includes(query) ||
       (item.submitter_name || '').toLowerCase().includes(query)
-    return matchType && matchQuery
+
+    return matchType && matchItem && matchQuery
   })
 })
 
@@ -402,6 +494,7 @@ function showAddForm() {
     submitter_name: '客户代表',
     reply_date: new Date().toISOString().split('T')[0],
     reply_content: '',
+    pi_item_id: activePiItemId.value || null,
   }
   isFormVisible.value = true
 }
@@ -414,6 +507,7 @@ function startEdit(item: CustomerReplyItem) {
     submitter_name: item.submitter_name || '',
     reply_date: item.reply_date || new Date().toISOString().split('T')[0],
     reply_content: item.reply_content || '',
+    pi_item_id: item.pi_item_id || null,
   }
   isFormVisible.value = true
 }
@@ -441,6 +535,7 @@ async function submitForm() {
           submitter_name: formData.value.submitter_name,
           reply_date: formData.value.reply_date,
           reply_content: formData.value.reply_content,
+          pi_item_id: formData.value.pi_item_id || null,
         })
         ElMessage.success('更新沟通需求记录成功')
       } else {
@@ -455,6 +550,7 @@ async function submitForm() {
         const payload: CustomerReplyFormPayload = {
           pi_id: Number(currentPiId) || 0,
           customer_id: (currentCustomerId && Number(currentCustomerId) > 0) ? Number(currentCustomerId) : undefined,
+          pi_item_id: formData.value.pi_item_id || undefined,
           reply_type: formData.value.reply_type,
           submitter_name: formData.value.submitter_name,
           reply_date: formData.value.reply_date,
@@ -567,6 +663,8 @@ export interface OpenCustomerReplyOptions {
   customerId?: number
   piNo?: string
   customerName?: string
+  piItemId?: number | null
+  piItems?: PiProductItemOption[]
 }
 
 /** 打开对话框公开方法 */
@@ -576,11 +674,22 @@ function open(options?: OpenCustomerReplyOptions) {
     if (options.customerId !== undefined) activeCustomerId.value = options.customerId
     if (options.piNo !== undefined) activePiNo.value = options.piNo
     if (options.customerName !== undefined) activeCustomerName.value = options.customerName
+    if (options.piItems !== undefined) activePiItems.value = options.piItems || []
+    if (options.piItemId !== undefined) {
+      activePiItemId.value = options.piItemId
+      filterItemId.value = options.piItemId !== null ? options.piItemId : 'all'
+    } else {
+      activePiItemId.value = null
+      filterItemId.value = 'all'
+    }
   } else {
     activePiId.value = props.piId
     activeCustomerId.value = props.customerId
     activePiNo.value = props.piNo
     activeCustomerName.value = props.customerName
+    activePiItemId.value = props.piItemId || null
+    activePiItems.value = props.piItems || []
+    filterItemId.value = props.piItemId !== undefined && props.piItemId !== null ? props.piItemId : 'all'
   }
   dialogVisible.value = true
 }

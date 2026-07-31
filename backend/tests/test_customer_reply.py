@@ -149,3 +149,33 @@ def test_create_customer_reply_with_none_sequence_num():
     data = response.json()
     assert data["sequence_num"] == 1
     assert data["sequence_label"] == "C1"
+
+
+def test_create_and_update_customer_reply_with_pi_item_id():
+    """测试带有单品维度 pi_item_id 的创建与更新流程"""
+    payload = {
+        "pi_id": 100,
+        "customer_id": 1,
+        "pi_item_id": 501,
+        "reply_date": "2026-07-31",
+        "reply_content": "客户询问单品包装规格",
+        "reply_type": "question",
+        "submitter_name": "王五"
+    }
+    create_res = client.post("/api/customer-replies", json=payload)
+    assert create_res.status_code == 200
+    created_data = create_res.json()
+    assert created_data["pi_item_id"] == 501
+    reply_id = created_data["id"]
+
+    # 测试更新 pi_item_id
+    update_payload = {
+        "pi_item_id": 502,
+        "reply_content": "客户更正单品为 502 并提出新要求"
+    }
+    update_res = client.put(f"/api/customer-replies/{reply_id}", json=update_payload)
+    assert update_res.status_code == 200
+    updated_data = update_res.json()
+    assert updated_data["pi_item_id"] == 502
+    assert updated_data["reply_content"] == "客户更正单品为 502 并提出新要求"
+

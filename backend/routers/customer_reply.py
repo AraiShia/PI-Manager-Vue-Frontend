@@ -107,7 +107,7 @@ def export_replies(
     assert ws is not None, "Worksheet initialization failed"
     ws.title = "客户回复记录"
 
-    headers = ["序号", "类型", "提交者", "时间", "内容"]
+    headers = ["序号", "关联维度/产品", "类型", "提交者", "时间", "内容"]
     header_fill = PatternFill(start_color="E5E7EB", end_color="E5E7EB", fill_type="solid")
     for col, h in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col, value=h)
@@ -115,24 +115,42 @@ def export_replies(
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal="center")
 
+    from models import PiProformaInvoiceItem as PiItem
+    from crud.product import get_product as get_prod
+
     for row_idx, r in enumerate(replies, 2):
         prefix = "C" if r.reply_type == "customer" else "R"
         type_text = "客户" if r.reply_type == "customer" else "我方"
         color = "000000" if r.reply_type == "customer" else "1E40AF"
         # 显式转换为 Python 原生类型，避免 openpyxl 类型检查告警
         seq_num = cast(int, r.sequence_num) if r.sequence_num is not None else 0
+
+        # 解析关联维度/单品信息
+        target_product_info = "整单通用"
+        if r.pi_item_id:
+            pi_item = db.query(PiItem).filter(PiItem.id == r.pi_item_id).first()
+            if pi_item:
+                prod_name = None
+                if pi_item.product_id:
+                    prod = get_prod(db, cast(int, pi_item.product_id))
+                    if prod:
+                        prod_name = getattr(prod, 'product_name', None) or getattr(prod, 'name_cn', None)
+                target_product_info = f"[单品] {prod_name or getattr(pi_item, 'product_code', None) or f'明细#{r.pi_item_id}'}"
+
         ws.cell(row=row_idx, column=1, value=f"{prefix}{seq_num}")
-        ws.cell(row=row_idx, column=2, value=str(type_text))
-        ws.cell(row=row_idx, column=3, value=str(r.submitter_name or ""))
-        ws.cell(row=row_idx, column=4, value=r.reply_date.strftime("%Y-%m-%d %H:%M:%S") if r.reply_date else "")
-        ws.cell(row=row_idx, column=5, value=str(r.reply_content or ""))
-        ws.cell(row=row_idx, column=5).font = Font(color=color)
+        ws.cell(row=row_idx, column=2, value=str(target_product_info))
+        ws.cell(row=row_idx, column=3, value=str(type_text))
+        ws.cell(row=row_idx, column=4, value=str(r.submitter_name or ""))
+        ws.cell(row=row_idx, column=5, value=r.reply_date.strftime("%Y-%m-%d %H:%M:%S") if r.reply_date else "")
+        ws.cell(row=row_idx, column=6, value=str(r.reply_content or ""))
+        ws.cell(row=row_idx, column=6).font = Font(color=color)
 
     ws.column_dimensions["A"].width = 8
-    ws.column_dimensions["B"].width = 8
-    ws.column_dimensions["C"].width = 15
-    ws.column_dimensions["D"].width = 22
-    ws.column_dimensions["E"].width = 50
+    ws.column_dimensions["B"].width = 25
+    ws.column_dimensions["C"].width = 8
+    ws.column_dimensions["D"].width = 15
+    ws.column_dimensions["E"].width = 22
+    ws.column_dimensions["F"].width = 50
 
     buffer = BytesIO()
     wb.save(buffer)

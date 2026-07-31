@@ -410,6 +410,7 @@
       :pi-no="store.currentOrder?.pi_no"
       :customer-id="store.currentOrder?.customer_id"
       :customer-name="store.currentOrder?.customer_name"
+      :pi-items="store.detailItems"
       @refresh="onDetailSuccess"
     />
 
@@ -1289,7 +1290,7 @@ async function handleContextMenuAction(action: string) {
       inboundDialogRef.value?.open(item)
       break
     case 'customerReply':
-      onOpenCustomerReply()
+      onOpenCustomerReply(item.id)
       break
     case 'delete':
       await deleteItem(item)
@@ -1374,9 +1375,16 @@ async function deleteItem(item: OrderDetailItem) {
   }
 }
 
-/** 打开客户往来需求与回复记录弹窗 */
-function onOpenCustomerReply() {
-  customerReplyDialogRef.value?.open()
+/** 打开客户往来需求与回复记录弹窗 (支持整单或指定单品维度) */
+function onOpenCustomerReply(piItemId?: number | null) {
+  customerReplyDialogRef.value?.open({
+    piId: store.currentOrder?.id,
+    piNo: store.currentOrder?.pi_no,
+    customerId: store.currentOrder?.customer_id,
+    customerName: store.currentOrder?.customer_name,
+    piItemId: piItemId !== undefined ? piItemId : null,
+    piItems: store.detailItems || [],
+  })
 }
 
 function onCellDblClick(row: OrderDetailItem) {

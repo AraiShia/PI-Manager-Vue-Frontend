@@ -26,6 +26,8 @@ class CustomerReplyUpdate(BaseModel):
     reply_content: Optional[str] = None
     reply_type: Optional[str] = None
     submitter_name: Optional[str] = None
+    pi_item_id: Optional[int] = None
+
 
 
 class CustomerReplyResponse(CustomerReplyBase):

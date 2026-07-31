@@ -8,6 +8,7 @@ export interface CustomerReplyItem {
   id: number
   pi_id: number
   customer_id: number
+  pi_item_id?: number | null
   reply_date: string
   reply_content: string
   reply_type?: 'customer' | 'question' | 'reply' | 'demand' | string
@@ -21,7 +22,7 @@ export interface CustomerReplyItem {
 export interface CustomerReplyFormPayload {
   pi_id: number
   customer_id?: number
-  pi_item_id?: number
+  pi_item_id?: number | null
   reply_date: string
   reply_content: string
   reply_type?: string
@@ -34,6 +35,7 @@ export interface CustomerReplyUpdatePayload {
   reply_content?: string
   reply_type?: string
   submitter_name?: string | null
+  pi_item_id?: number | null
 }
 
 export interface CustomerReplyPiListResponse {
