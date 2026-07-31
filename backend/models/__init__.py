@@ -2,7 +2,11 @@ from .customer_product import PrdCustomerProduct
 from .customer_product_code import PrdCustomerProductCode
 from .customer_product_oe import PrdCustomerProductOE
 from .department import SysDepartment
+from .product import PrdProduct, PrdProductImage, PrdProductCustomerCode
 from .product_category import PrdProductCategory
+from .product_supplier import PrdProductSupplier
+from .product_customer import PrdProductCustomer
+from .product_oe import PrdProductOE
 from .customer import CrmCustomer, CrmCustomerAddress, CrmCustomerContact
 from .supplier import SupSupplier, SupSupplierContact
 from .pi import PiProformaInvoice, PiProformaInvoiceItem, PiPaymentStage, PiProformaInvoiceVersion, PiPriceHistory
@@ -24,7 +28,11 @@ from .product_supplier_url import PrdProductSupplierUrl
 __all__ = [
     'PrdCustomerProduct', 'PrdCustomerProductCode', 'PrdCustomerProductOE',
     'SysDepartment',
+    'PrdProduct', 'PrdProductImage', 'PrdProductCustomerCode',
     'PrdProductCategory',
+    'PrdProductSupplier',
+    'PrdProductCustomer',
+    'PrdProductOE',
     'CrmCustomer', 'CrmCustomerAddress', 'CrmCustomerContact',
     'SupSupplier', 'SupSupplierContact',
     'PiProformaInvoice', 'PiProformaInvoiceItem', 'PiPaymentStage',
@@ -44,3 +52,4 @@ __all__ = [
     'PrdProductAuditLog',
     'PrdProductSupplierUrl',
 ]
+

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, Any, cast
 from io import BytesIO
 from datetime import datetime
+from urllib.parse import quote
 from app.database import get_db
 from schemas.customer_reply import CustomerReplyCreate, CustomerReplyUpdate, CustomerReplyResponse, BatchRepliesRequest
 from crud.customer_reply import (
@@ -159,11 +160,16 @@ def export_replies(
     date_range = f"{start_date or '开始'}至{end_date or '结束'}"
     export_type = "_选择性导出" if selected_ids else ""
     filename = f"客户回复记录_{customer_name}_{date_range}{export_type}.xlsx"
+    encoded_filename = quote(filename)
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+        "Access-Control-Expose-Headers": "Content-Disposition"
+    }
 
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
+        headers=headers
     )
 
 
@@ -309,11 +315,16 @@ def export_batch_replies(
                     customer_name = cust.customer_name
 
     filename = f"客户回复记录_{customer_name}_{date_range}{export_suffix}.xlsx"
+    encoded_filename = quote(filename)
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+        "Access-Control-Expose-Headers": "Content-Disposition"
+    }
 
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"}
+        headers=headers
     )
 
 

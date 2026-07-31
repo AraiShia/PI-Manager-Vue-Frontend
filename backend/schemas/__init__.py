@@ -1,6 +1,7 @@
 from .department import SysDepartmentCreate, SysDepartmentUpdate, SysDepartmentResponse
 from .customer import CustomerCreate, CustomerUpdate, CustomerResponse, CustomerAddressCreate, CustomerAddressUpdate, CustomerAddressResponse, CustomerContactCreate
 from .supplier import SupplierCreate, SupplierUpdate, SupplierResponse
+from .product import ProductCreate, ProductUpdate, ProductResponse, ProductImageCreate, SupplierSchemeCreate
 from .pi import PIInvoiceCreate, PIInvoiceUpdate, PIInvoiceResponse, PIPaymentStageCreate, PIInvoiceDetailResponse
 from .purchase import (
     PurchaseOrderCreate, PurchaseOrderUpdate, PurchaseOrderResponse,
@@ -39,6 +40,7 @@ __all__ = [
     'CustomerAddressCreate', 'CustomerAddressUpdate', 'CustomerAddressResponse',
     'CustomerContactCreate',
     'SupplierCreate', 'SupplierUpdate', 'SupplierResponse',
+    'ProductCreate', 'ProductUpdate', 'ProductResponse', 'ProductImageCreate', 'SupplierSchemeCreate',
     'PIInvoiceCreate', 'PIInvoiceUpdate', 'PIInvoiceResponse', 'PIPaymentStageCreate', 'PIInvoiceDetailResponse',
     'PurchaseOrderCreate', 'PurchaseOrderUpdate', 'PurchaseOrderResponse',
     'PurchaseOrderItemCreate', 'PurchaseOrderItemResponse', 'PurchaseOrderDetailResponse',
